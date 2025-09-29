@@ -1,0 +1,5 @@
+fastmcp
+pandas
+python-docx
+python-pptx
+PyPDF2
