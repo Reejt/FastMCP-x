@@ -51,21 +51,22 @@ async def mcp_multiplexer(request: Request):
     payload = await request.json()
     tool_name = payload.get("tool_name")
     params = payload.get("params", {})
+    id_value = payload.get("id")
 
     if tool_name == "query":
         result = await answer_query.run({"query": params.get("query")})
-        return {"content": [{"type": "text", "text": result}]}
+        return {"jsonrpc": "2.0", "id": id_value, "content": [{"type": "text", "text": result}]}
     elif tool_name == "ingest":
         file_content = params.get("file_content")
         filename = params.get("filename")
         result = ingest_file(file_content, filename=filename)
-        return {"content": [{"type": "text", "text": result}]}
+        return {"jsonrpc": "2.0", "id": id_value, "content": [{"type": "text", "text": result}]}
     elif tool_name == "switch_model":
         model_name = params.get("model_name")
         result = switch_model(model_name)
-        return {"content": [{"type": "text", "text": result}]}
+        return {"jsonrpc": "2.0", "id": id_value, "content": [{"type": "text", "text": result}]}
     else:
-        return {"error": f"Unknown tool: {tool_name}"}
+        return {"jsonrpc": "2.0", "id": id_value, "error": {"code": 1001, "message": f"Unknown tool: {tool_name}"}}
 
 
 
