@@ -3,3 +3,5 @@ pandas
 python-docx
 python-pptx
 PyPDF2
+fastapi
+uv
