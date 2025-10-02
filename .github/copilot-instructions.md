@@ -22,6 +22,30 @@ This is a **Model Context Protocol (MCP) server** that ingests documents and ans
 
 **Important**: Document context is stored in-memory and lost on server restart. No persistent database exists.
 
+## Setup Instructions
+
+### Initial Setup
+1. **Python Requirements**: Ensure Python 3.9+ is installed
+2. **Install Dependencies**:
+   ```powershell
+   pip install -r requirements.txt
+   ```
+   Core dependencies: `fastmcp`, `fastapi`, `pandas`, `python-docx`, `python-pptx`, `PyPDF2`
+
+3. **External LLM CLIs** (optional, based on usage):
+   - **Gemini CLI**: Install and ensure `gemini` command is in PATH
+   - **Ollama**: Install for Llama models (e.g., `llama3.2:3b`)
+   
+4. **Verify Installation**:
+   ```powershell
+   python server/main.py
+   ```
+   Server should start on `http://0.0.0.0:8000`
+
+### Storage Directory
+- Created automatically at runtime in `storage/` relative to project root
+- Ingested documents are copied here and persist until manual deletion
+
 ## Development Workflows
 
 ### Starting the Server
