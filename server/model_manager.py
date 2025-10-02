@@ -4,7 +4,7 @@ import subprocess
 
 
 mcp = FastMCP("My MCP Server")
-current_model = "llama3.2:3b"  # Default model
+current_model = "gemini"  # Default model
 
 @mcp.tool
 def switch_model(model_name: str) -> str:
