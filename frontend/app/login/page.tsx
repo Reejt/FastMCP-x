@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -9,28 +10,32 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const supabase = createClient()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    // Simulate login delay for demo
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-    // Simple validation for demo purposes
-    if (!email || !password) {
-      setError('Please enter both email and password')
-      setLoading(false)
-      return
-    }
+      if (signInError) {
+        setError(signInError.message)
+        setLoading(false)
+        return
+      }
 
-    // For demo: any valid email format works
-    if (email.includes('@')) {
-      // Successfully "logged in" - redirect to dashboard
-      router.push('/dashboard')
-    } else {
-      setError('Please enter a valid email address')
+      if (data.user) {
+        // Successfully logged in - redirect to dashboard
+        router.push('/dashboard')
+        router.refresh()
+      }
+    } catch (err) {
+      setError('An unexpected error occurred')
       setLoading(false)
     }
   }
@@ -46,7 +51,7 @@ export default function LoginPage() {
             Varys AI - User Portal
           </p>
         </div>
-        
+
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
