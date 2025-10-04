@@ -1,18 +1,53 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 export default function DashboardPage() {
   const router = useRouter()
-  // Demo user data
-  const [user] = useState({
-    email: 'demo@example.com',
-    role: 'user'
-  })
+  const supabase = createClient()
+  const [user, setUser] = useState<{ email: string; role: string } | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const handleSignOut = () => {
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user: authUser }, error } = await supabase.auth.getUser()
+
+      if (error || !authUser) {
+        router.push('/login')
+        return
+      }
+
+      // Get user role from user metadata or default to 'user'
+      const userRole = authUser.user_metadata?.role || 'user'
+
+      setUser({
+        email: authUser.email || 'Unknown',
+        role: userRole
+      })
+      setLoading(false)
+    }
+
+    checkUser()
+  }, [router, supabase])
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
     router.push('/login')
+    router.refresh()
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return null
   }
 
   return (
@@ -52,7 +87,7 @@ export default function DashboardPage() {
                 You're logged in as: <span className="font-medium">{user.role}</span>
               </p>
               <p className="text-sm text-gray-500 mt-4">
-                (Demo mode - Supabase not connected yet)
+                Connected with Supabase Authentication
               </p>
             </div>
           </div>

@@ -1,5 +1,7 @@
 ## FastMCP-x GitHub Contribution Instructions
 
+applyTo: '**'
+
 ### Branching
 - Always create a new branch for each feature or bugfix.
 - Use descriptive branch names (e.g., `feature/llama3-integration`, `bugfix/query-endpoint`).
@@ -29,6 +31,6 @@
 - At least one approval is required before merging to `main`.
 - Squash commits if possible for a clean history.
 ---
-applyTo: '**'
+
 ---
 Provide project context and coding guidelines that AI should follow when generating code, answering questions, or reviewing changes.
