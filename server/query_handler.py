@@ -172,8 +172,8 @@ def query_model(query: str) -> str:
         return f"Error querying Llama: {str(e)}"
 
 
-
-def answer_query_impl(query: str) -> str:
+@mcp.tool 
+def answer_query(query: str) -> str:
     """
     Answer queries using semantic search on ingested documents with LLM reasoning
     Always includes relevant context chunks when querying the model
@@ -184,16 +184,11 @@ def answer_query_impl(query: str) -> str:
         return "No documents have been ingested yet. Please ingest some documents first using the ingest_file tool."
     
     # Use the context-aware query function for better results
-    return query_with_context_impl(query, max_chunks=3)
+    return query_with_context(query, max_chunks=3)
+
 
 @mcp.tool
-def answer_query(file_path: str) -> str:
-    """MCP tool wrapper for answering query"""
-    return answer_query_impl(file_path)
-
-
-
-def semantic_search_tool_impl(query: str, top_k: int = 5) -> str:
+def semantic_search_tool(query: str, top_k: int = 5) -> str:
     """
     Dedicated semantic search tool for finding relevant document sections
     Returns formatted results with similarity scores
@@ -218,14 +213,12 @@ def semantic_search_tool_impl(query: str, top_k: int = 5) -> str:
     
     return "\n".join(response_parts)
 
-@mcp.tool
-def semantic_search_tool(file_path: str) -> str:
-    """MCP tool wrapper for semantic search"""
-    return semantic_search_tool_impl(file_path)
 
 
 
-def query_with_context_impl(query: str, max_chunks: int = 3, include_context_preview: bool = True) -> str:
+
+@mcp.tool 
+def query_with_context(query: str, max_chunks: int = 3, include_context_preview: bool = True) -> str:
     """
     Query the LLM with relevant document chunks as context
     Combines semantic search with LLM reasoning for better answers
@@ -302,9 +295,6 @@ ANSWER:"""
     else:
         return llm_response
     
-@mcp.tool
-def query_with_context(file_path: str) -> str:
-    """MCP tool wrapper for querying with context"""
-    return query_with_context_impl(file_path)
+
 
 

@@ -36,7 +36,8 @@ def load_existing_documents():
     
     print(f"Documents loaded: {loaded_count}")
 
-def ingest_file_impl(file_path: str) -> str:
+@mcp.tool 
+def ingest_file(file_path: str) -> str:
     """Implementation function for file ingestion"""
     try:
         storage_dir = os.path.join(os.path.dirname(__file__), '..', 'storage')
@@ -60,10 +61,4 @@ def ingest_file_impl(file_path: str) -> str:
     except Exception as e:
         return f"Error ingesting file: {str(e)}"
 
-@mcp.tool
-def ingest_file(file_path: str) -> str:
-    """MCP tool wrapper for file ingestion"""
-    return ingest_file_impl(file_path)
 
-# Load existing documents on module import
-load_existing_documents()
