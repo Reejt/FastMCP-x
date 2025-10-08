@@ -5,3 +5,6 @@ python-pptx
 PyPDF2
 fastapi
 uv
+sentence-transformers
+scikit-learn
+numpy
