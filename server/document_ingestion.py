@@ -6,7 +6,7 @@ from utils.file_parser import extract_text_from_file
 
 
 
-mcp = FastMCP("My MCP Server")
+
 # Store documents with metadata for better semantic search
 documents = []  # List of {"content": str, "filename": str, "filepath": str}
 

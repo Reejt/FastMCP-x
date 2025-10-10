@@ -16,7 +16,6 @@ except ImportError:
     print("Warning: Semantic search dependencies not available. Install sentence-transformers and scikit-learn for enhanced search.")
     SEMANTIC_SEARCH_AVAILABLE = False
 
-mcp = FastMCP("My MCP Server")
 
 # Global semantic search model - loaded once and reused
 _semantic_model = None
