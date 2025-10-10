@@ -36,7 +36,7 @@ def get_semantic_model():
             _semantic_model = False  # Mark as failed to avoid retrying
     return _semantic_model if _semantic_model is not False else None
 
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
+def chunk_text(text: str, chunk_size: int = 300, overlap: int = 30) -> List[str]:
     """Split text into overlapping chunks for better semantic search"""
     if len(text) <= chunk_size:
         return [text]
@@ -64,22 +64,26 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]
     
     return chunks
 
-def semantic_search(query: str, top_k: int = 3) -> List[Tuple[str, float, str]]:
+def semantic_search(query: str, top_k: int = 2) -> List[Tuple[str, float, str]]:
     """
     Perform semantic search on ingested documents
     Returns list of (content, similarity_score, filename) tuples
     """
     if not SEMANTIC_SEARCH_AVAILABLE:
+        print("Warning: Semantic search not available, falling back to keyword search")
         return []
         
     model = get_semantic_model()
     if not model or not documents:
+        print(f"Semantic search failed: model={model is not None}, documents={len(documents) if documents else 0}")
         return []
     
     try:
         # Prepare document chunks with metadata
         all_chunks = []
         chunk_metadata = []
+        
+        print(f"Preparing semantic search for query: '{query}' across {len(documents)} documents")
         
         for doc in documents:
             # Handle both old format (strings) and new format (dicts)
@@ -98,7 +102,10 @@ def semantic_search(query: str, top_k: int = 3) -> List[Tuple[str, float, str]]:
                     chunk_metadata.append(filename)
         
         if not all_chunks:
+            print("No chunks available for semantic search")
             return []
+        
+        print(f"Generated {len(all_chunks)} chunks for semantic search")
         
         # Encode query and chunks
         query_embedding = model.encode([query])
@@ -107,18 +114,22 @@ def semantic_search(query: str, top_k: int = 3) -> List[Tuple[str, float, str]]:
         # Calculate similarities
         similarities = cosine_similarity(query_embedding, chunk_embeddings)[0]
         
+        print(f"Similarities calculated - max: {max(similarities):.3f}, mean: {sum(similarities)/len(similarities):.3f}")
+        
         # Get top k results
         top_indices = np.argsort(similarities)[::-1][:top_k]
         
         results = []
         for idx in top_indices:
-            if similarities[idx] > 0.1:  # Minimum similarity threshold
+            if similarities[idx] > 0.15:  # Further lowered similarity threshold from 0.2 to 0.15 for better recall
                 results.append((
                     all_chunks[idx],
                     float(similarities[idx]),
                     chunk_metadata[idx]
                 ))
+                print(f"Found relevant chunk: score={similarities[idx]:.3f}, file={chunk_metadata[idx]}")
         
+        print(f"Semantic search returning {len(results)} results")
         return results
     
     except Exception as e:
@@ -149,83 +160,129 @@ def simple_keyword_search(query: str) -> List[Tuple[str, str]]:
 
 
 def query_model(query: str) -> str:
-    """Query the Llama 3.2:3b model with the provided query."""
+    """Query the Gemma:2b model with the provided query for faster processing."""
     try:
-        # Call Ollama for Llama 3.2:3b model
-        result = subprocess.run(
-            ["ollama", "run", "llama3.2:3b", query],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=120,  # 120 second timeout for Llama
-            encoding='utf-8',
-            errors='ignore'  # Ignore problematic characters
+        # Try HTTP API first (more reliable)
+        import requests
+        import json
+        
+        print(f"Querying Ollama via HTTP API...")
+        
+        response = requests.post(
+            'http://localhost:11434/api/generate',
+            json={
+                'model': 'gemma:2b',
+                'prompt': query,
+                'stream': False
+            },
+            timeout=30
         )
-        return result.stdout.strip()
-    except subprocess.TimeoutExpired:
-        return f"Llama query timed out after 120 seconds"
-    except subprocess.CalledProcessError as e:
-        return f"Ollama CLI error: {e.stderr.strip() if e.stderr else str(e)}"
-    except FileNotFoundError:
-        return f"Ollama CLI not found. Please ensure Ollama is installed and in PATH."
-    except Exception as e:
-        return f"Error querying Llama: {str(e)}"
+        
+        if response.status_code == 200:
+            result = response.json()
+            llm_response = result.get('response', '')
+            print(f"LLM response received via HTTP: {len(llm_response)} characters")
+            return llm_response
+        else:
+            print(f"HTTP API failed with status {response.status_code}, trying CLI...")
+            # Fallback to CLI
+            raise Exception("HTTP API failed")
+            
+    except Exception as http_error:
+        print(f"HTTP API failed: {http_error}, trying CLI...")
+        
+        # Fallback to CLI approach
+        try:
+            # Call Ollama for Gemma:2b model (optimized for RTX 3050)
+            print(f"Querying Ollama with CLI...")
+            
+            # Use shell=True on Windows to properly handle the command
+            import os
+            
+            # Create a proper environment
+            env = os.environ.copy()
+            
+            # Try with shell=True for Windows compatibility
+            result = subprocess.run(
+                ["ollama", "run", "gemma:2b", query],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=20,  # Reduced timeout for faster response
+                encoding='utf-8',
+                errors='ignore',  # Ignore problematic characters
+                shell=True,  # Use shell=True for Windows
+                env=env
+            )
+            response = result.stdout.strip()
+            print(f"LLM response received via CLI: {len(response)} characters")
+            return response
+        except subprocess.TimeoutExpired:
+            print("Gemma query timed out - trying fallback response")
+            return f"I'm sorry, but the AI model took too long to respond. This might be because Ollama is busy or the query is complex. Please try a simpler question or try again later."
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Ollama CLI error: {e.stderr.strip() if e.stderr else str(e)}"
+            print(error_msg)
+            return f"There was an issue with the AI model. Error: {error_msg}"
+        except FileNotFoundError:
+            error_msg = f"Ollama CLI not found. Please ensure Ollama is installed and in PATH."
+            print(error_msg)
+            return error_msg
+        except Exception as e:
+            error_msg = f"Error querying Gemma: {str(e)}"
+            print(error_msg)
+            return f"An unexpected error occurred: {error_msg}"
 
 
-@mcp.tool 
 def answer_query(query: str) -> str:
     """
-    Answer queries using semantic search on ingested documents with LLM reasoning
-    Always includes relevant context chunks when querying the model
+    Answer queries using semantic search on ingested documents
+    Sends found content to LLM for processing and returns AI-generated response
+    If no documents are available, provides general model response
     """
+    print(f"Processing query: '{query}'")
     print(f"Documents loaded: {len(documents)}")
     
     if not documents:
-        return "No documents have been ingested yet. Please ingest some documents first using the ingest_file tool."
+        # No documents available, provide general model response
+        print("No documents loaded, querying general model...")
+        llm_response = query_model(query)
+        return f"**Note:** No documents have been ingested yet. Providing general AI response:\n\n{llm_response}\n\n**Tip:** Ingest some documents first for context-aware responses using the ingest_file tool."
     
-    # Use the context-aware query function for better results
-    return query_with_context(query, max_chunks=3)
-
-
-@mcp.tool
-def semantic_search_tool(query: str, top_k: int = 5) -> str:
-    """
-    Dedicated semantic search tool for finding relevant document sections
-    Returns formatted results with similarity scores
-    """
-    if not documents:
-        return "No documents have been ingested yet. Please ingest some documents first."
-    
-    results = semantic_search(query, top_k=top_k)
-    
-    if not results:
-        return f"No semantically similar content found for query: '{query}'"
-    
-    response_parts = [f"Semantic search results for: '{query}'\n"]
-    
-    for i, (content, score, filename) in enumerate(results, 1):
-        response_parts.append(f"**Match {i}** (Similarity: {score:.3f}) - {filename}")
-        response_parts.append("-" * 50)
-        # Show first 600 characters of the matching content
-        display_content = content[:600] + "..." if len(content) > 600 else content
-        response_parts.append(display_content)
-        response_parts.append("")  # Empty line
-    
-    return "\n".join(response_parts)
+    try:
+        # First try to find relevant document context
+        print("Searching for relevant document context...")
+        semantic_results = semantic_search(query, top_k=2)
+        
+        if not semantic_results:
+            # No relevant context found, provide general model response
+            print("No relevant context found in documents, querying general model...")
+            llm_response = query_model(query)
+            return f"**Note:** No relevant context found in the ingested documents for '{query}'. Providing general AI response:\n\n{llm_response}\n\n**Tip:** Try rephrasing your query or ingest more relevant documents."
+        
+        # Use semantic search for document-aware query with more chunks
+        print("Using semantic search with context...")
+        semantic_result = query_with_context(query, max_chunks=2)  # Increased from 1 to 2 chunks
+        
+        print(f"Returning semantic result: {len(semantic_result)} characters")
+        return semantic_result
+        
+    except Exception as e:
+        error_msg = f"Error processing query '{query}': {str(e)}"
+        print(error_msg)
+        return error_msg
 
 
 
 
-
-@mcp.tool 
-def query_with_context(query: str, max_chunks: int = 3, include_context_preview: bool = True) -> str:
+def query_with_context(query: str, max_chunks: int = 1, include_context_preview: bool = True) -> str:
     """
     Query the LLM with relevant document chunks as context
     Combines semantic search with LLM reasoning for better answers
     
     Args:
         query: The question to ask
-        max_chunks: Maximum number of document chunks to include as context (default: 3)
+        max_chunks: Maximum number of document chunks to include as context (default: 1)
         include_context_preview: Whether to show which document sections were used (default: True)
     """
     if not documents:
@@ -233,47 +290,36 @@ def query_with_context(query: str, max_chunks: int = 3, include_context_preview:
     
     # Get relevant chunks using semantic search
     semantic_results = semantic_search(query, top_k=max_chunks)
-    context_source = "semantic"
     
     if not semantic_results:
-        # Fallback to keyword search
+        # Fallback to simple keyword search
+        print("Semantic search found no results, trying keyword search...")
         keyword_results = simple_keyword_search(query)
-        if keyword_results:
-            # Convert keyword results to semantic format for consistency
-            semantic_results = [(content, 0.0, filename) for content, filename in keyword_results[:max_chunks]]
-            context_source = "keyword"
-        else:
+        if not keyword_results:
             # No relevant context found, query LLM directly but inform user
             llm_response = query_model(query)
             return f"**Note:** No relevant context found in ingested documents. Providing general response:\n\n{llm_response}"
+        else:
+            # Convert keyword results to semantic results format
+            semantic_results = [(content, 0.5, filename) for content, filename in keyword_results[:max_chunks]]
     
     # Build context from search results
     context_parts = []
     for content, score, filename in semantic_results:
-        # Limit context size to prevent token overflow
-        truncated_content = content[:1500] + "..." if len(content) > 1500 else content
-        if context_source == "semantic":
-            context_parts.append(f"Document: {filename} (relevance: {score:.3f})\nContent: {truncated_content}")
-        else:
-            context_parts.append(f"Document: {filename}\nContent: {truncated_content}")
+        # Provide much more substantial context to the LLM (increased from 1500 to 4000 chars)
+        # This ensures the LLM has enough information to provide detailed answers
+        truncated_content = content[:4000] + "..." if len(content) > 4000 else content
+        context_parts.append(f"Document: {filename}\nContent: {truncated_content}")
     
     context = "\n\n---\n\n".join(context_parts)
     
-    # Create enhanced prompt with context
-    enhanced_query = f"""You are an AI assistant helping to answer questions based on document content. Use the provided document excerpts to answer the user's question as accurately and comprehensively as possible.
+    # Create simplified but effective prompt for better LLM responses
+    enhanced_query = f"""Based on the following document content, please answer this question: {query}
 
-DOCUMENT CONTEXT:
+DOCUMENT CONTENT:
 {context}
 
-USER QUESTION: {query}
-
-INSTRUCTIONS:
-1. Base your answer primarily on the provided document context
-2. If the documents don't contain enough information to fully answer the question, clearly state what information is missing
-3. Be specific and cite which documents you're referencing when possible
-4. Provide a clear, well-structured response
-
-ANSWER:"""
+Please provide a detailed and comprehensive answer based on the information above. If the documents contain relevant information, explain it thoroughly. If the question cannot be fully answered from the provided content, clearly state what information is missing."""
     
     # Query the LLM with context
     llm_response = query_model(enhanced_query)
@@ -282,12 +328,11 @@ ANSWER:"""
     if include_context_preview:
         response_parts = [
             llm_response,
-            f"\n\n---\n**Context Sources ({len(semantic_results)} document sections, {context_source} search):**"
+            f"\n\n---\n**Context Sources ({len(semantic_results)} document sections, semantic search):**"
         ]
         
         for i, (content, score, filename) in enumerate(semantic_results, 1):
-            score_info = f" (relevance: {score:.3f})" if context_source == "semantic" and score > 0 else ""
-            response_parts.append(f"\n{i}. {filename}{score_info}")
+            response_parts.append(f"\n{i}. {filename} (relevance: {score:.3f})")
             preview = content[:150] + "..." if len(content) > 150 else content
             response_parts.append(f"   Preview: {preview}")
         

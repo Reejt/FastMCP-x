@@ -2,9 +2,10 @@ fastmcp
 pandas
 python-docx
 python-pptx
-PyPDF2
+pypdf
 fastapi
 uv
 sentence-transformers
 scikit-learn
 numpy
+requests
