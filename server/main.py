@@ -11,7 +11,7 @@ from server.document_ingestion import load_existing_documents
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
 
 @mcp.tool
-def ingest_file_tool(file_path: str):
+def ingest_file_tool(file_path: str) -> str:
     try:
         result = ingest_file(file_path)
         print(f"Ingest result: {result}")
@@ -22,7 +22,7 @@ def ingest_file_tool(file_path: str):
         return error_msg
 
 @mcp.tool
-def answer_query_tool(query: str):
+def answer_query_tool(query: str) -> str:
     try:
         result = answer_query(query)
         print(f"Query result: {result}")
@@ -33,7 +33,7 @@ def answer_query_tool(query: str):
         return error_msg
 
 @mcp.tool
-def semantic_search_tool(query: str, top_k: int = 5):
+def semantic_search_tool(query: str, top_k: int = 5) -> str:
     results = semantic_search(query, top_k)
     
     if not results:
@@ -51,7 +51,7 @@ def semantic_search_tool(query: str, top_k: int = 5):
     return "\n".join(response_parts)
 
 @mcp.tool
-def query_with_context_tool(query: str, max_chunks: int = 3, include_context_preview: bool = True):
+def query_with_context_tool(query: str, max_chunks: int = 3, include_context_preview: bool = True) -> str:
     return query_with_context(query, max_chunks, include_context_preview)
 
 if __name__ == "__main__":

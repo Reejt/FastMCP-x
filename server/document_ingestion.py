@@ -37,7 +37,7 @@ def load_existing_documents():
     print(f"Documents loaded: {loaded_count}")
 
  
-def ingest_file(file_path: str) -> str:
+def ingest_file(file_path: str):
     """Implementation function for file ingestion"""
     print(f"Starting ingestion of file: {file_path}")
     
