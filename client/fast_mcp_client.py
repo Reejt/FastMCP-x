@@ -38,9 +38,6 @@ async def main():
             if choice == "1":
                 file_path = input("Enter file path to ingest: ").strip()
                 # Remove "ingest" prefix if user accidentally included it
-                if file_path.lower().startswith("ingest "):
-                    file_path = file_path[7:].strip()
-                
                 if not file_path:
                     print("No file path provided.")
                     continue
@@ -67,17 +64,63 @@ async def main():
             elif choice == "2":
                 query = input("Enter your query: ").strip()
                 # Remove "query" prefix if user accidentally included it
-                if query.lower().startswith("query "):
-                    query = query[6:].strip()
-                
                 if not query:
                     print("No query provided.")
                     continue
                     
                 try:
-                    result = await client.call_tool("answer_query_tool", {
-                        "query": query
-                    })
+                    # Check if query is for Excel or CSV documents
+                    query_lower = query.lower()
+                    is_excel_query = any(keyword in query_lower for keyword in ['excel', '.xlsx', '.xls', 'spreadsheet'])
+                    is_csv_query = '.csv' in query_lower and not is_excel_query
+                    
+                    if is_excel_query:
+                        # Parse Excel file path from query
+                        import re
+                        import json
+                        
+                        # Extract file path (look for .xlsx or .xls files)
+                        file_match = re.search(r'([^\s]+\.xlsx?)', query, re.IGNORECASE)
+                        if not file_match:
+                            print("Error: Could not find Excel file path in query (must end with .xlsx or .xls)")
+                            continue
+                        
+                        file_path = file_match.group(1)
+                        
+                        # Use LLM-based Excel query tool for natural language queries
+                        tool_params = {
+                            "file_path": file_path,
+                            "query": query
+                        }
+                        
+                        result = await client.call_tool("query_excel_with_llm_tool", tool_params)
+                        
+                    elif is_csv_query:
+                        # Parse CSV file path from query
+                        import re
+                        import json
+                        
+                        # Extract file path (look for .csv files)
+                        file_match = re.search(r'([^\s]+\.csv)', query, re.IGNORECASE)
+                        if not file_match:
+                            print("Error: Could not find CSV file path in query (must end with .csv)")
+                            continue
+                        
+                        file_path = file_match.group(1)
+                        
+                        # Use LLM-based CSV query tool for natural language queries
+                        tool_params = {
+                            "file_path": file_path,
+                            "query": query
+                        }
+                        
+                        result = await client.call_tool("query_csv_with_llm_tool", tool_params)
+                        
+                    else:
+                        # Default to regular query tool
+                        result = await client.call_tool("answer_query_tool", {
+                            "query": query
+                        })
                     
                     # Extract response from MCP result
                     if hasattr(result, 'content') and result.content:
@@ -87,6 +130,7 @@ async def main():
                     else:
                         response = str(result)
                     
+                    # For Excel/CSV queries with LLM, response is already formatted by LLM
                     print(f"Query result: {response}")
                 except Exception as e:
                     print(f"Error during query: {e}")
