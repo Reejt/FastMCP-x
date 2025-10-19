@@ -74,7 +74,7 @@ class ExcelQueryEngine:
         
         return df
     
-    def sql_like_query(self, query: str, sheet_name: str = None) -> pd.DataFrame:
+    def sql_like_query(self, query: str, sheet_name: str = None):
         """Execute SQL-like queries using pandasql."""
         df = self.load_sheet(sheet_name).copy()
         
