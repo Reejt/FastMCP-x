@@ -32,8 +32,9 @@ async def main():
             print("\nFastMCP CLI Options:")
             print("1. Ingest a document")
             print("2. Answer a query")
-            print("3. Exit")
-            choice = input("Select an option (1/2/3): ").strip()
+            print("3. Web search")
+            print("4. Exit")
+            choice = input("Select an option (1/2/3/4): ").strip()
             
             if choice == "1":
                 file_path = input("Enter file path to ingest: ").strip()
@@ -137,10 +138,34 @@ async def main():
                     import traceback
                     traceback.print_exc()
             elif choice == "3":
+                search_query = input("Enter your web search query: ").strip()
+                if not search_query:
+                    print("No search query provided.")
+                    continue
+                    
+                try:
+                    result = await client.call_tool("web_search_tool", {
+                        "query": search_query
+                    })
+                    
+                    # Extract response from MCP result
+                    if hasattr(result, 'content') and result.content:
+                        response = result.content[0].text
+                    elif hasattr(result, 'data') and result.data:
+                        response = result.data
+                    else:
+                        response = str(result)
+                    
+                    print(f"Search result: {response}")
+                except Exception as e:
+                    print(f"Error during web search: {e}")
+                    import traceback
+                    traceback.print_exc()
+            elif choice == "4":
                 print("Exiting FastMCP CLI.")
                 break
             else:
-                print("Invalid option. Please select 1, 2, or 3.")
+                print("Invalid option. Please select 1, 2, 3, or 4.")
 
 if __name__ == "__main__":
     asyncio.run(main())

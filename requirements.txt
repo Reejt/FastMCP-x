@@ -9,5 +9,6 @@ sentence-transformers
 scikit-learn
 numpy
 requests
+beautifulsoup4
 openpyxl
 pandasql

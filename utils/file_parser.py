@@ -205,6 +205,7 @@ def extract_text_from_file(file_path: str) -> str:
                     )
                     
                     text = []
+                    skipped_shapes = 0
                     try:
                         for slide_idx in range(1, presentation.Slides.Count + 1):
                             slide = presentation.Slides(slide_idx)
@@ -216,14 +217,19 @@ def extract_text_from_file(file_path: str) -> str:
                                         if shape_text and shape_text.strip():
                                             text.append(shape_text.strip())
                                 except Exception as shape_error:
-                                    print(f"Warning: Could not extract text from shape {shape_idx}: {shape_error}")
+                                    # Common errors for non-text shapes (images, charts, grouped objects)
+                                    # These are expected and can be safely ignored
+                                    skipped_shapes += 1
                                     continue
                     finally:
                         presentation.Close()
                         powerpoint.Quit()
                     
                     content = "\n".join(text)
-                    print(f"Extracted {len(content)} characters from .ppt file (via COM)")
+                    if skipped_shapes > 0:
+                        print(f"Extracted {len(content)} characters from .ppt file (via COM). Skipped {skipped_shapes} non-text shapes (images/charts/groups).")
+                    else:
+                        print(f"Extracted {len(content)} characters from .ppt file (via COM)")
                     return content
                     
                 finally:

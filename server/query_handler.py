@@ -125,7 +125,7 @@ def query_model(query: str, model_name: str = 'llama3.2:1b') -> str:
                 'prompt': query,
                 'stream': False
             },
-            timeout=30
+            timeout=120  # Increased timeout for large content summarization
         )
         response.raise_for_status()
         return response.json().get('response', '')

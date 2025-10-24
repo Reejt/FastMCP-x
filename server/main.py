@@ -8,6 +8,7 @@ from server.document_ingestion import ingest_file
 from server.query_handler import answer_query,semantic_search,query_with_context,query_model
 from server.document_ingestion import load_existing_documents
 from server.excel_csv import ExcelQueryEngine, CSVQueryEngine
+from server.web_search_file import tavily_web_search
 
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
 
@@ -142,6 +143,46 @@ Answer:"""
         
     except Exception as e:
         return f"Error querying CSV file: {str(e)}"
+
+@mcp.tool
+def web_search_tool(query: str) -> str:
+    """
+    Perform a web search using Tavily API and get LLM-generated answer based on top result content
+    
+    Args:
+        query: The search query
+    
+    Returns:
+        LLM-generated answer based on the extracted content from top search result
+    """
+    try:
+        # Perform web search and get extracted content from top result
+        top_result_content = tavily_web_search(query=query)
+        
+        # Check for errors
+        if top_result_content.startswith("Error") or top_result_content.startswith("HTTP error") or top_result_content.startswith("Request failed"):
+            return f"Search error: {top_result_content}"
+        
+        if top_result_content in ["No URL found in top result", "No search results found", "No results in response"]:
+            return f"No search results found for query: '{query}'"
+        
+        # Send extracted content to LLM for summarization
+        llm_prompt = f"""You are a helpful research assistant. Below is content extracted from the top web search result for the user's query. Your task is to summarize this content in a clear, concise manner that directly addresses the user's query.
+
+Web Search Query: {query}
+
+Extracted Content from Top Result:
+{top_result_content}
+
+Instructions:
+- Summarize the content focusing on information relevant to the user's query
+"""
+        
+        return query_model(llm_prompt)
+        
+    except Exception as e:
+        return f"Error in web search tool: {str(e)}"
+
 
 if __name__ == "__main__":
     print("Loading existing documents...")
