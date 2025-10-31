@@ -3,12 +3,18 @@
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { Message, User } from '@/app/types'
+import Sidebar from '@/app/components/Sidebar/Sidebar'
+import ChatContainer from '@/app/components/Chat/ChatContainer'
+import ChatInput from '@/app/components/Chat/ChatInput'
 
 export default function DashboardPage() {
   const router = useRouter()
   const supabase = createClient()
-  const [user, setUser] = useState<{ email: string; role: string } | null>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isProcessing, setIsProcessing] = useState(false)
 
   useEffect(() => {
     const checkUser = async () => {
@@ -23,6 +29,7 @@ export default function DashboardPage() {
       const userRole = authUser.user_metadata?.role || 'user'
 
       setUser({
+        id: authUser.id,
         email: authUser.email || 'Unknown',
         role: userRole
       })
@@ -38,6 +45,47 @@ export default function DashboardPage() {
     router.refresh()
   }
 
+  const handleSendMessage = async (content: string) => {
+    if (!content.trim() || isProcessing) return
+
+    // Add user message
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content,
+      role: 'user',
+      timestamp: new Date()
+    }
+
+    setMessages((prev) => [...prev, userMessage])
+    setIsProcessing(true)
+
+    try {
+      // TODO: Replace with actual API call to your FastMCP backend
+      // For now, simulate a response
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `I received your message: "${content}"\n\nThis is a placeholder response. Once you connect this to your FastMCP backend at http://localhost:8000, I'll be able to answer queries using your ingested documents and configured LLMs.`,
+        role: 'assistant',
+        timestamp: new Date()
+      }
+
+      setMessages((prev) => [...prev, assistantMessage])
+    } catch (error) {
+      console.error('Error sending message:', error)
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: 'Sorry, I encountered an error processing your request. Please try again.',
+        role: 'assistant',
+        timestamp: new Date()
+      }
+      setMessages((prev) => [...prev, errorMessage])
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -51,48 +99,18 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-bold text-gray-900">Varys AI</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-700">{user.email}</span>
-              {user.role === 'admin' && (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                  Admin
-                </span>
-              )}
-              <button
-                onClick={handleSignOut}
-                className="text-sm text-indigo-600 hover:text-indigo-500"
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Sidebar */}
+      <Sidebar user={user} onSignOutAction={handleSignOut} />
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <div className="border-4 border-dashed border-gray-200 rounded-lg h-96 flex items-center justify-center">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Welcome to Varys AI
-              </h2>
-              <p className="text-gray-600">
-                You're logged in as: <span className="font-medium">{user.role}</span>
-              </p>
-              <p className="text-sm text-gray-500 mt-4">
-                Connected with Supabase Authentication
-              </p>
-            </div>
-          </div>
-        </div>
-      </main>
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Chat Messages */}
+        <ChatContainer messages={messages} />
+
+        {/* Chat Input */}
+        <ChatInput onSendMessage={handleSendMessage} disabled={isProcessing} />
+      </div>
     </div>
   )
 }

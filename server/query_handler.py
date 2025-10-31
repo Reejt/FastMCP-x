@@ -115,7 +115,7 @@ def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) ->
 
 
 
-def query_model(query: str, model_name: str = 'llama3.2:1b') -> str:
+def query_model(query: str, model_name: str = 'llama3.2:3b') -> str:
     """Query the Ollama model via HTTP API"""
     try:
         response = requests.post(
