@@ -104,12 +104,12 @@ export default function DashboardPage() {
       <Sidebar user={user} onSignOutAction={handleSignOut} />
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Chat Messages */}
         <ChatContainer messages={messages} />
 
         {/* Chat Input */}
-        <ChatInput onSendMessage={handleSendMessage} disabled={isProcessing} />
+        <ChatInput onSendMessage={handleSendMessage} disabled={isProcessing} hasMessages={messages.length > 0} />
       </div>
     </div>
   )

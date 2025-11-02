@@ -1,15 +1,18 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { motion } from 'framer-motion'
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void
   disabled?: boolean
+  hasMessages?: boolean
 }
 
-export default function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
+export default function ChatInput({ onSendMessage, disabled = false, hasMessages = false }: ChatInputProps) {
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,6 +32,15 @@ export default function ChatInput({ onSendMessage, disabled = false }: ChatInput
     }
   }
 
+  const handleFileUpload = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleContainerClick = () => {
+    // Focus the textarea when clicking anywhere in the container
+    textareaRef.current?.focus()
+  }
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
@@ -37,19 +49,47 @@ export default function ChatInput({ onSendMessage, disabled = false }: ChatInput
   }, [input])
 
   return (
-    <div className="border-t border-gray-200 bg-white p-4">
-      <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-        <div className="relative flex items-end bg-white rounded-lg border border-gray-300 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
-          {/* Attachment Button */}
+    <div className={`bg-white border-t border-gray-200 transition-all duration-300 ${!hasMessages ? 'pt-2 pb-6 px-6' : 'p-6'}`}>
+      <motion.form
+        onSubmit={handleSubmit}
+        className="max-w-4xl mx-auto"
+        initial={false}
+        animate={{
+          scale: !hasMessages ? 1 : 1,
+        }}
+        transition={{ duration: 0.3 }}
+      >
+        <div
+          onClick={handleContainerClick}
+          className={`relative flex items-center bg-white ${!hasMessages ? 'rounded-3xl' : 'rounded-full'} border border-gray-300 hover:border-gray-400 transition-all cursor-text ${!hasMessages ? 'px-8 py-6' : 'px-5 py-3'
+            }`}
+        >
+          {/* Plus Icon - Left */}
           <button
             type="button"
-            className="absolute left-3 bottom-3 text-gray-400 hover:text-gray-600 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation() // Prevent triggering container click
+              handleFileUpload()
+            }}
+            className="text-gray-600 hover:text-gray-800 transition-colors mr-4 flex-shrink-0 cursor-pointer"
             disabled={disabled}
+            aria-label="Attach file"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            <svg className={`${!hasMessages ? 'w-6 h-6' : 'w-5 h-5'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </button>
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              // Handle file upload logic here
+              console.log('File selected:', e.target.files?.[0])
+            }}
+          />
 
           {/* Text Input */}
           <textarea
@@ -57,35 +97,28 @@ export default function ChatInput({ onSendMessage, disabled = false }: ChatInput
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything or type '/' for commands..."
+            placeholder="Ask anything"
             disabled={disabled}
             rows={1}
-            className="flex-1 bg-transparent text-gray-900 placeholder-gray-400 px-12 py-3 resize-none focus:outline-none max-h-32 overflow-y-auto"
-            style={{ minHeight: '44px' }}
+            className={`flex-1 bg-transparent text-gray-800 placeholder-gray-400 resize-none focus:outline-none max-h-32 overflow-y-auto ${!hasMessages ? 'text-base' : 'text-sm'
+              }`}
+            style={{ minHeight: !hasMessages ? '32px' : '24px' }}
           />
 
-          {/* Send Button */}
+          {/* Send Arrow Icon - Right */}
           <button
             type="submit"
+            onClick={(e) => e.stopPropagation()} // Prevent triggering container click
             disabled={disabled || !input.trim()}
-            className="absolute right-3 bottom-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg p-2 transition-colors"
+            className="text-gray-600 hover:text-gray-800 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors ml-4 flex-shrink-0"
+            aria-label="Send message"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            <svg className={`${!hasMessages ? 'w-6 h-6' : 'w-5 h-5'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
             </svg>
           </button>
         </div>
-
-        {/* Helper Text */}
-        <div className="flex items-center justify-between mt-2 px-1">
-          <p className="text-xs text-gray-500">
-            Press Enter to send, Shift + Enter for new line
-          </p>
-          <p className="text-xs text-gray-500">
-            {input.length} characters
-          </p>
-        </div>
-      </form>
+      </motion.form>
     </div>
   )
 }
