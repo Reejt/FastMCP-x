@@ -6,7 +6,7 @@ export interface Message {
   isStreaming?: boolean
 }
 
-export interface Project {
+export interface Workspace {
   id: string
   name: string
   description?: string
@@ -39,7 +39,7 @@ export interface User {
 
 export interface ChatSession {
   id: string
-  projectId?: string
+  workspaceId?: string
   messages: Message[]
   createdAt: Date
   updatedAt: Date

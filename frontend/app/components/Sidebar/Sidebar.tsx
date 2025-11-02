@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { User, Project } from '@/app/types'
+import { useRouter, usePathname } from 'next/navigation'
+import { User, Workspace } from '@/app/types'
 import SidebarItem from './SidebarItem'
 
 interface SidebarProps {
@@ -14,9 +15,24 @@ export default function Sidebar({
   user,
   onSignOutAction,
 }: SidebarProps) {
-  const [activeSection, setActiveSection] = useState<'chat' | 'vault' | 'projects' | 'instructions'>('chat')
-  const [projects] = useState<Project[]>([])
+  const router = useRouter()
+  const pathname = usePathname()
+  const [activeSection, setActiveSection] = useState<'chat' | 'vault' | 'workspaces' | 'instructions'>('chat')
+  const [workspaces] = useState<Workspace[]>([])
   const [isCollapsed, setIsCollapsed] = useState(false)
+
+  // Update active section based on current pathname
+  useEffect(() => {
+    if (pathname.startsWith('/workspaces')) {
+      setActiveSection('workspaces')
+    } else if (pathname.startsWith('/vault')) {
+      setActiveSection('vault')
+    } else if (pathname.startsWith('/instructions')) {
+      setActiveSection('instructions')
+    } else if (pathname.startsWith('/dashboard')) {
+      setActiveSection('chat')
+    }
+  }, [pathname])
 
   // Load collapse state from localStorage on mount
   useEffect(() => {
@@ -105,29 +121,31 @@ export default function Sidebar({
               onClick={(e) => {
                 e.stopPropagation() // Prevent triggering sidebar click
                 setActiveSection('chat')
+                router.push('/dashboard')
               }}
             />
 
-            {/* Projects Section */}
+            {/* Workspaces Section */}
             <SidebarItem
               icon={
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                 </svg>
               }
-              label="Projects"
-              isActive={activeSection === 'projects'}
+              label="Workspaces"
+              isActive={activeSection === 'workspaces'}
               isCollapsed={isCollapsed}
               onClick={(e) => {
                 e.stopPropagation() // Prevent triggering sidebar click
-                setActiveSection('projects')
+                setActiveSection('workspaces')
+                router.push('/workspaces')
               }}
-              badge={projects.length > 0 ? projects.length : undefined}
+              badge={workspaces.length > 0 ? workspaces.length : undefined}
             />
 
-            {/* Sub-items for Projects when expanded and active */}
+            {/* Sub-items for Workspaces when expanded and active */}
             <AnimatePresence>
-              {activeSection === 'projects' && !isCollapsed && (
+              {activeSection === 'workspaces' && !isCollapsed && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -135,20 +153,24 @@ export default function Sidebar({
                   transition={{ duration: 0.2 }}
                   className="ml-4 space-y-1 overflow-hidden"
                 >
-                  {projects.length === 0 ? (
-                    <p className="text-sm text-gray-400 px-4 py-2">No projects yet</p>
+                  {workspaces.length === 0 ? (
+                    <p className="text-sm text-gray-400 px-4 py-2">No workspaces yet</p>
                   ) : (
-                    projects.map((project) => (
+                    workspaces.map((workspace) => (
                       <button
-                        key={project.id}
+                        key={workspace.id}
+                        onClick={() => router.push(`/workspaces/${workspace.id}`)}
                         className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                       >
-                        {project.name}
+                        {workspace.name}
                       </button>
                     ))
                   )}
-                  <button className="w-full text-left px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors">
-                    + New Project
+                  <button
+                    onClick={() => router.push('/workspaces')}
+                    className="w-full text-left px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors"
+                  >
+                    + New Workspace
                   </button>
                 </motion.div>
               )}
@@ -167,6 +189,7 @@ export default function Sidebar({
               onClick={(e) => {
                 e.stopPropagation() // Prevent triggering sidebar click
                 setActiveSection('vault')
+                router.push('/vault')
               }}
             />
 
@@ -183,6 +206,7 @@ export default function Sidebar({
               onClick={(e) => {
                 e.stopPropagation() // Prevent triggering sidebar click
                 setActiveSection('instructions')
+                router.push('/instructions')
               }}
             />
           </div>

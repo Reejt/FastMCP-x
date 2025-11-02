@@ -63,11 +63,11 @@ Use this guide to verify the sidebar is working correctly.
 - [ ] Refresh page
 - [ ] Sidebar remains expanded
 
-### 8. Projects Section (Expanded)
-- [ ] Click Projects
+### 8. Workspaces Section (Expanded)
+- [ ] Click Workspaces
 - [ ] Sub-items appear smoothly
-- [ ] "No projects yet" message visible
-- [ ] "+ New Project" button visible
+- [ ] "No workspaces yet" message visible
+- [ ] "+ New Workspace" button visible
 - [ ] Click another section
 - [ ] Sub-items collapse smoothly
 

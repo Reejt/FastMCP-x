@@ -31,7 +31,7 @@ The sidebar is already integrated into your dashboard. Here's how to use it:
 ### Current Sections
 
 - **Chat**: Main conversation interface
-- **Projects**: Organize your work into projects
+- **Workspaces**: Organize your work into workspaces
 - **Vault**: Document storage and management
 - **Instructions**: Custom AI instructions
 
@@ -93,7 +93,7 @@ At the bottom of the sidebar:
 
 1. **Keep it Collapsed**: For maximum screen space, keep sidebar collapsed
 2. **Hover to Navigate**: Quick peek at labels without expanding
-3. **Expand for Details**: When working with projects/vault, expand for better visibility
+3. **Expand for Details**: When working with workspaces/vault, expand for better visibility
 
 ## Customization
 

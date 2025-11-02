@@ -137,7 +137,7 @@ const toggleCollapse = () => {
 │  [VARYS AI]         [<<]  │   Main      │
 │  ─────────────────────    │   Content   │
 │  💬 Chat                  │             │
-│  📁 Projects              │             │
+│  📁 Workspaces            │             │
 │  🗄️  Vault                │             │
 │  📄 Instructions          │             │
 │                           │             │
@@ -309,7 +309,7 @@ frontend/app/dashboard/
 1. **No Drag-to-Resize**: Sidebar width is fixed (could be future enhancement)
 2. **Single Position**: Only left-side placement (could add right-side option)
 3. **Light Mode Only**: Dark mode not implemented (future enhancement)
-4. **No Multi-Level**: Only one level of nested items (Projects section)
+4. **No Multi-Level**: Only one level of nested items (Workspaces section)
 
 ---
 

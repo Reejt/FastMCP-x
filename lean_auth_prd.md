@@ -77,7 +77,7 @@ using (auth.uid() = id);
 
 ## 8. Non-Goals (Future)
 - Organizations / tenants.  
-- Vaults, projects, file permissions.  
+- Vaults, workspaces, file permissions.  
 - MFA, SSO, or social logins.  
 - Audit logging.  
 
