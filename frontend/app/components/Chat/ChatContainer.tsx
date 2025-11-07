@@ -7,9 +7,10 @@ import ChatMessage from './ChatMessage'
 
 interface ChatContainerProps {
   messages: Message[]
+  workspaceName?: string
 }
 
-export default function ChatContainer({ messages }: ChatContainerProps) {
+export default function ChatContainer({ messages, workspaceName }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -28,16 +29,17 @@ export default function ChatContainer({ messages }: ChatContainerProps) {
         <AnimatePresence mode="wait">
           {!hasMessages ? (
             <motion.div
-              key="greeting"
+              key="empty"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ duration: 0.3 }}
-              className="flex flex-col items-center justify-center"
+              className="flex flex-col items-center justify-center text-center px-4"
             >
-              <h1 className="text-3xl font-normal text-gray-800 mb-4">
-                What's on your mind today?
-              </h1>
+              <p className="text-gray-500 text-sm mb-2">No chats yet.</p>
+              <p className="text-gray-400 text-sm">
+                Start a conversation or set project instructions.
+              </p>
             </motion.div>
           ) : (
             <motion.div

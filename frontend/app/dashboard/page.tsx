@@ -1,20 +1,28 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Message, User } from '@/app/types'
+import { Message, User, ChatSession, Workspace } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
+import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
 import ChatContainer from '@/app/components/Chat/ChatContainer'
 import ChatInput from '@/app/components/Chat/ChatInput'
 
 export default function DashboardPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const workspaceId = searchParams.get('workspace')
   const supabase = createClient()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState<Message[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [chatSessions, setChatSessions] = useState<Record<string, ChatSession>>({})
+  const [currentWorkspaceName, setCurrentWorkspaceName] = useState<string>('')
+  const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
+  const [workspaceChatSessions, setWorkspaceChatSessions] = useState<ChatSession[]>([])
+  const [currentChatId, setCurrentChatId] = useState<string>('')
 
   useEffect(() => {
     const checkUser = async () => {
@@ -38,6 +46,143 @@ export default function DashboardPage() {
 
     checkUser()
   }, [router, supabase])
+
+  // Load chat session for current workspace
+  useEffect(() => {
+    if (!workspaceId) {
+      setMessages([])
+      setCurrentWorkspaceName('')
+      setCurrentWorkspace(null)
+      setWorkspaceChatSessions([])
+      return
+    }
+
+    // Load workspace from localStorage
+    const storedWorkspaces = localStorage.getItem('myWorkspaces')
+    if (storedWorkspaces) {
+      try {
+        const workspaces = JSON.parse(storedWorkspaces)
+        const workspace = workspaces.find((w: any) => w.id === workspaceId)
+        if (workspace) {
+          setCurrentWorkspaceName(workspace.name)
+          setCurrentWorkspace({
+            ...workspace,
+            createdAt: new Date(workspace.createdAt),
+            updatedAt: new Date(workspace.updatedAt)
+          })
+        }
+      } catch (error) {
+        console.error('Error loading workspace:', error)
+      }
+    }
+
+    // Load all chat sessions for this workspace
+    const allSessions: ChatSession[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(`chat_session_${workspaceId}_`)) {
+        try {
+          const session = JSON.parse(localStorage.getItem(key) || '')
+          allSessions.push({
+            ...session,
+            createdAt: new Date(session.createdAt),
+            updatedAt: new Date(session.updatedAt)
+          })
+        } catch (error) {
+          console.error('Error loading session:', error)
+        }
+      }
+    }
+    setWorkspaceChatSessions(allSessions.sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    ))
+
+    // Load or create default chat session for this workspace
+    const sessionKey = `chat_session_${workspaceId}_default`
+    const storedSession = localStorage.getItem(sessionKey)
+
+    if (storedSession) {
+      try {
+        const session: ChatSession = JSON.parse(storedSession)
+        // Convert timestamp strings back to Date objects
+        const messagesWithDates = session.messages.map(msg => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }))
+        setMessages(messagesWithDates)
+        setCurrentChatId(session.id)
+        setChatSessions(prev => ({
+          ...prev,
+          [session.id]: {
+            ...session,
+            messages: messagesWithDates
+          }
+        }))
+      } catch (error) {
+        console.error('Error loading chat session:', error)
+        setMessages([])
+      }
+    } else {
+      // Create new session
+      const newSession: ChatSession = {
+        id: `${workspaceId}_${Date.now()}`,
+        workspaceId,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+      setMessages([])
+      setCurrentChatId(newSession.id)
+      setChatSessions(prev => ({ ...prev, [newSession.id]: newSession }))
+    }
+  }, [workspaceId])
+
+  // Save chat session whenever messages change
+  useEffect(() => {
+    if (workspaceId && currentChatId && messages.length > 0) {
+      const sessionKey = `chat_session_${workspaceId}_${currentChatId.split('_').pop()}`
+      const session: ChatSession = {
+        id: currentChatId,
+        workspaceId,
+        messages,
+        createdAt: chatSessions[currentChatId]?.createdAt || new Date(),
+        updatedAt: new Date()
+      }
+      localStorage.setItem(sessionKey, JSON.stringify(session))
+      setChatSessions(prev => ({ ...prev, [currentChatId]: session }))
+
+      // Update workspace chat sessions list
+      setWorkspaceChatSessions(prev => {
+        const filtered = prev.filter(s => s.id !== currentChatId)
+        return [session, ...filtered].sort((a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        )
+      })
+    }
+  }, [messages, workspaceId, currentChatId])
+
+  const handleChatSelect = (chatId: string) => {
+    const session = chatSessions[chatId]
+    if (session) {
+      setMessages(session.messages)
+      setCurrentChatId(chatId)
+    }
+  }
+
+  const handleNewChat = () => {
+    if (!workspaceId) return
+
+    const newSession: ChatSession = {
+      id: `${workspaceId}_${Date.now()}`,
+      workspaceId,
+      messages: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+    setMessages([])
+    setCurrentChatId(newSession.id)
+    setChatSessions(prev => ({ ...prev, [newSession.id]: newSession }))
+  }
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -100,16 +245,32 @@ export default function DashboardPage() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Sidebar */}
+      {/* Main Sidebar */}
       <Sidebar user={user} onSignOutAction={handleSignOut} />
+
+      {/* Workspace Sidebar */}
+      {workspaceId && currentWorkspace && (
+        <WorkspaceSidebar
+          workspace={currentWorkspace}
+          chatSessions={workspaceChatSessions}
+          currentChatId={currentChatId}
+          onChatSelect={handleChatSelect}
+          onNewChat={handleNewChat}
+        />
+      )}
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Chat Messages */}
-        <ChatContainer messages={messages} />
+        <ChatContainer messages={messages} workspaceName={currentWorkspaceName} />
 
         {/* Chat Input */}
-        <ChatInput onSendMessage={handleSendMessage} disabled={isProcessing} hasMessages={messages.length > 0} />
+        <ChatInput
+          onSendMessage={handleSendMessage}
+          disabled={isProcessing}
+          hasMessages={messages.length > 0}
+          workspaceName={currentWorkspaceName}
+        />
       </div>
     </div>
   )

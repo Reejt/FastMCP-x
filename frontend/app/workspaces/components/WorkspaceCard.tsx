@@ -46,8 +46,9 @@ export default function WorkspaceCard({ workspace }: WorkspaceCardProps) {
   return (
     <div
       onClick={() => router.push(`/dashboard?workspace=${workspace.id}`)}
-      className="group relative bg-white border border-gray-200 rounded-lg p-5 hover:shadow-md hover:border-gray-300 transition-all cursor-pointer"
-    >      <div className="flex items-start justify-between">
+      className="group relative bg-white border border-gray-200 rounded-lg p-6 hover:bg-gray-100 transition-colors cursor-pointer max-w-xs"
+    >
+      <div className="flex items-start justify-between">
         <div className="flex items-start gap-3 flex-1">
           <div className="mt-0.5">
             {getIcon()}
