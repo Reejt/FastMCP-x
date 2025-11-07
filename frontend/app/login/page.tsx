@@ -67,18 +67,45 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900">
-      {/* Left side - Login Card */}
-      <div className="w-1/2 flex items-center justify-center p-12">
+      {/* Left side - Branding and Logo */}
+      <div className="w-1/2 flex flex-col p-12">
+        {/* VARYS AI Branding - Top Left */}
+        <div className="mb-16">
+          <h1 className="text-3xl font-bold text-white tracking-wider">
+            VARYS AI
+          </h1>
+        </div>
+
+        {/* Logo - Centered */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="relative">
+            <Image
+              src="/logo.png"
+              alt="Varys AI Logo"
+              width={600}
+              height={600}
+              className="w-full h-auto opacity-90"
+              priority
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Right side - Welcome and Login Card with Glassy White Background */}
+      <div className="w-1/2 flex items-center justify-center p-12 bg-white/10 backdrop-blur-md">
         <div className="w-full max-w-md">
-          {/* VARYS AI Header */}
-          <div className="mb-12">
-            <h1 className="text-4xl font-bold text-white tracking-wider">
-              VARYS AI
-            </h1>
+          {/* Welcome Title and Subheading */}
+          <div className="mb-8">
+            <h2 className="text-5xl font-bold text-white mb-4">
+              Welcome
+            </h2>
+            <p className="text-xl text-gray-200">
+              Log in with your authorized credentials.
+            </p>
           </div>
 
           {/* Login Card */}
-          <div className="bg-indigo-800/40 backdrop-blur-sm rounded-3xl p-8 shadow-2xl border border-indigo-500/20">
+          <div className="bg-white/20 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/30">
             <form className="space-y-6" onSubmit={handleLogin}>
               <div>
                 <input
@@ -121,20 +148,6 @@ export default function LoginPage() {
               </div>
             </form>
           </div>
-        </div>
-      </div>
-
-      {/* Right side - Logo */}
-      <div className="w-1/2 flex items-center justify-end p-12 relative overflow-hidden">
-        <div className="relative" style={{ marginRight: '-15%' }}>
-          <Image
-            src="/logo.png"
-            alt="Varys AI Logo"
-            width={900}
-            height={900}
-            className="w-full h-auto opacity-90"
-            priority
-          />
         </div>
       </div>
     </div>
