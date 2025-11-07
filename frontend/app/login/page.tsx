@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
@@ -10,8 +10,25 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [typedText, setTypedText] = useState('')
   const router = useRouter()
   const supabase = createClient()
+
+  const textToType = 'Own your AI.'
+
+  useEffect(() => {
+    let currentIndex = 0
+    const typingInterval = setInterval(() => {
+      if (currentIndex <= textToType.length) {
+        setTypedText(textToType.substring(0, currentIndex))
+        currentIndex++
+      } else {
+        clearInterval(typingInterval)
+      }
+    }, 100)
+
+    return () => clearInterval(typingInterval)
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -67,32 +84,36 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900">
-      {/* Left side - Branding and Logo */}
-      <div className="w-1/2 flex flex-col p-12">
-        {/* VARYS AI Branding - Top Left */}
-        <div className="mb-16">
-          <h1 className="text-3xl font-bold text-white tracking-wider">
+      {/* Left side - Branding, Logo, and Text */}
+      <div className="w-3/5 flex flex-col p-12">
+        {/* VARYS AI Branding and Logo - Top Left */}
+        <div className="flex items-center gap-3 mb-16 ml-16">
+          <Image
+            src="/logo.png"
+            alt="Varys AI Logo"
+            width={40}
+            height={40}
+            className="opacity-90"
+            priority
+          />
+          <h1 className="text-2xl font-bold text-white tracking-wider">
             VARYS AI
           </h1>
         </div>
 
-        {/* Logo - Centered */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className="relative">
-            <Image
-              src="/logo.png"
-              alt="Varys AI Logo"
-              width={600}
-              height={600}
-              className="w-full h-auto opacity-90"
-              priority
-            />
+        {/* Large Text - Left Aligned */}
+        <div className="flex-1 flex flex-col justify-center ml-16 -mt-20">
+          <h2 className="text-5xl font-bold text-white mb-6">
+            Your AI, on your terms.
+          </h2>
+          <div className="text-5xl font-bold text-white">
+            {typedText}<span className="animate-pulse">|</span>
           </div>
         </div>
       </div>
 
-      {/* Right side - Welcome and Login Card with Glassy White Background */}
-      <div className="w-1/2 flex items-center justify-center p-12 bg-white/10 backdrop-blur-md">
+      {/* Right side - Welcome and Login Card with Opaque Background */}
+      <div className="w-2/5 flex items-center justify-center p-12 bg-gray-900">
         <div className="w-full max-w-md">
           {/* Welcome Title and Subheading */}
           <div className="mb-8">

@@ -6,19 +6,21 @@ import { AnimatePresence, motion } from 'framer-motion'
 interface CreateWorkspaceModalProps {
   isOpen: boolean
   onCloseAction: () => void
+  onCreateAction: (name: string, instructions: string) => void
 }
 
-export default function CreateWorkspaceModal({ isOpen, onCloseAction }: CreateWorkspaceModalProps) {
+export default function CreateWorkspaceModal({ isOpen, onCloseAction, onCreateAction }: CreateWorkspaceModalProps) {
   const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  const [instructions, setInstructions] = useState('')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Implement workspace creation logic
-    console.log('Creating workspace:', { name, description })
+    // Use "New Project" as default if name is empty
+    const projectName = name.trim() || 'New Project'
+    onCreateAction(projectName, instructions)
     // Reset form and close modal
     setName('')
-    setDescription('')
+    setInstructions('')
     onCloseAction()
   }
 
@@ -43,9 +45,23 @@ export default function CreateWorkspaceModal({ isOpen, onCloseAction }: CreateWo
             transition={{ duration: 0.2 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
           >
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">Create New Workspace</h2>
+            <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Project name"
+                    className="text-lg font-normal text-gray-900 placeholder-gray-400 bg-transparent border-none focus:outline-none focus:ring-0 px-0"
+                  />
+                </div>
                 <button
                   onClick={onCloseAction}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -56,52 +72,32 @@ export default function CreateWorkspaceModal({ isOpen, onCloseAction }: CreateWo
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit}>
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="workspace-name" className="block text-sm font-medium text-gray-700 mb-1">
-                      Workspace Name *
-                    </label>
-                    <input
-                      id="workspace-name"
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="My Awesome Workspace"
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="workspace-description" className="block text-sm font-medium text-gray-700 mb-1">
-                      Description (optional)
-                    </label>
-                    <textarea
-                      id="workspace-description"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder="What is this workspace for?"
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                    />
-                  </div>
+              {/* Form */}
+              <form onSubmit={handleSubmit} className="p-6">
+                <div className="mb-6">
+                  <h3 className="text-base font-semibold text-gray-900 mb-3">Project Instructions</h3>
+                  <textarea
+                    value={instructions}
+                    onChange={(e) => setInstructions(e.target.value)}
+                    placeholder="Add instructions about the tone, style, and persona you want Grok to adopt."
+                    rows={8}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-transparent resize-none text-sm text-gray-600 placeholder-gray-400"
+                  />
                 </div>
 
-                <div className="flex gap-3 mt-6">
+                <div className="flex justify-end gap-3">
                   <button
                     type="button"
                     onClick={onCloseAction}
-                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="px-6 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!name.trim()}
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-gray-800 rounded-lg hover:bg-gray-900 transition-colors"
                   >
-                    Create
+                    Next
                   </button>
                 </div>
               </form>

@@ -15,6 +15,9 @@ export default function WorkspacesPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'my' | 'shared' | 'examples'>('my')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [myWorkspaces, setMyWorkspaces] = useState<Workspace[]>([])
+  const [sharedWorkspaces, setSharedWorkspaces] = useState<Workspace[]>([])
+  const [exampleWorkspaces, setExampleWorkspaces] = useState<Workspace[]>([])
 
   useEffect(() => {
     const checkUser = async () => {
@@ -39,53 +42,47 @@ export default function WorkspacesPage() {
     checkUser()
   }, [router, supabase])
 
+  // Load workspaces from localStorage on mount
+  useEffect(() => {
+    const storedWorkspaces = localStorage.getItem('myWorkspaces')
+    if (storedWorkspaces) {
+      try {
+        const workspaces = JSON.parse(storedWorkspaces)
+        setMyWorkspaces(workspaces.map((w: any) => ({
+          ...w,
+          createdAt: new Date(w.createdAt),
+          updatedAt: new Date(w.updatedAt)
+        })))
+      } catch (error) {
+        console.error('Error loading workspaces:', error)
+      }
+    }
+  }, [])
+
+  // Save workspaces to localStorage whenever they change
+  useEffect(() => {
+    if (myWorkspaces.length > 0) {
+      localStorage.setItem('myWorkspaces', JSON.stringify(myWorkspaces))
+    }
+  }, [myWorkspaces])
+
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
   }
 
-  // Mock data - replace with real data from API
-  const myWorkspaces: Workspace[] = [
-    {
-      id: '1',
-      name: 'New Project',
-      description: 'My first workspace',
-      createdAt: new Date('2024-11-01'),
-      updatedAt: new Date('2024-11-02'),
-    },
-    {
-      id: '2',
-      name: 'New Project (clone)',
-      description: 'Cloned workspace',
-      createdAt: new Date('2024-10-28'),
-      updatedAt: new Date('2024-10-30'),
-    },
-    {
-      id: '3',
-      name: 'New Project',
-      description: 'Another workspace',
-      createdAt: new Date('2024-10-25'),
-      updatedAt: new Date('2024-10-26'),
-    },
-    {
-      id: '4',
-      name: 'New Project',
-      description: 'Test workspace',
-      createdAt: new Date('2024-10-20'),
-      updatedAt: new Date('2024-10-21'),
-    },
-    {
-      id: '5',
-      name: 'New Project',
-      description: 'Demo workspace',
-      createdAt: new Date('2024-10-15'),
-      updatedAt: new Date('2024-10-16'),
-    },
-  ]
+  const handleCreateWorkspace = (name: string, instructions: string) => {
+    const newWorkspace: Workspace = {
+      id: Date.now().toString(),
+      name: name,
+      description: instructions,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
 
-  const sharedWorkspaces: Workspace[] = []
-  const exampleWorkspaces: Workspace[] = []
+    setMyWorkspaces([...myWorkspaces, newWorkspace])
+  }
 
   const getWorkspaces = () => {
     switch (activeTab) {
@@ -122,57 +119,38 @@ export default function WorkspacesPage() {
       {/* Main Workspaces Area */}
       <div className="flex-1 overflow-auto">
         <div className="min-h-screen bg-white">
-          {/* Header */}
-          <div className="border-b border-gray-200">
-            <div className="max-w-7xl mx-auto px-6 py-6">
-              <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-semibold text-gray-900">Workspaces</h1>
-                <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Create workspace
-                </button>
-              </div>
+          {/* Header - Centered Container */}
+          <div className="max-w-5xl mx-auto px-12 py-8">
+            <div className="flex items-center justify-between mb-8">
+              <h1 className="text-2xl font-semibold text-gray-900">Workspaces</h1>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create Workspace
+              </button>
+            </div>
 
-              {/* Tabs */}
-              <div className="flex gap-6 mt-6">
-                <button
-                  onClick={() => setActiveTab('my')}
-                  className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'my'
-                      ? 'border-gray-900 text-gray-900'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                >
-                  My Workspaces
-                </button>
-                <button
-                  onClick={() => setActiveTab('shared')}
-                  className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'shared'
-                      ? 'border-gray-900 text-gray-900'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                >
-                  Shared with me
-                </button>
-                <button
-                  onClick={() => setActiveTab('examples')}
-                  className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'examples'
-                      ? 'border-gray-900 text-gray-900'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                >
-                  Examples
-                </button>
+            {/* Search Bar */}
+            <div className="mb-8">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search for workspace"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-400 text-sm text-gray-500"
+                />
               </div>
             </div>
           </div>
 
-          {/* Workspace Grid */}
-          <div className="max-w-7xl mx-auto px-6 py-8">
+          {/* Workspace Grid - Centered Container */}
+          <div className="max-w-5xl mx-auto px-12 pb-8">
             {workspaces.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-gray-400 mb-4">
@@ -180,30 +158,20 @@ export default function WorkspacesPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
                 </div>
-                <p className="text-gray-600 text-lg mb-2">
-                  {activeTab === 'my' && 'No workspaces yet'}
-                  {activeTab === 'shared' && 'No workspaces shared with you'}
-                  {activeTab === 'examples' && 'No example workspaces available'}
-                </p>
-                <p className="text-gray-500 text-sm mb-6">
-                  {activeTab === 'my' && 'Create your first workspace to get started'}
-                  {activeTab === 'shared' && 'Workspaces shared by others will appear here'}
-                  {activeTab === 'examples' && 'Example workspaces will be available soon'}
-                </p>
-                {activeTab === 'my' && (
-                  <button
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Create workspace
-                  </button>
-                )}
+                <p className="text-gray-600 text-lg mb-2">No workspaces yet</p>
+                <p className="text-gray-500 text-sm mb-6">Create your first workspace to get started</p>
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create Workspace
+                </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {workspaces.map((workspace) => (
                   <WorkspaceCard key={workspace.id} workspace={workspace} />
                 ))}
@@ -215,6 +183,7 @@ export default function WorkspacesPage() {
           <CreateWorkspaceModal
             isOpen={isCreateModalOpen}
             onCloseAction={() => setIsCreateModalOpen(false)}
+            onCreateAction={handleCreateWorkspace}
           />
         </div>
       </div>
