@@ -1,14 +1,26 @@
+# Core FastMCP Framework
 fastmcp
+fastapi
+uvicorn
+
+# Data Processing
 pandas
+numpy
+openpyxl
+pandasql
+
+# Document Parsing
 python-docx
 python-pptx
 pypdf
-fastapi
-uv
+
+# Semantic Search and ML
 sentence-transformers
 scikit-learn
-numpy
+
+# Web Scraping and HTTP
 requests
 beautifulsoup4
-openpyxl
-pandasql
+
+# Windows COM Automation (optional, for .ppt files on Windows)
+# pywin32
