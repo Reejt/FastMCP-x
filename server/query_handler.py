@@ -198,8 +198,9 @@ DOCUMENT CONTENT:
     
     # Format the response with source attribution
     if include_context_preview and semantic_results:
-        _, _, filename = semantic_results[0]
-        return f"{llm_response}\n\n---\n**Source:** {filename}"
+        sources = list(set(filename for _, _, filename in semantic_results))
+        source_text = ", ".join(sources)
+        return f"{llm_response}\n\n---\n**Sources:** {source_text}"
     
     return llm_response 
        

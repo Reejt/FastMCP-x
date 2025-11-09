@@ -20,22 +20,6 @@ export async function POST(request: NextRequest) {
     let requestBody: any = { query };
 
     switch (action) {
-      case 'semantic_search':
-        endpoint = '/api/semantic-search';
-        requestBody = { query, top_k: body.top_k || 5 };
-        break;
-      case 'query_context':
-        endpoint = '/api/query-context';
-        requestBody = {
-          query,
-          max_chunks: body.max_chunks || 3,
-          include_context_preview: body.include_context_preview !== false
-        };
-        break;
-      case 'web_search':
-        endpoint = '/api/web-search';
-        requestBody = { query };
-        break;
       case 'query_excel':
         endpoint = '/api/query-excel';
         requestBody = {
@@ -43,10 +27,6 @@ export async function POST(request: NextRequest) {
           query,
           sheet_name: body.sheet_name
         };
-        break;
-      case 'ingest':
-        endpoint = '/api/ingest';
-        requestBody = { file_path: body.file_path };
         break;
       default:
         endpoint = '/api/query';

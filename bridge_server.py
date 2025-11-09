@@ -10,6 +10,8 @@ from typing import Optional
 import uvicorn
 import sys
 import os
+import base64
+import tempfile
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -49,7 +51,10 @@ class QueryRequest(BaseModel):
     include_context_preview: Optional[bool] = True
 
 class IngestRequest(BaseModel):
-    file_path: str
+    file_name: str
+    file_content: str  # base64 encoded
+    file_type: str
+    file_size: int
 
 class ExcelQueryRequest(BaseModel):
     file_path: str
@@ -113,14 +118,31 @@ async def ingest_endpoint(request: IngestRequest):
     Ingest a document into the system via MCP
     """
     try:
-        # Call fast_mcp_client function (handles MCP connection internally)
-        response = await mcp_ingest_file(request.file_path)
-            
-        return {
-            "success": True,
-            "message": response,
-            "file_path": request.file_path
-        }
+        # Check file size limit
+        max_size = 50 * 1024 * 1024  # 50MB
+        if request.file_size > max_size:
+            raise HTTPException(status_code=400, detail="File size too large (max 50MB)")
+        
+        # Decode base64 content
+        file_content = base64.b64decode(request.file_content)
+        
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{request.file_name}") as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Call fast_mcp_client function (handles MCP connection internally)
+            response = await mcp_ingest_file(temp_file_path)
+                
+            return {
+                "success": True,
+                "message": response,
+                "file_name": request.file_name
+            }
+        finally:
+            # Clean up temporary file
+            os.unlink(temp_file_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
 
