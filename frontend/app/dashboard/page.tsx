@@ -205,13 +205,25 @@ export default function DashboardPage() {
     setIsProcessing(true)
 
     try {
-      // TODO: Replace with actual API call to your FastMCP backend
-      // For now, simulate a response
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      // Call Next.js API route
+      const response = await fetch('/api/chat/query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: content }),
+      })
 
+      if (!response.ok) {
+        throw new Error(`API error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      // Use the actual AI response from the backend
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `I received your message: "${content}"\n\nThis is a placeholder response. Once you connect this to your FastMCP backend at http://localhost:8000, I'll be able to answer queries using your ingested documents and configured LLMs.`,
+        content: data.response,
         role: 'assistant',
         timestamp: new Date()
       }

@@ -14,6 +14,22 @@ A full-stack MCP (Model Context Protocol) application that ingests documents, an
 
 ## Architecture
 
+```
+Next.js Frontend (Port 3000)
+         ↓ HTTP REST API
+Bridge Server (Port 3001)
+         ↓ MCP Protocol
+FastMCP Server (Port 8000)
+         ↓
+Ollama LLM + Documents
+```
+
+### Bridge Server (FastAPI)
+- **Purpose**: Connects Next.js frontend to FastMCP backend using Python MCP client
+- **Protocol**: Direct MCP communication instead of HTTP
+- **Benefits**: Better error handling, connection pooling, type safety
+- **Port**: 3001 (localhost only)
+
 ### Backend (FastMCP Server)
 - **FastMCP Protocol**: Model Context Protocol implementation
 - **Document Processing**: Automatic text extraction and storage
@@ -65,8 +81,9 @@ FastMCP-x/
 │   ├── query_handler.py            # Semantic search and LLM querying
 │   ├── excel_csv.py                # Excel/CSV query engines
 │   └── web_search_file.py          # Tavily web search integration
+├── bridge_server.py                 # FastAPI bridge (MCP client)
 ├── client/
-│   └── fast_mcp_client.py          # CLI client for MCP server
+│   └── fast_mcp_client.py          # Python MCP client functions
 ├── frontend/                        # Next.js web application
 │   ├── app/
 │   │   ├── dashboard/              # Main dashboard page
@@ -102,12 +119,30 @@ FastMCP-x/
 2. Install and start Ollama:
    ```bash
    # Install Ollama from https://ollama.ai
+   ollama serve
    ollama pull llama3.2:3b
    ```
 
-3. Start the MCP server:
+3. Start all servers (Recommended):
+   ```powershell
+   .\start_servers.ps1
+   ```
+   
+   This automatically starts:
+   - FastMCP Server (port 8000)
+   - Bridge Server (port 3001)
+   - Next.js Frontend (port 3000)
+
+   **OR** start manually in separate terminals:
+   
+   **Terminal 1 - FastMCP Server:**
    ```bash
    python server/main.py
+   ```
+   
+   **Terminal 2 - Bridge Server:**
+   ```bash
+   python bridge_server.py
    ```
 
 ### Frontend Setup
@@ -123,6 +158,7 @@ FastMCP-x/
    # Add your Supabase credentials:
    NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+   NEXT_PUBLIC_BRIDGE_SERVER_URL=http://localhost:3001
    ```
    
    **⚠️ Important**: Never commit `.env.local` to git!
@@ -217,16 +253,35 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 ### Running the Full Stack
 
-**Terminal 1 - Backend**:
-```bash
-# Ensure Ollama is running
-ollama serve
+#### Option A: Automated Startup (Recommended)
+```powershell
+.\start_servers.ps1
+```
 
-# Start FastMCP server
+This script will:
+1. Check if Ollama is running
+2. Start FastMCP Server (port 8000)
+3. Start Bridge Server (port 3001)
+4. Start Next.js Frontend (port 3000)
+
+#### Option B: Manual Startup
+
+**Terminal 1 - Ollama**:
+```bash
+ollama serve
+```
+
+**Terminal 2 - FastMCP Server**:
+```bash
 python server/main.py
 ```
 
-**Terminal 2 - Frontend**:
+**Terminal 3 - Bridge Server**:
+```bash
+python bridge_server.py
+```
+
+**Terminal 4 - Frontend**:
 ```bash
 cd frontend
 npm run dev
@@ -415,6 +470,7 @@ const handleSend = (content: string) => {
 
 ### Setup & Configuration
 - **SETUP.md** - Detailed setup guide for new developers
+- **BRIDGE_SERVER.md** - Bridge server architecture and API reference
 - **SUPABASE_CONFIG.md** - Authentication configuration reference
 - **QUICK_FIX.md** - Quick troubleshooting for magic link login issues
 
@@ -423,6 +479,9 @@ const handleSend = (content: string) => {
 - **SIDEBAR_IMPLEMENTATION_SUMMARY.md** - Sidebar implementation details
 - **.github/copilot-instructions.md** - AI coding assistant guidelines
 - **.github/instructions/github_instructions.instructions.md** - Git workflow
+
+### Testing
+- **test_bridge.py** - Bridge server integration tests
 
 ## Contributing
 

@@ -192,7 +192,8 @@ if __name__ == "__main__":
     if documents:
         for doc in documents:
             print(f"  - {doc['filename']} ({len(doc['content'])} characters)")
-    print("Starting FastMCP server...")
-    mcp.run()
+    print("Starting FastMCP server in HTTP mode on port 8000...")
+    # Run FastMCP server using SSE transport
+    mcp.run(transport="sse")
 
 
