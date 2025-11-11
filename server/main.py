@@ -24,9 +24,19 @@ def ingest_file_tool(file_path: str) -> str:
         return error_msg
 
 @mcp.tool
-def answer_query_tool(query: str) -> str:
+def answer_query_tool(query: str, conversation_history: str = "[]") -> str:
+    """
+    Answer queries with conversation history support
+    
+    Args:
+        query: The current user query
+        conversation_history: JSON string of previous messages (default: "[]")
+    """
     try:
-        result = answer_query(query)
+        import json
+        # Parse conversation history from JSON string
+        history = json.loads(conversation_history) if conversation_history else []
+        result = answer_query(query, conversation_history=history)
         print(f"Query result: {result}")
         return result
     except Exception as e:
@@ -53,8 +63,19 @@ def semantic_search_tool(query: str, top_k: int = 5) -> str:
     return "\n".join(response_parts)
 
 @mcp.tool
-def query_with_context_tool(query: str, max_chunks: int = 3, include_context_preview: bool = True) -> str:
-    return query_with_context(query, max_chunks, include_context_preview)
+def query_with_context_tool(query: str, max_chunks: int = 3, include_context_preview: bool = True, conversation_history: str = "[]") -> str:
+    """
+    Query with document context and conversation history
+    
+    Args:
+        query: The current user query
+        max_chunks: Maximum number of document chunks to include
+        include_context_preview: Whether to show source documents
+        conversation_history: JSON string of previous messages (default: "[]")
+    """
+    import json
+    history = json.loads(conversation_history) if conversation_history else []
+    return query_with_context(query, max_chunks, include_context_preview, conversation_history=history)
 
 @mcp.tool
 def query_excel_with_llm_tool(file_path: str, query: str, sheet_name: str = None) -> str:

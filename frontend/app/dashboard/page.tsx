@@ -205,13 +205,22 @@ export default function DashboardPage() {
     setIsProcessing(true)
 
     try {
-      // Call Next.js API route
+      // Prepare conversation history from existing messages (limit to last 10 messages for context)
+      const conversation_history = messages.slice(-10).map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }))
+
+      // Call Next.js API route with conversation history
       const response = await fetch('/api/chat/query', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query: content }),
+        body: JSON.stringify({ 
+          query: content,
+          conversation_history 
+        }),
       })
 
       if (!response.ok) {

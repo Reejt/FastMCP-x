@@ -24,12 +24,27 @@ async def query_with_context(query: str, max_chunks: int = 3, include_context_pr
         })
         return result.data
 
-async def answer_query(query: str):
-    """Answer a query using semantic search and LLM with document context"""
+async def answer_query(query: str, conversation_history: list = None):
+    """
+    Answer a query using semantic search and LLM with document context
+    
+    Args:
+        query: The current user query
+        conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
+    """
+    import json
+    
     async with Client(FASTMCP_SERVER_URL) as client:
-        result = await client.call_tool("answer_query_tool", {
-            "query": query
-        })
+        # Prepare tool parameters
+        tool_params = {"query": query}
+        
+        # Add conversation history if provided
+        if conversation_history:
+            tool_params["conversation_history"] = json.dumps(conversation_history)
+        else:
+            tool_params["conversation_history"] = "[]"
+        
+        result = await client.call_tool("answer_query_tool", tool_params)
         
         # Extract response from MCP result
         if hasattr(result, 'content') and result.content:

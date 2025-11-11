@@ -49,6 +49,7 @@ class QueryRequest(BaseModel):
     query: str
     max_chunks: Optional[int] = 3
     include_context_preview: Optional[bool] = True
+    conversation_history: Optional[list] = []
 
 class IngestRequest(BaseModel):
     file_name: str
@@ -92,12 +93,15 @@ async def root():
 async def query_endpoint(request: QueryRequest):
     """
     Main query endpoint - answers questions using document context via MCP
+    Supports conversation history for contextual follow-up questions
     """
     try:
         print(f"📥 Received query: {request.query}")
+        if request.conversation_history:
+            print(f"📜 With conversation history: {len(request.conversation_history)} messages")
         
         # Call fast_mcp_client function (handles MCP connection internally)
-        response = await mcp_answer_query(request.query)
+        response = await mcp_answer_query(request.query, request.conversation_history)
         print(f"✅ Query successful, response length: {len(str(response))}")
             
         return {

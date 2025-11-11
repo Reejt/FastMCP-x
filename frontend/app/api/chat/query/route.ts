@@ -6,7 +6,7 @@ const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://localhost:300
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, action = 'query' } = body;
+    const { query, action = 'query', conversation_history = [] } = body;
 
     if (!query) {
       return NextResponse.json(
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     // Determine which endpoint to call based on action
     let endpoint = '/api/query';
-    let requestBody: any = { query };
+    let requestBody: any = { query, conversation_history };
 
     switch (action) {
       case 'query_excel':
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
         break;
       default:
         endpoint = '/api/query';
-        requestBody = { query };
+        requestBody = { query, conversation_history };
     }
 
     // Call the bridge server with timeout for long LLM operations
