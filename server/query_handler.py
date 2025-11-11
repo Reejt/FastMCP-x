@@ -2,20 +2,32 @@
 # Handles query answering from documents and general model
 import numpy as np
 import requests
-from typing import List, Tuple
+import pickle
+import os
+from typing import List, Tuple, Dict, Any
 from server.document_ingestion import documents
 
 # Try to import semantic search dependencies
 try:
     from sklearn.metrics.pairwise import cosine_similarity
     from sentence_transformers import SentenceTransformer
+    try:
+        import torch
+        TORCH_AVAILABLE = True
+    except Exception:
+        TORCH_AVAILABLE = False
     SEMANTIC_SEARCH_AVAILABLE = True
 except ImportError:
     print("Warning: Semantic search dependencies not available. Install sentence-transformers and scikit-learn for enhanced search.")
     SEMANTIC_SEARCH_AVAILABLE = False
 
-# Global semantic search model - loaded once and reused
+# Global variables for precomputed embeddings
 _semantic_model = None
+_document_embeddings = None  # Will store numpy array of embeddings
+_chunk_texts = []  # List of chunk texts
+_chunk_metadata = []  # List of corresponding filenames
+_embeddings_file = os.path.join(os.path.dirname(__file__), '..', 'storage', 'embeddings.pkl')
+
 
 def get_semantic_model():
     """Lazy load the semantic model to avoid startup delays"""
@@ -25,12 +37,177 @@ def get_semantic_model():
         
     if _semantic_model is None:
         try:
-            # Use a lightweight but effective model
-            _semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
+            # Choose device: GPU if available and torch is present
+            device = 'cuda' if (TORCH_AVAILABLE and torch.cuda.is_available()) else 'cpu'
+            print(f"Loading SentenceTransformer on device: {device}")
+            _semantic_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
         except Exception as e:
             print(f"Warning: Could not load semantic model: {e}")
             _semantic_model = False  # Mark as failed to avoid retrying
     return _semantic_model if _semantic_model is not False else None
+
+
+def save_embeddings():
+    """Save precomputed embeddings to file"""
+    global _document_embeddings, _chunk_texts, _chunk_metadata
+    if _document_embeddings is None:
+        return
+    
+    try:
+        # Ensure storage directory exists
+        storage_dir = os.path.dirname(_embeddings_file)
+        if not os.path.exists(storage_dir):
+            os.makedirs(storage_dir)
+        
+        data = {
+            'embeddings': _document_embeddings,
+            'chunk_texts': _chunk_texts,
+            'chunk_metadata': _chunk_metadata
+        }
+        with open(_embeddings_file, 'wb') as f:
+            pickle.dump(data, f)
+        print(f"Saved embeddings for {_document_embeddings.shape[0]} chunks to {_embeddings_file}")
+    except Exception as e:
+        print(f"Error saving embeddings: {e}")
+
+
+def load_embeddings():
+    """Load precomputed embeddings from file"""
+    global _document_embeddings, _chunk_texts, _chunk_metadata
+    if not os.path.exists(_embeddings_file):
+        return False
+    
+    try:
+        with open(_embeddings_file, 'rb') as f:
+            data = pickle.load(f)
+        _document_embeddings = data['embeddings']
+        _chunk_texts = data['chunk_texts']
+        _chunk_metadata = data['chunk_metadata']
+        print(f"Loaded embeddings for {len(_chunk_texts)} chunks from {_embeddings_file}")
+        return True
+    except Exception as e:
+        print(f"Error loading embeddings: {e}")
+        return False
+
+
+def build_embeddings():
+    """Build embeddings for all documents and cache them"""
+    global _document_embeddings, _chunk_texts, _chunk_metadata
+    
+    if not SEMANTIC_SEARCH_AVAILABLE or not documents:
+        return
+    
+    model = get_semantic_model()
+    if not model:
+        return
+    
+    try:
+        print("Building document embeddings...")
+        
+        # Prepare document chunks with metadata
+        all_chunks = []
+        chunk_metadata = []
+        
+        for doc in documents:
+            # Handle both dict and string document formats
+            if isinstance(doc, dict):
+                content = doc["content"]
+                filename = doc.get("filename", "unknown")
+            else:
+                content = doc
+                filename = "legacy_document"
+                
+            for chunk in chunk_text(content):
+                if chunk.strip():
+                    all_chunks.append(chunk.strip())
+                    chunk_metadata.append(filename)
+        
+        if not all_chunks:
+            return
+        
+        # Encode all chunks
+        _document_embeddings = model.encode(all_chunks)
+        _chunk_texts = all_chunks
+        _chunk_metadata = chunk_metadata
+        
+        print(f"Built embeddings for {len(all_chunks)} chunks")
+        
+        # Save to file for persistence
+        save_embeddings()
+        
+    except Exception as e:
+        print(f"Error building embeddings: {e}")
+        _document_embeddings = None
+        _chunk_texts = []
+        _chunk_metadata = []
+
+
+def update_embeddings():
+    """Update embeddings incrementally when new documents are added"""
+    global _document_embeddings, _chunk_texts, _chunk_metadata
+    
+    if not SEMANTIC_SEARCH_AVAILABLE or not documents:
+        return
+    
+    model = get_semantic_model()
+    if not model:
+        return
+    
+    try:
+        # Get existing filenames in embeddings
+        existing_files = set(_chunk_metadata) if _chunk_metadata else set()
+        
+        # Find new documents that need embeddings
+        new_chunks = []
+        new_metadata = []
+        
+        for doc in documents:
+            if isinstance(doc, dict):
+                filename = doc.get("filename", "unknown")
+                content = doc["content"]
+            else:
+                filename = "legacy_document"
+                content = doc
+            
+            # Only process if this file is not already in embeddings
+            if filename not in existing_files:
+                for chunk in chunk_text(content):
+                    if chunk.strip():
+                        new_chunks.append(chunk.strip())
+                        new_metadata.append(filename)
+        
+        if not new_chunks:
+            print("No new documents to embed.")
+            return
+        
+        print(f"Embedding {len(new_chunks)} new chunks from new documents...")
+        
+        # Encode new chunks
+        new_embeddings = model.encode(new_chunks)
+        
+        # Append to existing embeddings
+        if _document_embeddings is not None and len(_document_embeddings) > 0:
+            _document_embeddings = np.vstack([_document_embeddings, new_embeddings])
+            _chunk_texts.extend(new_chunks)
+            _chunk_metadata.extend(new_metadata)
+            print(f"Appended {len(new_chunks)} chunks. Total: {len(_chunk_texts)} chunks")
+        else:
+            # First time - just set the embeddings
+            _document_embeddings = new_embeddings
+            _chunk_texts = new_chunks
+            _chunk_metadata = new_metadata
+            print(f"Created embeddings for {len(new_chunks)} chunks")
+        
+        # Save updated embeddings to disk
+        save_embeddings()
+        
+    except Exception as e:
+        print(f"Error updating embeddings: {e}")
+        # Fallback to rebuild if incremental update fails
+        print("Falling back to full rebuild...")
+        _document_embeddings = None
+        build_embeddings()
+
 
 def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50) -> List[str]:
     """Split text into overlapping chunks for better semantic search"""
@@ -61,7 +238,7 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50) -> List[str]
 
 def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) -> List[Tuple[str, float, str]]:
     """
-    Perform semantic search on ingested documents
+    Perform semantic search on ingested documents using precomputed embeddings
     Returns list of (content, similarity_score, filename) tuples
     """
     if not SEMANTIC_SEARCH_AVAILABLE:
@@ -71,37 +248,28 @@ def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) ->
     if not model or not documents:
         return []
     
-    try:
-        # Prepare document chunks with metadata
-        all_chunks = []
-        chunk_metadata = []
+    # Build embeddings if not already done
+    if _document_embeddings is None:
+        # Try to load from file first
+        if not load_embeddings():
+            # Build from scratch if no saved embeddings
+            build_embeddings()
         
-        for doc in documents:
-            # Handle both dict and string document formats
-            if isinstance(doc, dict):
-                content = doc["content"]
-                filename = doc.get("filename", "unknown")
-            else:
-                content = doc
-                filename = "legacy_document"
-                
-            for chunk in chunk_text(content):
-                if chunk.strip():
-                    all_chunks.append(chunk.strip())
-                    chunk_metadata.append(filename)
-        
-        if not all_chunks:
+        # If still no embeddings, return empty
+        if _document_embeddings is None:
             return []
-        
-        # Encode and calculate similarities
+    
+    try:
+        # Encode query
         query_embedding = model.encode([query])
-        chunk_embeddings = model.encode(all_chunks)
-        similarities = cosine_similarity(query_embedding, chunk_embeddings)[0]
+        
+        # Calculate similarities with precomputed embeddings
+        similarities = cosine_similarity(query_embedding, _document_embeddings)[0]
         
         # Get top k results above threshold
         top_indices = np.argsort(similarities)[::-1][:top_k]
         results = [
-            (all_chunks[idx], float(similarities[idx]), chunk_metadata[idx])
+            (_chunk_texts[idx], float(similarities[idx]), _chunk_metadata[idx])
             for idx in top_indices
             if similarities[idx] > min_similarity
         ]
@@ -177,7 +345,7 @@ def query_with_context(query: str, max_chunks: int = 2, include_context_preview:
     best_score = semantic_results[0][1]
     
     # If similarity is too low, treat as general query without document context
-    if best_score < 0.3:
+    if best_score < 0.4:
         return query_model(query)
     
     # Build context from search results (max 2000 chars per chunk)
@@ -197,7 +365,7 @@ DOCUMENT CONTENT:
     llm_response = query_model(enhanced_query)
     
     # Format the response with source attribution
-    if include_context_preview and semantic_results:
+    if include_context_preview and semantic_results and best_score >= 0.4:
         sources = list(set(filename for _, _, filename in semantic_results))
         source_text = ", ".join(sources)
         return f"{llm_response}\n\n---\n**Sources:** {source_text}"

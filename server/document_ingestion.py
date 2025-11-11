@@ -4,11 +4,33 @@ import os
 import shutil
 from utils.file_parser import extract_text_from_file
 
-
-
-
 # Store documents with metadata for better semantic search
 documents = []  # List of {"content": str, "filename": str, "filepath": str}
+
+# Import will be done after query_handler is fully loaded to avoid circular import
+def _import_build_embeddings():
+    """Lazy import to avoid circular dependency"""
+    try:
+        from server.query_handler import build_embeddings
+        return build_embeddings
+    except ImportError:
+        return None
+
+def _import_load_embeddings():
+    """Lazy import to avoid circular dependency"""
+    try:
+        from server.query_handler import load_embeddings
+        return load_embeddings
+    except ImportError:
+        return None
+
+def _import_update_embeddings():
+    """Lazy import to avoid circular dependency"""
+    try:
+        from server.query_handler import update_embeddings
+        return update_embeddings
+    except ImportError:
+        return None
 
 def load_existing_documents():
     """Load existing documents from storage directory on startup"""
@@ -35,6 +57,19 @@ def load_existing_documents():
                 print(f"Error loading existing document {filename}: {str(e)}")
     
     print(f"Documents loaded: {loaded_count}")
+    
+    # Load or build embeddings for loaded documents
+    if loaded_count > 0:
+        # Try to load precomputed embeddings first
+        load_embeddings_func = _import_load_embeddings()
+        if load_embeddings_func and load_embeddings_func():
+            print("Loaded precomputed embeddings from disk.")
+        else:
+            # Build embeddings if loading failed
+            print("No precomputed embeddings found. Building embeddings...")
+            build_embeddings_func = _import_build_embeddings()
+            if build_embeddings_func:
+                build_embeddings_func()
 
  
 def ingest_file(file_path: str):
@@ -78,6 +113,12 @@ def ingest_file(file_path: str):
         
         result_msg = f"Successfully ingested file '{filename}'. Extracted {len(content)} characters. Total documents: {len(documents)}"
         print(result_msg)
+        
+        # Update embeddings after adding new document
+        update_embeddings_func = _import_update_embeddings()
+        if update_embeddings_func:
+            update_embeddings_func()
+        
         return result_msg
         
     except Exception as e:
