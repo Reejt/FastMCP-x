@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 
 // Server-side env variable (no NEXT_PUBLIC_ prefix needed in API routes)
 const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001';
 
 export async function POST(request: NextRequest) {
   try {
+    // Get authenticated user
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -70,9 +82,58 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
+
+    // Upload file to Supabase Storage
+    const fileBuffer = await file.arrayBuffer();
+    const fileName = `${user.id}/${Date.now()}_${file.name}`;
+
+    const { data: storageData, error: storageError } = await supabase.storage
+      .from('vault-files')
+      .upload(fileName, fileBuffer, {
+        contentType: file.type,
+        upsert: false
+      });
+
+    if (storageError) {
+      console.error('Supabase storage error:', storageError);
+      return NextResponse.json(
+        { error: 'Failed to store file in vault', details: storageError.message },
+        { status: 500 }
+      );
+    }
+
+    // Insert document metadata into vault_documents table
+    const { data: dbData, error: dbError } = await supabase
+      .from('vault_documents')
+      .insert({
+        user_id: user.id,
+        file_name: file.name,
+        file_path: storageData.path,
+        file_size: file.size,
+        file_type: file.type,
+        metadata: {
+          original_name: file.name,
+          processed: true,
+          bridge_server_response: data
+        }
+      })
+      .select()
+      .single();
+
+    if (dbError) {
+      console.error('Database insert error:', dbError);
+      // Try to clean up the uploaded file
+      await supabase.storage.from('vault-files').remove([fileName]);
+      return NextResponse.json(
+        { error: 'Failed to save document metadata', details: dbError.message },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       message: 'File uploaded and processed successfully',
+      document: dbData,
       file_name: file.name,
       file_size: file.size,
       ...data
@@ -100,19 +161,39 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Optional: Add GET method to list uploaded files
+// GET method to list uploaded files from Supabase
 export async function GET() {
   try {
-    const response = await fetch(`${BRIDGE_SERVER_URL}/api/list-files`, {
-      signal: AbortSignal.timeout(10000),
-    });
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch file list');
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    // Fetch user's documents from vault_documents table
+    const { data: documents, error: dbError } = await supabase
+      .from('vault_documents')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('upload_timestamp', { ascending: false });
+
+    if (dbError) {
+      console.error('Database query error:', dbError);
+      return NextResponse.json(
+        { error: 'Failed to fetch documents', details: dbError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      documents: documents || [],
+      count: documents?.length || 0
+    });
   } catch (error) {
     return NextResponse.json(
       {

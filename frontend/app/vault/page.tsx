@@ -33,11 +33,40 @@ export default function VaultPage() {
         email: authUser.email || 'Unknown',
         role: userRole
       })
+
+      // Load existing documents from Supabase
+      await loadDocuments()
+
       setLoading(false)
     }
 
     checkUser()
   }, [router, supabase])
+
+  const loadDocuments = async () => {
+    try {
+      const response = await fetch('/api/vault/upload')
+      if (!response.ok) {
+        throw new Error('Failed to load documents')
+      }
+
+      const result = await response.json()
+      if (result.success && result.documents) {
+        // Transform Supabase documents to match the UI format
+        const transformedDocs = result.documents.map((doc: any) => ({
+          name: doc.file_name,
+          size: doc.file_size,
+          uploadedAt: doc.upload_timestamp,
+          documentId: doc.document_id,
+          filePath: doc.file_path,
+          fileType: doc.file_type
+        }))
+        setUploadedFiles(transformedDocs)
+      }
+    } catch (error) {
+      console.error('Error loading documents:', error)
+    }
+  }
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -68,12 +97,9 @@ export default function VaultPage() {
       }
 
       setUploadProgress('File processed successfully!')
-      setUploadedFiles(prev => [...prev, {
-        name: file.name,
-        size: file.size,
-        uploadedAt: new Date().toISOString(),
-        ...result
-      }])
+
+      // Reload documents from Supabase to get the latest list
+      await loadDocuments()
 
       // Clear progress message after 3 seconds
       setTimeout(() => setUploadProgress(''), 3000)
