@@ -12,6 +12,10 @@ import os
 import pandas as pd
 import docx
 import pptx
+import tempfile
+import io
+from supabase import create_client
+import base64
 
 # Use pypdf instead of deprecated PyPDF2
 try:
@@ -75,6 +79,42 @@ def extract_text_from_shape(shape):
 def extract_text_from_file(file_path: str) -> str:
     """Extract text from various file formats"""
     print(f"Attempting to parse file: {file_path}")
+    downloaded_temp_path = None
+
+    # If the file doesn't exist locally, try to download it from Supabase Storage
+    if not os.path.exists(file_path):
+        SUPABASE_URL = os.environ.get("https://fmlanqjduftxlktygpwe.supabase.co")
+        SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs")
+
+        if SUPABASE_URL and SUPABASE_KEY:
+            try:
+                print("File not found locally. Attempting to download from Supabase storage...")
+                supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                # Assume bucket name is 'vault_files' and file_path is the object key
+                file_data = supabase.storage.from_('vault_files').download(file_path)
+
+                # The python-supabase client may return bytes or a response-like object
+                if hasattr(file_data, 'read'):
+                    file_bytes = file_data.read()
+                else:
+                    file_bytes = file_data
+
+                if not file_bytes:
+                    raise ValueError("Downloaded file is empty or could not be retrieved from Supabase")
+
+                # Write to a temporary file so existing parsing logic can operate on a path
+                with tempfile.NamedTemporaryFile(delete=False, suffix="_" + os.path.basename(file_path)) as tf:
+                    tf.write(file_bytes)
+                    downloaded_temp_path = tf.name
+
+                print(f"Downloaded file to temporary path: {downloaded_temp_path}")
+                # Use the temporary file for subsequent parsing
+                file_path = downloaded_temp_path
+            except Exception as e:
+                print(f"Warning: Failed to download file from Supabase: {e}")
+                # Fall through and let later logic raise a helpful error when file is missing
+        else:
+            print("Supabase credentials (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) not set; cannot download missing file")
     
     # Get file extension (handle cases like .pptx.pptx)
     ext = os.path.splitext(file_path)[1].lower()
@@ -276,3 +316,11 @@ def extract_text_from_file(file_path: str) -> str:
     except Exception as e:
         print(f"Error parsing file {file_path}: {str(e)}")
         raise
+    finally:
+        # Clean up any temporary file we downloaded from Supabase
+        try:
+            if downloaded_temp_path and os.path.exists(downloaded_temp_path):
+                os.remove(downloaded_temp_path)
+                print(f"Cleaned up temporary file: {downloaded_temp_path}")
+        except Exception:
+            pass
