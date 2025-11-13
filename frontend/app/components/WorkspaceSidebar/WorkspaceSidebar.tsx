@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Workspace, ChatSession } from '@/app/types'
 
 interface WorkspaceSidebarProps {
@@ -20,6 +21,7 @@ export default function WorkspaceSidebar({
   onNewChat,
   onToggleSidebar
 }: WorkspaceSidebarProps) {
+  const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
 
   const handleToggleCollapse = () => {
@@ -81,11 +83,14 @@ export default function WorkspaceSidebar({
           </button>
         </div>
 
-        {/* Vault Section */}
+        {/*  t Section */}
         <div>
-          <button className="w-full flex items-center gap-2 p-3 hover:bg-gray-100 rounded-lg transition-colors text-left">
+          <button
+            onClick={() => router.push(`/workspaces/${workspace.id}/vault`)}
+            className="w-full flex items-center gap-2 p-3 hover:bg-gray-100 rounded-lg transition-colors text-left"
+          >
             <svg className="w-4 h-4 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
             </svg>
             <span className="text-xs font-medium text-gray-700">Vault</span>
           </button>

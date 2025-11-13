@@ -207,3 +207,85 @@ export async function GET() {
     );
   }
 }
+
+// DELETE method to remove a file from both storage and database
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get document ID from request body
+    const body = await request.json();
+    const { documentId } = body;
+
+    if (!documentId) {
+      return NextResponse.json(
+        { error: 'Document ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // First, fetch the document to get the file path and verify ownership
+    const { data: document, error: fetchError } = await supabase
+      .from('vault_documents')
+      .select('*')
+      .eq('document_id', documentId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (fetchError || !document) {
+      console.error('Document fetch error:', fetchError);
+      return NextResponse.json(
+        { error: 'Document not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    // Delete from Supabase Storage
+    const { error: storageError } = await supabase.storage
+      .from('vault-files')
+      .remove([document.file_path]);
+
+    if (storageError) {
+      console.error('Storage deletion error:', storageError);
+      // Continue with database deletion even if storage deletion fails
+    }
+
+    // Delete from database
+    const { error: dbError } = await supabase
+      .from('vault_documents')
+      .delete()
+      .eq('document_id', documentId)
+      .eq('user_id', user.id);
+
+    if (dbError) {
+      console.error('Database deletion error:', dbError);
+      return NextResponse.json(
+        { error: 'Failed to delete document from database', details: dbError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'File deleted successfully',
+      documentId: documentId
+    });
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    return NextResponse.json(
+      {
+        error: 'Failed to delete file',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
+  }
+}

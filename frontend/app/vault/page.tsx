@@ -14,6 +14,7 @@ export default function VaultPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([])
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -117,6 +118,43 @@ export default function VaultPage() {
     }
   }
 
+  const handleDeleteFile = async (documentId: string, fileName: string) => {
+    if (!confirm(`Are you sure you want to delete "${fileName}"? This action cannot be undone.`)) {
+      return
+    }
+
+    setDeletingId(documentId)
+
+    try {
+      const response = await fetch('/api/vault/upload', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ documentId }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete file')
+      }
+
+      // Remove file from local state
+      setUploadedFiles(prev => prev.filter(file => file.documentId !== documentId))
+
+      // Show success message
+      setUploadProgress('File deleted successfully!')
+      setTimeout(() => setUploadProgress(''), 3000)
+    } catch (error) {
+      console.error('Delete error:', error)
+      setUploadProgress(`Delete failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setTimeout(() => setUploadProgress(''), 5000)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const triggerFileSelect = () => {
     fileInputRef.current?.click()
   }
@@ -183,9 +221,9 @@ export default function VaultPage() {
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">Uploaded Files</h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {uploadedFiles.map((file, index) => (
-                    <div key={index} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                    <div key={index} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between">
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           <h3 className="text-sm font-medium text-gray-900 truncate">{file.name}</h3>
                           <p className="text-xs text-gray-500 mt-1">
                             {(file.size / 1024 / 1024).toFixed(2)} MB
@@ -194,10 +232,26 @@ export default function VaultPage() {
                             Uploaded {new Date(file.uploadedAt).toLocaleDateString()}
                           </p>
                         </div>
-                        <div className="ml-2">
-                          <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="ml-2 flex items-start gap-2">
+                          <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
+                          <button
+                            onClick={() => handleDeleteFile(file.documentId, file.name)}
+                            disabled={deletingId === file.documentId}
+                            className="text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                            title="Delete file"
+                          >
+                            {deletingId === file.documentId ? (
+                              <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            ) : (
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
                       </div>
                     </div>
