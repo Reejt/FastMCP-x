@@ -60,7 +60,8 @@ export async function POST(request: NextRequest) {
       file_name: file.name,
       file_content: base64Content,
       file_type: file.type,
-      file_size: file.size
+      file_size: file.size,
+      user_id: user.id  // Pass user ID for Supabase storage
     };
 
     // Call the bridge server ingest endpoint
@@ -93,6 +94,8 @@ export async function POST(request: NextRequest) {
         contentType: file.type,
         upsert: false
       });
+
+    console.log('Supabase storageData:', storageData);
 
     if (storageError) {
       console.error('Supabase storage error:', storageError);

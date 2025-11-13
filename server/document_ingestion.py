@@ -3,26 +3,24 @@ from fastmcp import FastMCP
 import os
 import shutil
 from utils.file_parser import extract_text_from_file
+from supabase import create_client, Client
+from datetime import datetime
+import uuid
 
 # Store documents with metadata for better semantic search
-documents = []  # List of {"content": str, "filename": str, "filepath": str}
+documents = []  # List of {"content": str, "filename": str, "filepath": str, "document_id": str, "user_id": str}
+
+# Initialize Supabase client
+SUPABASE_URL = os.environ.get("https://fmlanqjduftxlktygpwe.supabase.co")
+SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs")  
+
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    print("✅ Supabase client initialized successfully")
 
 # Import will be done after query_handler is fully loaded to avoid circular import
-def _import_build_embeddings():
-    """Lazy import to avoid circular dependency"""
-    try:
-        from server.query_handler import build_embeddings
-        return build_embeddings
-    except ImportError:
-        return None
 
-def _import_load_embeddings():
-    """Lazy import to avoid circular dependency"""
-    try:
-        from server.query_handler import load_embeddings
-        return load_embeddings
-    except ImportError:
-        return None
 
 def _import_update_embeddings():
     """Lazy import to avoid circular dependency"""
@@ -32,48 +30,17 @@ def _import_update_embeddings():
     except ImportError:
         return None
 
-def load_existing_documents():
-    """Load existing documents from storage directory on startup"""
-    storage_dir = os.path.join(os.path.dirname(__file__), '..', 'storage')
-    storage_dir = os.path.abspath(storage_dir)
-    
-    if not os.path.exists(storage_dir):
-        return
-    
-    loaded_count = 0
-    for filename in os.listdir(storage_dir):
-        file_path = os.path.join(storage_dir, filename)
-        if os.path.isfile(file_path):
-            try:
-                content = extract_text_from_file(file_path)
-                doc_info = {
-                    "content": content,
-                    "filename": filename,
-                    "filepath": file_path
-                }
-                documents.append(doc_info)
-                loaded_count += 1
-            except Exception as e:
-                print(f"Error loading existing document {filename}: {str(e)}")
-    
-    print(f"Documents loaded: {loaded_count}")
-    
-    # Load or build embeddings for loaded documents
-    if loaded_count > 0:
-        # Try to load precomputed embeddings first
-        load_embeddings_func = _import_load_embeddings()
-        if load_embeddings_func and load_embeddings_func():
-            print("Loaded precomputed embeddings from disk.")
-        else:
-            # Build embeddings if loading failed
-            print("No precomputed embeddings found. Building embeddings...")
-            build_embeddings_func = _import_build_embeddings()
-            if build_embeddings_func:
-                build_embeddings_func()
+  
 
  
-def ingest_file(file_path: str):
-    """Implementation function for file ingestion"""
+def ingest_file(file_path: str, user_id: str = None):
+    """
+    Implementation function for file ingestion
+    
+    Args:
+        file_path: Path to the file to ingest
+        user_id: Optional user ID for Supabase storage (required when using Supabase)
+    """
     print(f"Starting ingestion of file: {file_path}")
     
     try:
@@ -81,49 +48,98 @@ def ingest_file(file_path: str):
         if not os.path.exists(file_path):
             return f"Error: File not found at path '{file_path}'"
         
-        # Create storage directory
-        storage_dir = os.path.join(os.path.dirname(__file__), '..', 'storage')
-        storage_dir = os.path.abspath(storage_dir)
-        if not os.path.exists(storage_dir):
-            os.makedirs(storage_dir)
-            print(f"Created storage directory: {storage_dir}")
-        
-        # Get filename and destination path
+        # Get filename and file stats
         filename = os.path.basename(file_path)
-        dest_path = os.path.join(storage_dir, filename)
+        file_size = os.path.getsize(file_path)
         
-        # Copy file to storage
-        print(f"Copying file to: {dest_path}")
-        shutil.copy2(file_path, dest_path)
+        # Determine file type
+        file_extension = os.path.splitext(filename)[1].lower()
+        file_type_map = {
+            '.txt': 'text/plain',
+            '.md': 'text/markdown',
+            '.pdf': 'application/pdf',
+            '.doc': 'application/msword',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.xls': 'application/vnd.ms-excel',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.ppt': 'application/vnd.ms-powerpoint',
+            '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        }
+        file_type = file_type_map.get(file_extension, 'application/octet-stream')
         
-        # Extract text content
-        print(f"Extracting text from: {dest_path}")
-        content = extract_text_from_file(dest_path)
+        # Extract text content first
+        print(f"Extracting text from: {file_path}")
+        content = extract_text_from_file(file_path)
         
         if not content or not content.strip():
             return f"Warning: No text content extracted from file '{filename}'. File may be empty or unsupported format."
         
-        # Store document with metadata
-        doc_info = {
-            "content": content,
-            "filename": filename,
-            "filepath": dest_path
-        }
-        documents.append(doc_info)
+        # Try to store in Supabase first
+        if supabase and user_id:
+            print(f"☁️  Uploading file to Supabase Storage...")
+            # Read file content
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+                
+            # Generate unique file path in Supabase Storage
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            storage_path = f"{user_id}/{timestamp}_{filename}"
+                
+            # Upload to Supabase Storage
+            supabase.storage.from_('vault_files').upload(
+                storage_path,
+                file_content,
+                file_options={"content-type": file_type}
+            )
+                
+            print(f"✅ File uploaded to Supabase: {storage_path}")
+                
+            # Insert metadata into vault_documents table
+            document_id = str(uuid.uuid4())
+            db_response = supabase.table('vault_documents').insert({
+                'document_id': document_id,
+                'user_id': user_id,
+                'file_name': filename,
+                'file_path': storage_path,
+                'file_size': file_size,
+                'file_type': file_type,
+                'metadata': {
+                    'original_name': filename,
+                    'processed': True,
+                    'character_count': len(content)
+                }
+            }).execute()
+                
+            print(f"✅ Document metadata saved to Supabase database")
+                
+            # Store document with metadata in memory
+            doc_info = {
+                "content": content,
+                "filename": filename,
+                "filepath": storage_path,  # Store Supabase path
+                "document_id": document_id,
+                "user_id": user_id
+            }
+            documents.append(doc_info)
+                
+            result_msg = f"Successfully ingested file '{filename}' to Supabase. Extracted {len(content)} characters. Total documents: {len(documents)}"
+            print(result_msg)
+                
+            # Update embeddings after adding new document
+            update_embeddings_func = _import_update_embeddings()
+            if update_embeddings_func:
+                update_embeddings_func()
+                
+            return result_msg
+                
         
-        result_msg = f"Successfully ingested file '{filename}'. Extracted {len(content)} characters. Total documents: {len(documents)}"
-        print(result_msg)
         
-        # Update embeddings after adding new document
-        update_embeddings_func = _import_update_embeddings()
-        if update_embeddings_func:
-            update_embeddings_func()
-        
-        return result_msg
         
     except Exception as e:
         error_msg = f"Error ingesting file '{file_path}': {str(e)}"
         print(error_msg)
+        import traceback
+        traceback.print_exc()
         return error_msg
 
 

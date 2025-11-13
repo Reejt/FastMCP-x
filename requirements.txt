@@ -18,10 +18,17 @@ pypdf
 # Semantic Search and ML
 sentence-transformers
 scikit-learn
+chromadb
 
 # Web Scraping and HTTP
 requests
 beautifulsoup4
+
+# Supabase Client
+supabase
+
+# Environment Variables
+python-dotenv
 
 # Windows COM Automation (optional, for .ppt files on Windows)
 # pywin32
