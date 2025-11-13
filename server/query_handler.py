@@ -12,11 +12,6 @@ from chromadb.config import Settings
 try:
     from sklearn.metrics.pairwise import cosine_similarity
     from sentence_transformers import SentenceTransformer
-    try:
-        import torch
-        TORCH_AVAILABLE = True
-    except Exception:
-        TORCH_AVAILABLE = False
     SEMANTIC_SEARCH_AVAILABLE = True
 except ImportError:
     print("Warning: Semantic search dependencies not available. Install sentence-transformers and scikit-learn for enhanced search.")
@@ -39,10 +34,8 @@ def get_semantic_model():
         
     if _semantic_model is None:
         try:
-            # Choose device: GPU if available and torch is present
-            device = 'cuda' if (TORCH_AVAILABLE and torch.cuda.is_available()) else 'cpu'
-            print(f"Loading SentenceTransformer on device: {device}")
-            _semantic_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+            # Use a lightweight but effective model
+            _semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
         except Exception as e:
             print(f"Warning: Could not load semantic model: {e}")
             _semantic_model = False  # Mark as failed to avoid retrying
@@ -302,73 +295,14 @@ def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) ->
 
 
 
-def is_query_related_to_history(query: str, conversation_history: list) -> bool:
-    """
-    Determine if the current query is related to conversation history
-    Returns True if query contains contextual references or follow-up indicators
-    """
-    query_lower = query.lower().strip()
-    
-    # Check for pronouns and contextual references
-    contextual_indicators = [
-        'it', 'this', 'that', 'these', 'those', 'they', 'them', 'their',
-        'he', 'she', 'his', 'her', 'its',
-        'what about', 'how about', 'tell me more', 'explain', 'elaborate',
-        'the same', 'similar', 'also', 'too', 'as well',
-        'previous', 'before', 'earlier', 'above', 'mentioned'
-    ]
-    
-    # Check if query is very short (likely a follow-up)
-    if len(query.split()) <= 3:
-        return True
-    
-    # Check for contextual indicators
-    for indicator in contextual_indicators:
-        if indicator in query_lower:
-            return True
-    
-    # Check if query starts with follow-up words
-    follow_up_starters = ['and', 'but', 'so', 'also', 'what about', 'how about']
-    if any(query_lower.startswith(starter) for starter in follow_up_starters):
-        return True
-    
-    return False
-
-
-def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None) -> str:
-    """
-    Query the Ollama model via HTTP API with optional conversation history
-    
-    Args:
-        query: The current user query
-        model_name: Name of the Ollama model to use
-        conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
-    """
+def query_model(query: str, model_name: str = 'llama3.2:3b') -> str:
+    """Query the Ollama model via HTTP API"""
     try:
-        # Build the prompt with conversation history only if query is related to previous context
-        if conversation_history and len(conversation_history) > 0 and is_query_related_to_history(query, conversation_history):
-            # Format conversation history into the prompt
-            context_parts = []
-            for msg in conversation_history[-6:]:  # Last 6 messages (3 exchanges) for context
-                role = "User" if msg.get("role") == "user" else "Assistant"
-                context_parts.append(f"{role}: {msg.get('content', '')}")
-            
-            conversation_context = "\n".join(context_parts)
-            enhanced_query = f"""Previous conversation:
-{conversation_context}
-
-Current question: {query}
-
-Answer the current question, using the previous conversation for context if relevant (e.g., if the user uses pronouns like "it", "that", "they" or refers to previous topics)."""
-            prompt = enhanced_query
-        else:
-            prompt = query
-        
         response = requests.post(
             'http://localhost:11434/api/generate',
             json={
                 'model': model_name,
-                'prompt': prompt,
+                'prompt': query,
                 'stream': False
             },
             timeout=120  # Increased timeout for large content summarization
@@ -380,27 +314,23 @@ Answer the current question, using the previous conversation for context if rele
             
    
 
-def answer_query(query: str, conversation_history: list = None):
+def answer_query(query: str):
     """
     Answer queries using semantic search on ingested documents
     Falls back to general model if no documents or no relevant context found
-    
-    Args:
-        query: The current user query
-        conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
     """
     if not documents:
-        llm_response = query_model(query, conversation_history=conversation_history)
+        llm_response = query_model(query)
         return llm_response
     
     try:
         semantic_results = semantic_search(query, top_k=2)
         
         if not semantic_results:
-            llm_response = query_model(query, conversation_history=conversation_history)
+            llm_response = query_model(query)
             return llm_response
         
-        return query_with_context(query, max_chunks=2, conversation_history=conversation_history)
+        return query_with_context(query, max_chunks=2)
         
     except Exception as e:
         return f"Error processing query: {str(e)}"
@@ -408,7 +338,7 @@ def answer_query(query: str, conversation_history: list = None):
 
 
 
-def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True, conversation_history: list = None):
+def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True):
     """
     Query the LLM with relevant document chunks as context
     
@@ -416,20 +346,19 @@ def query_with_context(query: str, max_chunks: int = 2, include_context_preview:
         query: The question to ask
         max_chunks: Maximum number of document chunks to include (default: 2)
         include_context_preview: Whether to show source documents (default: True)
-        conversation_history: List of previous messages for conversation context
     """
     # Get relevant chunks using semantic search
     semantic_results = semantic_search(query, top_k=max_chunks)
     
     if not semantic_results:
-        return query_model(query, conversation_history=conversation_history)
+        return query_model(query)
     
     # Check if the best match has good similarity (threshold: 0.3)
     best_score = semantic_results[0][1]
     
     # If similarity is too low, treat as general query without document context
-    if best_score < 0.4:
-        return query_model(query, conversation_history=conversation_history)
+    if best_score < 0.3:
+        return query_model(query)
     
     # Build context from search results (max 2000 chars per chunk)
     context_parts = [
@@ -438,26 +367,7 @@ def query_with_context(query: str, max_chunks: int = 2, include_context_preview:
     ]
     
     context = "\n\n---\n\n".join(context_parts)
-    
-    # Include conversation history in the enhanced query if provided
-    if conversation_history and len(conversation_history) > 0 and is_query_related_to_history(query, conversation_history):
-        history_parts = []
-        for msg in conversation_history[-6:]:  # Last 6 message for context
-            role = "User" if msg.get("role") == "user" else "Assistant"
-            history_parts.append(f"{role}: {msg.get('content', '')}")
-        conversation_context = "\n".join(history_parts)
-        
-        enhanced_query = f"""Previous conversation:
-{conversation_context}
-
-DOCUMENT CONTENT:
-{context}
-
-Current question: {query}
-
-Instructions: Answer the current question using the document content provided above. Use the previous conversation for context if the user refers to previous topics or uses pronouns."""
-    else:
-        enhanced_query = f"""Answer this question using the document content provided below: {query}
+    enhanced_query = f"""Answer this question using the document content provided below: {query}
 
 DOCUMENT CONTENT:
 {context}
@@ -467,10 +377,9 @@ DOCUMENT CONTENT:
     llm_response = query_model(enhanced_query)
     
     # Format the response with source attribution
-    if include_context_preview and semantic_results and best_score >= 0.4:
-        sources = list(set(filename for _, _, filename in semantic_results))
-        source_text = ", ".join(sources)
-        return f"{llm_response}\n\n---\n**Sources:** {source_text}"
+    if include_context_preview and semantic_results:
+        _, _, filename = semantic_results[0]
+        return f"{llm_response}\n\n---\n**Source:** {filename}"
     
     return llm_response 
        

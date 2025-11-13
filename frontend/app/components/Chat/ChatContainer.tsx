@@ -24,7 +24,7 @@ export default function ChatContainer({ messages, workspaceName }: ChatContainer
   const hasMessages = messages.length > 0
 
   return (
-    <div className="flex-1 overflow-y-auto bg-white px-4">
+    <div className="flex-1 overflow-y-auto px-4" style={{ backgroundColor: '#fcfcfc' }}>
       <div className={`max-w-4xl mx-auto ${!hasMessages ? 'h-full flex flex-col justify-center' : ''}`}>
         <AnimatePresence mode="wait">
           {!hasMessages ? (
@@ -36,7 +36,7 @@ export default function ChatContainer({ messages, workspaceName }: ChatContainer
               transition={{ duration: 0.3 }}
               className="flex flex-col items-center justify-center text-center px-4"
             >
-              <p className="text-gray-500 text-sm mb-2">No chats yet.</p>
+              <p className="text-sm mb-2" style={{ color: '#060606' }}>No chats yet.</p>
               <p className="text-gray-400 text-sm">
                 Start a conversation or set project instructions.
               </p>
