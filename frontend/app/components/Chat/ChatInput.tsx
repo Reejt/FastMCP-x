@@ -54,7 +54,7 @@ export default function ChatInput({ onSendMessage, disabled = false, hasMessages
   }, [input])
 
   return (
-    <div className="bg-white border-t border-gray-200 p-6">
+    <div className="border-t border-gray-200 p-6" style={{ backgroundColor: '#fcfcfc' }}>
       <motion.form
         onSubmit={handleSubmit}
         className="max-w-4xl mx-auto"
@@ -66,7 +66,8 @@ export default function ChatInput({ onSendMessage, disabled = false, hasMessages
       >
         <div
           onClick={handleContainerClick}
-          className="relative flex items-center bg-white rounded-full border border-gray-300 hover:border-gray-400 transition-all cursor-text px-5 py-3"
+          className="relative flex items-center rounded-full border border-gray-300 hover:border-gray-400 transition-all cursor-text px-5 py-3"
+          style={{ backgroundColor: '#fcfcfc' }}
         >
           {/* Attachment Icon - Left */}
           <button
@@ -75,7 +76,8 @@ export default function ChatInput({ onSendMessage, disabled = false, hasMessages
               e.stopPropagation()
               handleFileUpload()
             }}
-            className="text-gray-600 hover:text-gray-800 transition-colors mr-4 flex-shrink-0 cursor-pointer"
+            className="hover:text-gray-800 transition-colors mr-4 flex-shrink-0 cursor-pointer"
+            style={{ color: '#060606' }}
             disabled={disabled}
             aria-label="Attach file"
           >
@@ -104,8 +106,8 @@ export default function ChatInput({ onSendMessage, disabled = false, hasMessages
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
-            className="flex-1 bg-transparent text-gray-800 placeholder-gray-400 resize-none focus:outline-none max-h-32 overflow-y-auto text-sm"
-            style={{ minHeight: '24px' }}
+            className="flex-1 bg-transparent placeholder-gray-400 resize-none focus:outline-none max-h-32 overflow-y-auto text-sm"
+            style={{ color: '#060606', minHeight: '24px' }}
           />
 
           {/* Send Arrow Icon - Right */}
@@ -113,7 +115,8 @@ export default function ChatInput({ onSendMessage, disabled = false, hasMessages
             type="submit"
             onClick={(e) => e.stopPropagation()}
             disabled={disabled || !input.trim()}
-            className="text-gray-600 hover:text-gray-800 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors ml-4 flex-shrink-0"
+            className="hover:text-gray-800 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors ml-4 flex-shrink-0"
+            style={{ color: !disabled && input.trim() ? '#060606' : undefined }}
             aria-label="Send message"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

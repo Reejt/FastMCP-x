@@ -15,12 +15,12 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         {isUser ? (
           // User message - Right-aligned white bubble with shadow
           <div className="bg-white rounded-2xl px-5 py-3 shadow-md">
-            <p className="text-sm text-gray-900 whitespace-pre-wrap">{message.content}</p>
+            <p className="text-sm whitespace-pre-wrap" style={{ color: '#060606' }}>{message.content}</p>
           </div>
         ) : (
           // AI message - Left-aligned plain text (no bubble)
           <div className="py-2">
-            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+            <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: '#060606' }}>
               {message.content}
             </p>
             {message.isStreaming && (

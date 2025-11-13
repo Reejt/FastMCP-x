@@ -37,13 +37,13 @@ export default function WorkspaceSidebar({
   }
 
   return (
-    <div className="bg-gray-50 border-r border-gray-200 flex flex-col w-64">
+    <div className="border-r border-gray-200 flex flex-col w-64" style={{ backgroundColor: '#fcfcfc' }}>
       {/* Workspace Header */}
       <div className="p-4 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
-            <h2 className="text-sm font-medium text-gray-900 truncate">{workspace.name}</h2>
+            <h2 className="text-sm font-medium truncate" style={{ color: '#060606' }}>{workspace.name}</h2>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
@@ -73,7 +73,7 @@ export default function WorkspaceSidebar({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium text-gray-700">Instructions</div>
+              <div className="text-xs font-medium" style={{ color: '#060606' }}>Instructions</div>
               <div className="text-xs text-gray-500 truncate">
                 {workspace.description || 'Set up instructions for Varys in this project'}
               </div>
@@ -84,10 +84,10 @@ export default function WorkspaceSidebar({
         {/* Vault Section */}
         <div>
           <button className="w-full flex items-center gap-2 p-3 hover:bg-gray-100 rounded-lg transition-colors text-left">
-            <svg className="w-4 h-4 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: '#060606' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
-            <span className="text-xs font-medium text-gray-700">Vault</span>
+            <span className="text-xs font-medium" style={{ color: '#060606' }}>Vault</span>
           </button>
         </div>
       </div>
@@ -101,8 +101,9 @@ export default function WorkspaceSidebar({
               onClick={onNewChat}
               className="p-1 hover:bg-gray-200 rounded transition-colors"
               aria-label="New chat"
+              style={{ color: '#262118' }}
             >
-              <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </button>
@@ -110,7 +111,7 @@ export default function WorkspaceSidebar({
 
           {chatSessions.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-xs text-gray-500 mb-2">No chats yet.</p>
+              <p className="text-xs mb-2" style={{ color: '#060606' }}>No chats yet.</p>
               <p className="text-xs text-gray-400">
                 Start a conversation or set project instructions.
               </p>
@@ -122,9 +123,10 @@ export default function WorkspaceSidebar({
                   key={session.id}
                   onClick={() => onChatSelect?.(session.id)}
                   className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${currentChatId === session.id
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'hover:bg-gray-100 text-gray-700'
+                    ? 'bg-white shadow-sm'
+                    : 'hover:bg-gray-100'
                     }`}
+                  style={{ color: '#060606' }}
                 >
                   <div className="text-xs font-medium truncate">
                     {session.messages[0]?.content.substring(0, 30) || 'New Chat'}
