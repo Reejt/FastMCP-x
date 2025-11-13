@@ -2,10 +2,11 @@
 # Handles query answering from documents and general model
 import numpy as np
 import requests
-import pickle
 import os
 from typing import List, Tuple, Dict, Any
 from server.document_ingestion import documents
+import chromadb
+from chromadb.config import Settings
 
 # Try to import semantic search dependencies
 try:
@@ -21,12 +22,13 @@ except ImportError:
     print("Warning: Semantic search dependencies not available. Install sentence-transformers and scikit-learn for enhanced search.")
     SEMANTIC_SEARCH_AVAILABLE = False
 
-# Global variables for precomputed embeddings
+# Global variables for ChromaDB
 _semantic_model = None
-_document_embeddings = None  # Will store numpy array of embeddings
-_chunk_texts = []  # List of chunk texts
-_chunk_metadata = []  # List of corresponding filenames
-_embeddings_file = os.path.join(os.path.dirname(__file__), '..', 'storage', 'embeddings.pkl')
+_chroma_client = None
+_embedding_collection = None
+
+# Initialize ChromaDB with persistent storage
+CHROMA_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'storage', 'chromadb')
 
 
 def get_semantic_model():
@@ -47,134 +49,148 @@ def get_semantic_model():
     return _semantic_model if _semantic_model is not False else None
 
 
-def save_embeddings():
-    """Save precomputed embeddings to file"""
-    global _document_embeddings, _chunk_texts, _chunk_metadata
-    if _document_embeddings is None:
-        return
+def get_chroma_client():
+    """Initialize ChromaDB client with persistent storage"""
+    global _chroma_client, _embedding_collection
     
-    try:
-        # Ensure storage directory exists
-        storage_dir = os.path.dirname(_embeddings_file)
-        if not os.path.exists(storage_dir):
-            os.makedirs(storage_dir)
-        
-        data = {
-            'embeddings': _document_embeddings,
-            'chunk_texts': _chunk_texts,
-            'chunk_metadata': _chunk_metadata
-        }
-        with open(_embeddings_file, 'wb') as f:
-            pickle.dump(data, f)
-        print(f"Saved embeddings for {_document_embeddings.shape[0]} chunks to {_embeddings_file}")
-    except Exception as e:
-        print(f"Error saving embeddings: {e}")
-
-
-def load_embeddings():
-    """Load precomputed embeddings from file"""
-    global _document_embeddings, _chunk_texts, _chunk_metadata
-    if not os.path.exists(_embeddings_file):
-        return False
+    if _chroma_client is None:
+        try:
+            # Ensure storage directory exists
+            if not os.path.exists(CHROMA_DB_PATH):
+                os.makedirs(CHROMA_DB_PATH)
+            
+            # Initialize ChromaDB with persistent storage
+            _chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+            
+            # Get or create collection
+            try:
+                _embedding_collection = _chroma_client.get_collection(name="fastmcp_embeddings")
+                print(f"✅ Loaded existing ChromaDB collection with {_embedding_collection.count()} embeddings")
+            except:
+                _embedding_collection = _chroma_client.create_collection(
+                    name="fastmcp_embeddings",
+                    metadata={"hnsw:space": "cosine"}  # Use cosine similarity
+                )
+                print("✅ Created new ChromaDB collection")
+                
+        except Exception as e:
+            print(f"Error initializing ChromaDB: {e}")
+            _chroma_client = False
+            _embedding_collection = None
     
-    try:
-        with open(_embeddings_file, 'rb') as f:
-            data = pickle.load(f)
-        _document_embeddings = data['embeddings']
-        _chunk_texts = data['chunk_texts']
-        _chunk_metadata = data['chunk_metadata']
-        print(f"Loaded embeddings for {len(_chunk_texts)} chunks from {_embeddings_file}")
-        return True
-    except Exception as e:
-        print(f"Error loading embeddings: {e}")
-        return False
+    return _chroma_client if _chroma_client is not False else None
 
 
 def build_embeddings():
-    """Build embeddings for all documents and cache them"""
-    global _document_embeddings, _chunk_texts, _chunk_metadata
-    
+    """Build embeddings for all documents and store in ChromaDB"""
+    global _embedding_collection
     if not SEMANTIC_SEARCH_AVAILABLE or not documents:
         return
     
     model = get_semantic_model()
-    if not model:
+    client = get_chroma_client()
+    
+    if not model or not client or not _embedding_collection:
         return
     
     try:
         print("Building document embeddings...")
         
+        # Clear existing collection
+        _chroma_client.delete_collection(name="fastmcp_embeddings")
+        _embedding_collection = _chroma_client.create_collection(
+            name="fastmcp_embeddings",
+            metadata={"hnsw:space": "cosine"}
+        )
+        
         # Prepare document chunks with metadata
+        chunk_ids = []
         all_chunks = []
-        chunk_metadata = []
+        chunk_metadata_list = []
         
         for doc in documents:
             # Handle both dict and string document formats
             if isinstance(doc, dict):
                 content = doc["content"]
                 filename = doc.get("filename", "unknown")
+                document_id = doc.get("document_id", "unknown")
             else:
                 content = doc
                 filename = "legacy_document"
+                document_id = "legacy"
                 
-            for chunk in chunk_text(content):
+            for idx, chunk in enumerate(chunk_text(content)):
                 if chunk.strip():
+                    chunk_id = f"{document_id}_{idx}"
+                    chunk_ids.append(chunk_id)
                     all_chunks.append(chunk.strip())
-                    chunk_metadata.append(filename)
+                    chunk_metadata_list.append({"filename": filename, "document_id": document_id})
         
         if not all_chunks:
             return
         
         # Encode all chunks
-        _document_embeddings = model.encode(all_chunks)
-        _chunk_texts = all_chunks
-        _chunk_metadata = chunk_metadata
+        embeddings = model.encode(all_chunks).tolist()
         
-        print(f"Built embeddings for {len(all_chunks)} chunks")
+        # Store in ChromaDB
+        _embedding_collection.add(
+            ids=chunk_ids,
+            embeddings=embeddings,
+            documents=all_chunks,
+            metadatas=chunk_metadata_list
+        )
         
-        # Save to file for persistence
-        save_embeddings()
+        print(f"✅ Built and stored {len(all_chunks)} embeddings in ChromaDB")
         
     except Exception as e:
         print(f"Error building embeddings: {e}")
-        _document_embeddings = None
-        _chunk_texts = []
-        _chunk_metadata = []
+        import traceback
+        traceback.print_exc()
 
 
 def update_embeddings():
-    """Update embeddings incrementally when new documents are added"""
-    global _document_embeddings, _chunk_texts, _chunk_metadata
-    
+    """Update embeddings incrementally when new documents are added to ChromaDB"""
     if not SEMANTIC_SEARCH_AVAILABLE or not documents:
         return
     
     model = get_semantic_model()
-    if not model:
+    client = get_chroma_client()
+    
+    if not model or not client or not _embedding_collection:
         return
     
     try:
-        # Get existing filenames in embeddings
-        existing_files = set(_chunk_metadata) if _chunk_metadata else set()
+        # Get existing document IDs in ChromaDB
+        existing_data = _embedding_collection.get()
+        existing_doc_ids = set()
+        if existing_data and existing_data['metadatas']:
+            for metadata in existing_data['metadatas']:
+                if metadata and 'document_id' in metadata:
+                    existing_doc_ids.add(metadata['document_id'])
         
         # Find new documents that need embeddings
+        chunk_ids = []
         new_chunks = []
-        new_metadata = []
+        new_metadata_list = []
         
         for doc in documents:
             if isinstance(doc, dict):
                 filename = doc.get("filename", "unknown")
                 content = doc["content"]
+                document_id = doc.get("document_id", "unknown")
             else:
                 filename = "legacy_document"
                 content = doc
+                document_id = "legacy"
             
-            # Only process if this file is not already in embeddings
-            if filename not in existing_files:
-                for chunk in chunk_text(content):
+            # Only process if this document is not already in embeddings
+            if document_id not in existing_doc_ids:
+                for idx, chunk in enumerate(chunk_text(content)):
                     if chunk.strip():
+                        chunk_id = f"{document_id}_{idx}"
+                        chunk_ids.append(chunk_id)
                         new_chunks.append(chunk.strip())
-                        new_metadata.append(filename)
+                        new_metadata_list.append({"filename": filename, "document_id": document_id})
         
         if not new_chunks:
             print("No new documents to embed.")
@@ -183,29 +199,23 @@ def update_embeddings():
         print(f"Embedding {len(new_chunks)} new chunks from new documents...")
         
         # Encode new chunks
-        new_embeddings = model.encode(new_chunks)
+        embeddings = model.encode(new_chunks).tolist()
         
-        # Append to existing embeddings
-        if _document_embeddings is not None and len(_document_embeddings) > 0:
-            _document_embeddings = np.vstack([_document_embeddings, new_embeddings])
-            _chunk_texts.extend(new_chunks)
-            _chunk_metadata.extend(new_metadata)
-            print(f"Appended {len(new_chunks)} chunks. Total: {len(_chunk_texts)} chunks")
-        else:
-            # First time - just set the embeddings
-            _document_embeddings = new_embeddings
-            _chunk_texts = new_chunks
-            _chunk_metadata = new_metadata
-            print(f"Created embeddings for {len(new_chunks)} chunks")
+        # Add to ChromaDB
+        _embedding_collection.add(
+            ids=chunk_ids,
+            embeddings=embeddings,
+            documents=new_chunks,
+            metadatas=new_metadata_list
+        )
         
-        # Save updated embeddings to disk
-        save_embeddings()
+        total_count = _embedding_collection.count()
+        print(f"✅ Added {len(new_chunks)} chunks. Total: {total_count} chunks in ChromaDB")
         
     except Exception as e:
         print(f"Error updating embeddings: {e}")
         # Fallback to rebuild if incremental update fails
         print("Falling back to full rebuild...")
-        _document_embeddings = None
         build_embeddings()
 
 
@@ -238,46 +248,55 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50) -> List[str]
 
 def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) -> List[Tuple[str, float, str]]:
     """
-    Perform semantic search on ingested documents using precomputed embeddings
+    Perform semantic search on ingested documents using ChromaDB
     Returns list of (content, similarity_score, filename) tuples
     """
     if not SEMANTIC_SEARCH_AVAILABLE:
         return []
         
     model = get_semantic_model()
-    if not model or not documents:
+    client = get_chroma_client()
+    
+    if not model or not documents or not client or not _embedding_collection:
         return []
     
-    # Build embeddings if not already done
-    if _document_embeddings is None:
-        # Try to load from file first
-        if not load_embeddings():
-            # Build from scratch if no saved embeddings
-            build_embeddings()
+    # Build embeddings if collection is empty
+    if _embedding_collection.count() == 0:
+        build_embeddings()
         
         # If still no embeddings, return empty
-        if _document_embeddings is None:
+        if _embedding_collection.count() == 0:
             return []
     
     try:
         # Encode query
-        query_embedding = model.encode([query])
+        query_embedding = model.encode([query]).tolist()
         
-        # Calculate similarities with precomputed embeddings
-        similarities = cosine_similarity(query_embedding, _document_embeddings)[0]
+        # Query ChromaDB for similar embeddings
+        results = _embedding_collection.query(
+            query_embeddings=query_embedding,
+            n_results=top_k
+        )
         
-        # Get top k results above threshold
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-        results = [
-            (_chunk_texts[idx], float(similarities[idx]), _chunk_metadata[idx])
-            for idx in top_indices
-            if similarities[idx] > min_similarity
-        ]
+        # Format results as (content, similarity_score, filename) tuples
+        formatted_results = []
+        if results and results['documents'] and len(results['documents']) > 0:
+            for i, doc in enumerate(results['documents'][0]):
+                # ChromaDB returns distance, convert to similarity (1 - distance for cosine)
+                distance = results['distances'][0][i] if results['distances'] else 0
+                similarity = 1 - distance  # Convert distance to similarity
+                
+                # Filter by minimum similarity
+                if similarity > min_similarity:
+                    filename = results['metadatas'][0][i].get('filename', 'unknown') if results['metadatas'] else 'unknown'
+                    formatted_results.append((doc, float(similarity), filename))
         
-        return results
+        return formatted_results
     
     except Exception as e:
         print(f"Error in semantic search: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 

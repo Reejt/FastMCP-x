@@ -57,12 +57,20 @@ async def answer_query(query: str, conversation_history: list = None):
         return response
 
         
-async def ingest_file(file_path: str):
-    """Ingest a document into the system"""
+async def ingest_file(file_path: str, user_id: str = None):
+    """
+    Ingest a document into the system
+    
+    Args:
+        file_path: Path to the file to ingest
+        user_id: Optional user ID for Supabase storage (if not provided, uses local storage)
+    """
     async with Client(FASTMCP_SERVER_URL) as client:
-        result = await client.call_tool("ingest_file_tool", {
-            "file_path": file_path
-        })
+        tool_params = {"file_path": file_path}
+        if user_id:
+            tool_params["user_id"] = user_id
+            
+        result = await client.call_tool("ingest_file_tool", tool_params)
                         
         # Extract response from MCP result
         if hasattr(result, 'content') and result.content:

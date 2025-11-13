@@ -1,21 +1,31 @@
 from fastmcp import FastMCP
 import sys
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.document_ingestion import ingest_file
 from server.query_handler import answer_query,semantic_search,query_with_context,query_model
-from server.document_ingestion import load_existing_documents
 from server.excel_csv import ExcelQueryEngine, CSVQueryEngine
 from server.web_search_file import tavily_web_search
 
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
 
 @mcp.tool
-def ingest_file_tool(file_path: str) -> str:
+def ingest_file_tool(file_path: str, user_id: str = None) -> str:
+    """
+    Ingest a file into the system
+    
+    Args:
+        file_path: Path to the file to ingest
+        user_id: Optional user ID for Supabase storage (if not provided, uses local storage)
+    """
     try:
-        result = ingest_file(file_path)
+        result = ingest_file(file_path, user_id=user_id)
         print(f"Ingest result: {result}")
         return result
     except Exception as e:
@@ -206,13 +216,6 @@ Instructions:
 
 
 if __name__ == "__main__":
-    print("Loading existing documents...")
-    load_existing_documents()
-    from server.document_ingestion import documents
-    print(f"Documents loaded: {len(documents)}")
-    if documents:
-        for doc in documents:
-            print(f"  - {doc['filename']} ({len(doc['content'])} characters)")
     print("Starting FastMCP server in HTTP mode on port 8000...")
     # Run FastMCP server using SSE transport
     mcp.run(transport="sse")

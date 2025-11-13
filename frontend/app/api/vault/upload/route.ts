@@ -60,7 +60,8 @@ export async function POST(request: NextRequest) {
       file_name: file.name,
       file_content: base64Content,
       file_type: file.type,
-      file_size: file.size
+      file_size: file.size,
+      user_id: user.id  // Pass user ID for Supabase storage
     };
 
     // Call the bridge server ingest endpoint
@@ -88,11 +89,13 @@ export async function POST(request: NextRequest) {
     const fileName = `${user.id}/${Date.now()}_${file.name}`;
 
     const { data: storageData, error: storageError } = await supabase.storage
-      .from('vault-files')
+      .from('vault_files')
       .upload(fileName, fileBuffer, {
         contentType: file.type,
         upsert: false
       });
+
+    console.log('Supabase storageData:', storageData);
 
     if (storageError) {
       console.error('Supabase storage error:', storageError);
@@ -123,7 +126,7 @@ export async function POST(request: NextRequest) {
     if (dbError) {
       console.error('Database insert error:', dbError);
       // Try to clean up the uploaded file
-      await supabase.storage.from('vault-files').remove([fileName]);
+      await supabase.storage.from('vault_files').remove([fileName]);
       return NextResponse.json(
         { error: 'Failed to save document metadata', details: dbError.message },
         { status: 500 }
