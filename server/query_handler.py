@@ -2,7 +2,6 @@
 # Handles query answering from documents and general model
 import numpy as np
 import requests
-from typing import List, Tuple
 import os
 from typing import List, Tuple, Dict, Any
 from server.document_ingestion import documents
@@ -18,7 +17,6 @@ except ImportError:
     print("Warning: Semantic search dependencies not available. Install sentence-transformers and scikit-learn for enhanced search.")
     SEMANTIC_SEARCH_AVAILABLE = False
 
-# Global semantic search model - loaded once and reused
 # Global variables for ChromaDB
 _semantic_model = None
 _chroma_client = None
@@ -243,7 +241,6 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50) -> List[str]
 
 def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) -> List[Tuple[str, float, str]]:
     """
-    Perform semantic search on ingested documents
     Perform semantic search on ingested documents using ChromaDB
     Returns list of (content, similarity_score, filename) tuples
     """
@@ -256,26 +253,6 @@ def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) ->
     if not model or not documents or not client or not _embedding_collection:
         return []
     
-    try:
-        # Prepare document chunks with metadata
-        all_chunks = []
-        chunk_metadata = []
-        
-        for doc in documents:
-            # Handle both dict and string document formats
-            if isinstance(doc, dict):
-                content = doc["content"]
-                filename = doc.get("filename", "unknown")
-            else:
-                content = doc
-                filename = "legacy_document"
-                
-            for chunk in chunk_text(content):
-                if chunk.strip():
-                    all_chunks.append(chunk.strip())
-                    chunk_metadata.append(filename)
-        
-        if not all_chunks:
     # Build embeddings if collection is empty
     if _embedding_collection.count() == 0:
         build_embeddings()
@@ -283,21 +260,6 @@ def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) ->
         # If still no embeddings, return empty
         if _embedding_collection.count() == 0:
             return []
-        
-        # Encode and calculate similarities
-        query_embedding = model.encode([query])
-        chunk_embeddings = model.encode(all_chunks)
-        similarities = cosine_similarity(query_embedding, chunk_embeddings)[0]
-        
-        # Get top k results above threshold
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-        results = [
-            (all_chunks[idx], float(similarities[idx]), chunk_metadata[idx])
-            for idx in top_indices
-            if similarities[idx] > min_similarity
-        ]
-        
-        return results
     
     try:
         # Encode query
@@ -422,6 +384,5 @@ DOCUMENT CONTENT:
     return llm_response 
        
     
-
 
 

@@ -63,6 +63,7 @@ export default function WorkspaceVaultPage() {
 
       const result = await response.json()
       if (result.success && result.documents) {
+        // Transform documents (workspace filtering removed - shows all user documents)
         const transformedDocs = result.documents.map((doc: any) => ({
           name: doc.file_name,
           size: doc.file_size,
