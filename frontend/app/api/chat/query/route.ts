@@ -33,14 +33,13 @@ export async function POST(request: NextRequest) {
         requestBody = { query, conversation_history };
     }
 
-    // Call the bridge server with timeout for long LLM operations
+    // Call the bridge server - streaming response
     const response = await fetch(`${BRIDGE_SERVER_URL}${endpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(120000), // 120s timeout for LLM operations
     });
 
     if (!response.ok) {
@@ -51,20 +50,47 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // For streaming responses (SSE), forward the stream to the client
+    if (response.headers.get('content-type')?.includes('text/event-stream')) {
+      // Create a new ReadableStream to forward the SSE data
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+
+          try {
+            while (true) {
+              const { done, value } = await reader!.read();
+              
+              if (done) {
+                controller.close();
+                break;
+              }
+
+              // Forward the SSE chunk
+              controller.enqueue(value);
+            }
+          } catch (error) {
+            console.error('Stream error:', error);
+            controller.error(error);
+          }
+        }
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      });
+    }
+
+    // Fallback for non-streaming responses
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error calling bridge server:', error);
-    
-    // Handle timeout specifically
-    if (error instanceof Error && error.name === 'AbortError') {
-      return NextResponse.json(
-        { 
-          error: 'Request timeout - The AI is taking too long to respond. Please try again.',
-        },
-        { status: 504 }
-      );
-    }
     
     return NextResponse.json(
       { 

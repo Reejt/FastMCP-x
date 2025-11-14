@@ -5,6 +5,7 @@ Connects Next.js frontend to FastMCP backend via MCP Client
 import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 import uvicorn
@@ -12,6 +13,7 @@ import sys
 import os
 import base64
 import tempfile
+import json
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,7 +24,6 @@ from client.fast_mcp_client import (
     ingest_file as mcp_ingest_file,
     query_excel_with_llm as mcp_query_excel,
     web_search as mcp_web_search,
-    semantic_search as mcp_semantic_search
 )
 
 # Initialize FastAPI app
@@ -66,9 +67,7 @@ class ExcelQueryRequest(BaseModel):
 class WebSearchRequest(BaseModel):
     query: str
 
-class SemanticSearchRequest(BaseModel):
-    query: str
-    top_k: Optional[int] = 5
+
 
 # Helper function to extract text from MCP result
 def extract_response(result) -> str:
@@ -95,21 +94,53 @@ async def query_endpoint(request: QueryRequest):
     """
     Main query endpoint - answers questions using document context via MCP
     Supports conversation history for contextual follow-up questions
+    Returns Server-Sent Events (SSE) stream for real-time responses
     """
     try:
         print(f"📥 Received query: {request.query}")
         if request.conversation_history:
             print(f"📜 With conversation history: {len(request.conversation_history)} messages")
         
-        # Call fast_mcp_client function (handles MCP connection internally)
-        response = await mcp_answer_query(request.query, request.conversation_history)
-        print(f"✅ Query successful, response length: {len(str(response))}")
-            
-        return {
-            "success": True,
-            "response": response,
-            "query": request.query
-        }
+        # Call the streaming query handler
+        async def event_generator():
+            try:
+                # Import streaming handler
+                from server.query_handler import answer_query
+                
+                # Get streaming response
+                response_generator = answer_query(
+                    request.query, 
+                    conversation_history=request.conversation_history,
+                    stream=True
+                )
+                
+                # Stream chunks as Server-Sent Events
+                for chunk in response_generator:
+                    if isinstance(chunk, dict) and 'response' in chunk:
+                        chunk_text = chunk['response']
+                        # Format as SSE
+                        yield f"data: {json.dumps({'chunk': chunk_text})}\n\n"
+                
+                # Send completion signal
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                print(f"✅ Query streaming completed")
+                
+            except Exception as e:
+                print(f"❌ Streaming error: {type(e).__name__}: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"  # Disable nginx buffering
+            }
+        )
+        
     except Exception as e:
         print(f"❌ Query failed with error: {type(e).__name__}: {str(e)}")
         import traceback

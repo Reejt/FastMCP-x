@@ -141,78 +141,10 @@ def build_embeddings():
         traceback.print_exc()
 
 
-def update_embeddings():
-    """Update embeddings incrementally when new documents are added to ChromaDB"""
-    if not SEMANTIC_SEARCH_AVAILABLE or not documents:
-        return
-    
-    model = get_semantic_model()
-    client = get_chroma_client()
-    
-    if not model or not client or not _embedding_collection:
-        return
-    
-    try:
-        # Get existing document IDs in ChromaDB
-        existing_data = _embedding_collection.get()
-        existing_doc_ids = set()
-        if existing_data and existing_data['metadatas']:
-            for metadata in existing_data['metadatas']:
-                if metadata and 'document_id' in metadata:
-                    existing_doc_ids.add(metadata['document_id'])
-        
-        # Find new documents that need embeddings
-        chunk_ids = []
-        new_chunks = []
-        new_metadata_list = []
-        
-        for doc in documents:
-            if isinstance(doc, dict):
-                filename = doc.get("filename", "unknown")
-                content = doc["content"]
-                document_id = doc.get("document_id", "unknown")
-            else:
-                filename = "legacy_document"
-                content = doc
-                document_id = "legacy"
-            
-            # Only process if this document is not already in embeddings
-            if document_id not in existing_doc_ids:
-                for idx, chunk in enumerate(chunk_text(content)):
-                    if chunk.strip():
-                        chunk_id = f"{document_id}_{idx}"
-                        chunk_ids.append(chunk_id)
-                        new_chunks.append(chunk.strip())
-                        new_metadata_list.append({"filename": filename, "document_id": document_id})
-        
-        if not new_chunks:
-            print("No new documents to embed.")
-            return
-        
-        print(f"Embedding {len(new_chunks)} new chunks from new documents...")
-        
-        # Encode new chunks
-        embeddings = model.encode(new_chunks).tolist()
-        
-        # Add to ChromaDB
-        _embedding_collection.add(
-            ids=chunk_ids,
-            embeddings=embeddings,
-            documents=new_chunks,
-            metadatas=new_metadata_list
-        )
-        
-        total_count = _embedding_collection.count()
-        print(f"✅ Added {len(new_chunks)} chunks. Total: {total_count} chunks in ChromaDB")
-        
-    except Exception as e:
-        print(f"Error updating embeddings: {e}")
-        # Fallback to rebuild if incremental update fails
-        print("Falling back to full rebuild...")
-        build_embeddings()
 
 
-def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50) -> List[str]:
+
+def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50):
     """Split text into overlapping chunks for better semantic search"""
     if len(text) <= chunk_size:
         return [text]
@@ -239,7 +171,7 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50) -> List[str]
     
     return chunks
 
-def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) -> List[Tuple[str, float, str]]:
+def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18):
     """
     Perform semantic search on ingested documents using ChromaDB
     Returns list of (content, similarity_score, filename) tuples
@@ -295,50 +227,115 @@ def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18) ->
 
 
 
-def query_model(query: str, model_name: str = 'llama3.2:3b') -> str:
-    """Query the Ollama model via HTTP API"""
+def is_query_related_to_history(query: str, conversation_history: list) -> bool:
+    """
+    Determine if the current query is related to conversation history
+    Returns True if query contains contextual references or follow-up indicators
+    """
+    query_lower = query.lower().strip()
+    
+    # Check for pronouns and contextual references
+    contextual_indicators = [
+        'it', 'this', 'that', 'these', 'those', 'they', 'them', 'their',
+        'he', 'she', 'his', 'her', 'its',
+        'what about', 'how about', 'tell me more', 'explain', 'elaborate',
+        'the same', 'similar', 'also', 'too', 'as well',
+        'previous', 'before', 'earlier', 'above', 'mentioned'
+    ]
+    
+    # Check if query is very short (likely a follow-up)
+    if len(query.split()) <= 3:
+        return True
+    
+    # Check for contextual indicators
+    for indicator in contextual_indicators:
+        if indicator in query_lower:
+            return True
+    
+    # Check if query starts with follow-up words
+    follow_up_starters = ['and', 'but', 'so', 'also', 'what about', 'how about']
+    if any(query_lower.startswith(starter) for starter in follow_up_starters):
+        return True
+    
+    return False
+
+
+def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None) -> str:
+    """
+    Query the Ollama model via HTTP API with optional conversation history
+    
+    Args:
+        query: The current user query
+        model_name: Name of the Ollama model to use
+        conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
+    """
     try:
         response = requests.post(
             'http://localhost:11434/api/generate',
             json={
                 'model': model_name,
-                'prompt': query,
+                'prompt': prompt,
                 'stream': False
             },
-            timeout=120  # Increased timeout for large content summarization
+            timeout=120,  # Increased timeout for large content summarization
+            stream=stream  # Enable streaming at requests level
         )
         response.raise_for_status()
-        return response.json().get('response', '')
+        
+        if stream:
+            # Return generator that yields JSON chunks
+            def generate():
+                import json
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            chunk = json.loads(line)
+                            if 'response' in chunk:
+                                yield chunk
+                        except json.JSONDecodeError:
+                            continue
+            return generate()
+        else:
+            # Return full response as before
+            return response.json().get('response', '')
     except requests.RequestException as e:
         raise Exception(f"Ollama API failed: {e}")
             
    
 
-def answer_query(query: str):
+def answer_query(query: str, conversation_history: list = None):
     """
     Answer queries using semantic search on ingested documents
     Falls back to general model if no documents or no relevant context found
+    
+    Args:
+        query: The current user query
+        conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
     """
     if not documents:
-        llm_response = query_model(query)
+        llm_response = query_model(query, conversation_history=conversation_history)
         return llm_response
     
     try:
         semantic_results = semantic_search(query, top_k=2)
         
         if not semantic_results:
-            llm_response = query_model(query)
+            llm_response = query_model(query, conversation_history=conversation_history)
             return llm_response
         
-        return query_with_context(query, max_chunks=2)
+        return query_with_context(query, max_chunks=2, conversation_history=conversation_history)
         
     except Exception as e:
+        if stream:
+            def error_generator():
+                yield {"response": f"Error processing query: {str(e)}"}
+            return error_generator()
         return f"Error processing query: {str(e)}"
 
 
 
 
-def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True):
+def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True, conversation_history: list = None):
     """
     Query the LLM with relevant document chunks as context
     
@@ -346,19 +343,20 @@ def query_with_context(query: str, max_chunks: int = 2, include_context_preview:
         query: The question to ask
         max_chunks: Maximum number of document chunks to include (default: 2)
         include_context_preview: Whether to show source documents (default: True)
+        conversation_history: List of previous messages for conversation context
     """
     # Get relevant chunks using semantic search
     semantic_results = semantic_search(query, top_k=max_chunks)
     
     if not semantic_results:
-        return query_model(query)
+        return query_model(query, conversation_history=conversation_history)
     
     # Check if the best match has good similarity (threshold: 0.3)
     best_score = semantic_results[0][1]
     
     # If similarity is too low, treat as general query without document context
-    if best_score < 0.3:
-        return query_model(query)
+    if best_score < 0.4:
+        return query_model(query, conversation_history=conversation_history)
     
     # Build context from search results (max 2000 chars per chunk)
     context_parts = [
@@ -374,12 +372,29 @@ DOCUMENT CONTENT:
 """
     
     # Query the LLM with context
-    llm_response = query_model(enhanced_query)
+    llm_response = query_model(enhanced_query, stream=stream)
+    
+    # Handle streaming response
+    if stream:
+        sources = list(set(filename for _, _, filename in semantic_results)) if (include_context_preview and semantic_results and best_score >= 0.4) else None
+        
+        def stream_with_sources():
+            # Stream the main response
+            for chunk in llm_response:
+                yield chunk
+            
+            # Add sources at the end if applicable
+            if sources:
+                source_text = ", ".join(sources)
+                yield {"response": f"\n\n---\n**Sources:** {source_text}"}
+        
+        return stream_with_sources()
     
     # Format the response with source attribution
-    if include_context_preview and semantic_results:
-        _, _, filename = semantic_results[0]
-        return f"{llm_response}\n\n---\n**Source:** {filename}"
+    if include_context_preview and semantic_results and best_score >= 0.4:
+        sources = list(set(filename for _, _, filename in semantic_results))
+        source_text = ", ".join(sources)
+        return f"{llm_response}\n\n---\n**Sources:** {source_text}"
     
     return llm_response 
        

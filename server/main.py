@@ -9,7 +9,7 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.document_ingestion import ingest_file
-from server.query_handler import answer_query,semantic_search,query_with_context,query_model
+from server.query_handler import answer_query,query_model
 from server.excel_csv import ExcelQueryEngine, CSVQueryEngine
 from server.web_search_file import tavily_web_search
 
@@ -54,38 +54,6 @@ def answer_query_tool(query: str, conversation_history: str = "[]") -> str:
         print(error_msg)
         return error_msg
 
-@mcp.tool
-def semantic_search_tool(query: str, top_k: int = 5) -> str:
-    results = semantic_search(query, top_k)
-    
-    if not results:
-        return f"No semantically similar content found for query: '{query}'"
-    
-    response_parts = [f"Semantic search results for: '{query}'\n"]
-    
-    for i, (content, score, filename) in enumerate(results, 1):
-        response_parts.append(f"**Match {i}** (Similarity: {score:.3f}) - {filename}")
-        response_parts.append("-" * 50)
-        display_content = content[:250] + "..." if len(content) > 250 else content
-        response_parts.append(display_content)
-        response_parts.append("")
-    
-    return "\n".join(response_parts)
-
-@mcp.tool
-def query_with_context_tool(query: str, max_chunks: int = 3, include_context_preview: bool = True, conversation_history: str = "[]") -> str:
-    """
-    Query with document context and conversation history
-    
-    Args:
-        query: The current user query
-        max_chunks: Maximum number of document chunks to include
-        include_context_preview: Whether to show source documents
-        conversation_history: JSON string of previous messages (default: "[]")
-    """
-    import json
-    history = json.loads(conversation_history) if conversation_history else []
-    return query_with_context(query, max_chunks, include_context_preview, conversation_history=history)
 
 @mcp.tool
 def query_excel_with_llm_tool(file_path: str, query: str, sheet_name: str = None) -> str:
