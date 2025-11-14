@@ -11,22 +11,28 @@ import uuid
 documents = []  # List of {"content": str, "filename": str, "filepath": str, "document_id": str, "user_id": str}
 
 # Initialize Supabase client
-SUPABASE_URL = os.environ.get("https://fmlanqjduftxlktygpwe.supabase.co")
-SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs")  
+# Get from environment variables, with fallback to hardcoded values
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://fmlanqjduftxlktygpwe.supabase.co")
+# Use service role key for backend operations (bypasses RLS)
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs"))
 
 supabase: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print("✅ Supabase client initialized successfully")
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase client initialized successfully")
+    except Exception as e:
+        print(f"⚠️  Failed to initialize Supabase client: {str(e)}")
+        supabase = None
 
 # Import will be done after query_handler is fully loaded to avoid circular import
 
 
-def _import_update_embeddings():
+def _import_build_embeddings():
     """Lazy import to avoid circular dependency"""
     try:
-        from server.query_handler import update_embeddings
-        return update_embeddings
+        from server.query_handler import build_embeddings
+        return build_embeddings
     except ImportError:
         return None
 
@@ -77,60 +83,72 @@ def ingest_file(file_path: str, user_id: str = None):
         # Try to store in Supabase first
         if supabase and user_id:
             print(f"☁️  Uploading file to Supabase Storage...")
-            # Read file content
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
-                
-            # Generate unique file path in Supabase Storage
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            storage_path = f"{user_id}/{timestamp}_{filename}"
-                
-            # Upload to Supabase Storage
-            supabase.storage.from_('vault_files').upload(
-                storage_path,
-                file_content,
-                file_options={"content-type": file_type}
-            )
-                
-            print(f"✅ File uploaded to Supabase: {storage_path}")
-                
-            # Insert metadata into vault_documents table
-            document_id = str(uuid.uuid4())
-            db_response = supabase.table('vault_documents').insert({
-                'document_id': document_id,
-                'user_id': user_id,
-                'file_name': filename,
-                'file_path': storage_path,
-                'file_size': file_size,
-                'file_type': file_type,
-                'metadata': {
-                    'original_name': filename,
-                    'processed': True,
-                    'character_count': len(content)
+            try:
+                # Read file content
+                with open(file_path, 'rb') as f:
+                    file_content = f.read()
+                    
+                # Generate unique file path in Supabase Storage
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                storage_path = f"{user_id}/{timestamp}_{filename}"
+                    
+                # Upload to Supabase Storage
+                supabase.storage.from_('vault_files').upload(
+                    storage_path,
+                    file_content,
+                    file_options={"content-type": file_type}
+                )
+                    
+                print(f"✅ File uploaded to Supabase: {storage_path}")
+                    
+                # Insert metadata into vault_documents table
+                document_id = str(uuid.uuid4())
+                db_response = supabase.table('vault_documents').insert({
+                    'document_id': document_id,
+                    'user_id': user_id,
+                    'file_name': filename,
+                    'file_path': storage_path,
+                    'file_size': file_size,
+                    'file_type': file_type,
+                    'metadata': {
+                        'original_name': filename,
+                        'processed': True,
+                        'character_count': len(content)
+                    }
+                }).execute()
+                    
+                print(f"✅ Document metadata saved to Supabase database")
+                    
+                # Store document with metadata in memory
+                doc_info = {
+                    "content": content,
+                    "filename": filename,
+                    "filepath": storage_path,  # Store Supabase path
+                    "document_id": document_id,
+                    "user_id": user_id
                 }
-            }).execute()
-                
-            print(f"✅ Document metadata saved to Supabase database")
-                
-            # Store document with metadata in memory
-            doc_info = {
-                "content": content,
-                "filename": filename,
-                "filepath": storage_path,  # Store Supabase path
-                "document_id": document_id,
-                "user_id": user_id
-            }
-            documents.append(doc_info)
-                
-            result_msg = f"Successfully ingested file '{filename}' to Supabase. Extracted {len(content)} characters. Total documents: {len(documents)}"
-            print(result_msg)
-                
-            # Update embeddings after adding new document
-            update_embeddings_func = _import_update_embeddings()
-            if update_embeddings_func:
-                update_embeddings_func()
-                
-            return result_msg
+                documents.append(doc_info)
+                    
+                result_msg = f"Successfully ingested file '{filename}' to Supabase. Extracted {len(content)} characters. Total documents: {len(documents)}"
+                print(result_msg)
+                    
+                # Rebuild embeddings to ensure all documents are properly embedded
+                build_embeddings_func = _import_build_embeddings()
+                if build_embeddings_func:
+                    print("🔄 Rebuilding embeddings for all documents...")
+                    build_embeddings_func()
+                    print("✅ Embeddings rebuild complete")
+                    
+                return result_msg
+            except Exception as supabase_error:
+                error_msg = f"Supabase storage error: {str(supabase_error)}"
+                print(f"⚠️  {error_msg}")
+                return error_msg
+        else:
+            # No Supabase or user_id provided
+            error_msg = f"Error: Supabase client not initialized or user_id not provided. Cannot ingest file."
+            print(f"⚠️  {error_msg}")
+            return error_msg
                 
         
         

@@ -204,6 +204,18 @@ export default function DashboardPage() {
     setMessages((prev) => [...prev, userMessage])
     setIsProcessing(true)
 
+    // Create a placeholder assistant message for streaming
+    const assistantMessageId = (Date.now() + 1).toString()
+    const assistantMessage: Message = {
+      id: assistantMessageId,
+      content: '',
+      role: 'assistant',
+      timestamp: new Date(),
+      isStreaming: true
+    }
+
+    setMessages((prev) => [...prev, assistantMessage])
+
     try {
       // Prepare conversation history from existing messages (limit to last 10 messages for context)
       const conversation_history = messages.slice(-10).map(msg => ({
@@ -211,7 +223,7 @@ export default function DashboardPage() {
         content: msg.content
       }))
 
-      // Call Next.js API route with conversation history
+      // Call Next.js API route with streaming support
       const response = await fetch('/api/chat/query', {
         method: 'POST',
         headers: {
@@ -227,26 +239,86 @@ export default function DashboardPage() {
         throw new Error(`API error: ${response.statusText}`)
       }
 
-      const data = await response.json()
+      // Check if response is streaming (SSE)
+      const contentType = response.headers.get('content-type')
+      if (contentType?.includes('text/event-stream')) {
+        // Handle streaming response
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder()
+        let accumulatedContent = ''
 
-      // Use the actual AI response from the backend
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: data.response,
-        role: 'assistant',
-        timestamp: new Date()
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read()
+            
+            if (done) break
+
+            const chunk = decoder.decode(value, { stream: true })
+            const lines = chunk.split('\n')
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  
+                  if (data.chunk) {
+                    // Append chunk to accumulated content
+                    accumulatedContent += data.chunk
+                    
+                    // Update the assistant message with new content
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessageId
+                          ? { ...msg, content: accumulatedContent, isStreaming: true }
+                          : msg
+                      )
+                    )
+                  } else if (data.done) {
+                    // Streaming complete
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessageId
+                          ? { ...msg, isStreaming: false }
+                          : msg
+                      )
+                    )
+                  } else if (data.error) {
+                    throw new Error(data.error)
+                  }
+                } catch (parseError) {
+                  console.error('Error parsing SSE data:', parseError)
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // Fallback for non-streaming responses
+        const data = await response.json()
+        
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? { ...msg, content: data.response, isStreaming: false }
+              : msg
+          )
+        )
       }
-
-      setMessages((prev) => [...prev, assistantMessage])
     } catch (error) {
       console.error('Error sending message:', error)
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: assistantMessageId,
         content: 'Sorry, I encountered an error processing your request. Please try again.',
         role: 'assistant',
-        timestamp: new Date()
+        timestamp: new Date(),
+        isStreaming: false
       }
-      setMessages((prev) => [...prev, errorMessage])
+      
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMessageId ? errorMessage : msg
+        )
+      )
     } finally {
       setIsProcessing(false)
     }
