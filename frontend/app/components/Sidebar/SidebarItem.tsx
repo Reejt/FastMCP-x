@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 
 interface SidebarItemProps {
   icon: ReactNode
-  label: string
+  label: React.ReactNode
   isActive?: boolean
   isCollapsed: boolean
   onClick?: (e: React.MouseEvent) => void
@@ -29,19 +29,20 @@ export default function SidebarItem({
         w-full group relative flex items-center transition-all duration-300 ease-in-out
         px-3 py-3 rounded-lg
         ${isActive
-          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-          : 'text-gray-700 hover:bg-gray-100'
+          ? 'bg-indigo-50 border border-indigo-200'
+          : 'hover:bg-gray-100'
         }
         ${className}
       `}
-      aria-label={label}
+      style={{ color: isActive ? '#4F46E5' : '#060606' }}
+      aria-label={typeof label === 'string' ? label : undefined}
       aria-current={isActive ? 'page' : undefined}
       role="button"
       tabIndex={0}
     >
       {/* Icon Container - Fixed position */}
       <div className="flex-shrink-0 w-5 h-5">
-        <div className={`w-5 h-5 ${isActive ? 'text-indigo-700' : 'text-gray-600 group-hover:text-gray-900'}`}>
+        <div className={`w-5 h-5 ${isActive ? 'text-indigo-700' : 'group-hover:text-gray-900'}`} style={{ color: isActive ? '#4F46E5' : '#060606' }}>
           {icon}
         </div>
       </div>

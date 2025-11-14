@@ -62,7 +62,8 @@ export default function Sidebar({
           ease: 'easeInOut',
         }}
         onClick={isCollapsed ? toggleCollapse : undefined}
-        className={`bg-gray-50 h-screen flex flex-col shadow-md relative ${isCollapsed ? 'cursor-pointer' : ''}`}
+        className={`h-screen flex flex-col shadow-md relative ${isCollapsed ? 'cursor-pointer' : ''}`}
+        style={{ backgroundColor: '#fcfcfc' }}
         role="navigation"
         aria-label="Main navigation"
         aria-expanded={!isCollapsed}
@@ -77,7 +78,8 @@ export default function Sidebar({
                 width: isCollapsed ? 0 : 'auto',
               }}
               transition={{ duration: 0.3 }}
-              className="text-xl font-bold text-gray-900 tracking-wider whitespace-nowrap overflow-hidden"
+              className="text-xl font-medium tracking-wider whitespace-nowrap overflow-hidden"
+              style={{ color: '#060606' }}
             >
               VARYS AI
             </motion.h1>
@@ -160,7 +162,8 @@ export default function Sidebar({
                       <button
                         key={workspace.id}
                         onClick={() => router.push(`/workspaces/${workspace.id}`)}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-lg transition-colors"
+                        style={{ color: '#060606' }}
                       >
                         {workspace.name}
                       </button>
@@ -228,7 +231,7 @@ export default function Sidebar({
                   </span>
                 </div>
                 <div className="flex-1 min-w-0 overflow-hidden">
-                  <p className="text-sm font-medium text-gray-900 truncate">{user.email}</p>
+                  <p className="text-sm font-medium truncate" style={{ color: '#060606' }}>{user.email}</p>
                   <p className="text-xs text-gray-500 capitalize">{user.role}</p>
                 </div>
               </div>
@@ -237,7 +240,8 @@ export default function Sidebar({
                   e.stopPropagation()
                   onSignOutAction()
                 }}
-                className="w-full px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors text-left flex items-center space-x-2"
+                className="w-full px-4 py-2 text-sm hover:bg-gray-100 rounded-lg transition-colors text-left flex items-center space-x-2"
+                style={{ color: '#060606' }}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

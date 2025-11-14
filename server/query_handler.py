@@ -12,11 +12,6 @@ from chromadb.config import Settings
 try:
     from sklearn.metrics.pairwise import cosine_similarity
     from sentence_transformers import SentenceTransformer
-    try:
-        import torch
-        TORCH_AVAILABLE = True
-    except Exception:
-        TORCH_AVAILABLE = False
     SEMANTIC_SEARCH_AVAILABLE = True
 except ImportError:
     print("Warning: Semantic search dependencies not available. Install sentence-transformers and scikit-learn for enhanced search.")
@@ -39,10 +34,8 @@ def get_semantic_model():
         
     if _semantic_model is None:
         try:
-            # Choose device: GPU if available and torch is present
-            device = 'cuda' if (TORCH_AVAILABLE and torch.cuda.is_available()) else 'cpu'
-            print(f"Loading SentenceTransformer on device: {device}")
-            _semantic_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+            # Use a lightweight but effective model
+            _semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
         except Exception as e:
             print(f"Warning: Could not load semantic model: {e}")
             _semantic_model = False  # Mark as failed to avoid retrying
@@ -267,7 +260,7 @@ def is_query_related_to_history(query: str, conversation_history: list) -> bool:
     return False
 
 
-def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None, stream: bool = False):
+def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None) -> str:
     """
     Query the Ollama model via HTTP API with optional conversation history
     
@@ -275,38 +268,14 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_histor
         query: The current user query
         model_name: Name of the Ollama model to use
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
-        stream: If True, returns a generator that yields response chunks. If False, returns the full response string.
-    
-    Returns:
-        If stream=False: str - The full response text
-        If stream=True: Generator that yields dict chunks with 'response' key
     """
     try:
-        # Build the prompt with conversation history only if query is related to previous context
-        if conversation_history and len(conversation_history) > 0 and is_query_related_to_history(query, conversation_history):
-            # Format conversation history into the prompt
-            context_parts = []
-            for msg in conversation_history[-6:]:  # Last 6 messages (3 exchanges) for context
-                role = "User" if msg.get("role") == "user" else "Assistant"
-                context_parts.append(f"{role}: {msg.get('content', '')}")
-            
-            conversation_context = "\n".join(context_parts)
-            enhanced_query = f"""Previous conversation:
-{conversation_context}
-
-Current question: {query}
-
-Answer the current question, using the previous conversation for context if relevant (e.g., if the user uses pronouns like "it", "that", "they" or refers to previous topics)."""
-            prompt = enhanced_query
-        else:
-            prompt = query
-        
         response = requests.post(
             'http://localhost:11434/api/generate',
             json={
                 'model': model_name,
                 'prompt': prompt,
-                'stream': stream
+                'stream': False
             },
             timeout=120,  # Increased timeout for large content summarization
             stream=stream  # Enable streaming at requests level
@@ -334,7 +303,7 @@ Answer the current question, using the previous conversation for context if rele
             
    
 
-def answer_query(query: str, conversation_history: list = None, stream: bool = False):
+def answer_query(query: str, conversation_history: list = None):
     """
     Answer queries using semantic search on ingested documents
     Falls back to general model if no documents or no relevant context found
@@ -342,22 +311,19 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
     Args:
         query: The current user query
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
-        stream: If True, returns a generator for streaming responses
-    
-    Returns:
-        If stream=False: str - The full response text
-        If stream=True: Generator that yields response chunks
     """
     if not documents:
-        return query_model(query, conversation_history=conversation_history, stream=stream)
+        llm_response = query_model(query, conversation_history=conversation_history)
+        return llm_response
     
     try:
         semantic_results = semantic_search(query, top_k=2)
         
         if not semantic_results:
-            return query_model(query, conversation_history=conversation_history, stream=stream)
+            llm_response = query_model(query, conversation_history=conversation_history)
+            return llm_response
         
-        return query_with_context(query, max_chunks=2, conversation_history=conversation_history, stream=stream)
+        return query_with_context(query, max_chunks=2, conversation_history=conversation_history)
         
     except Exception as e:
         if stream:
@@ -369,7 +335,7 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
 
 
 
-def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False):
+def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True, conversation_history: list = None):
     """
     Query the LLM with relevant document chunks as context
     
@@ -378,20 +344,19 @@ def query_with_context(query: str, max_chunks: int = 2, include_context_preview:
         max_chunks: Maximum number of document chunks to include (default: 2)
         include_context_preview: Whether to show source documents (default: True)
         conversation_history: List of previous messages for conversation context
-        stream: If True, returns a generator for streaming responses
     """
     # Get relevant chunks using semantic search
     semantic_results = semantic_search(query, top_k=max_chunks)
     
     if not semantic_results:
-        return query_model(query, conversation_history=conversation_history, stream=stream)
+        return query_model(query, conversation_history=conversation_history)
     
     # Check if the best match has good similarity (threshold: 0.3)
     best_score = semantic_results[0][1]
     
     # If similarity is too low, treat as general query without document context
     if best_score < 0.4:
-        return query_model(query, conversation_history=conversation_history, stream=stream)
+        return query_model(query, conversation_history=conversation_history)
     
     # Build context from search results (max 2000 chars per chunk)
     context_parts = [
@@ -400,26 +365,7 @@ def query_with_context(query: str, max_chunks: int = 2, include_context_preview:
     ]
     
     context = "\n\n---\n\n".join(context_parts)
-    
-    # Include conversation history in the enhanced query if provided
-    if conversation_history and len(conversation_history) > 0 and is_query_related_to_history(query, conversation_history):
-        history_parts = []
-        for msg in conversation_history[-6:]:  # Last 6 message for context
-            role = "User" if msg.get("role") == "user" else "Assistant"
-            history_parts.append(f"{role}: {msg.get('content', '')}")
-        conversation_context = "\n".join(history_parts)
-        
-        enhanced_query = f"""Previous conversation:
-{conversation_context}
-
-DOCUMENT CONTENT:
-{context}
-
-Current question: {query}
-
-Instructions: Answer the current question using the document content provided above. Use the previous conversation for context if the user refers to previous topics or uses pronouns."""
-    else:
-        enhanced_query = f"""Answer this question using the document content provided below: {query}
+    enhanced_query = f"""Answer this question using the document content provided below: {query}
 
 DOCUMENT CONTENT:
 {context}
@@ -444,7 +390,7 @@ DOCUMENT CONTENT:
         
         return stream_with_sources()
     
-    # Format the response with source attribution (non-streaming)
+    # Format the response with source attribution
     if include_context_preview and semantic_results and best_score >= 0.4:
         sources = list(set(filename for _, _, filename in semantic_results))
         source_text = ", ".join(sources)
