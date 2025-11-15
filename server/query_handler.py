@@ -260,7 +260,7 @@ def is_query_related_to_history(query: str, conversation_history: list) -> bool:
     return False
 
 
-def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None) -> str:
+def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None, stream: bool = False):
     """
     Query the Ollama model via HTTP API with optional conversation history
     
@@ -268,13 +268,14 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_histor
         query: The current user query
         model_name: Name of the Ollama model to use
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
+        stream: Whether to stream the response (default: False)
     """
     try:
         response = requests.post(
             'http://localhost:11434/api/generate',
             json={
                 'model': model_name,
-                'prompt': prompt,
+                'prompt': query,
                 'stream': False
             },
             timeout=120,  # Increased timeout for large content summarization
@@ -303,7 +304,7 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_histor
             
    
 
-def answer_query(query: str, conversation_history: list = None):
+def answer_query(query: str, conversation_history: list = None, stream: bool = False):
     """
     Answer queries using semantic search on ingested documents
     Falls back to general model if no documents or no relevant context found
@@ -311,19 +312,20 @@ def answer_query(query: str, conversation_history: list = None):
     Args:
         query: The current user query
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
+        stream: Whether to stream the response (default: False)
     """
     if not documents:
-        llm_response = query_model(query, conversation_history=conversation_history)
+        llm_response = query_model(query, conversation_history=conversation_history, stream=stream)
         return llm_response
     
     try:
         semantic_results = semantic_search(query, top_k=2)
         
         if not semantic_results:
-            llm_response = query_model(query, conversation_history=conversation_history)
+            llm_response = query_model(query, conversation_history=conversation_history, stream=stream)
             return llm_response
         
-        return query_with_context(query, max_chunks=2, conversation_history=conversation_history)
+        return query_with_context(query, max_chunks=2, conversation_history=conversation_history, stream=stream)
         
     except Exception as e:
         if stream:
@@ -335,7 +337,7 @@ def answer_query(query: str, conversation_history: list = None):
 
 
 
-def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True, conversation_history: list = None):
+def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False):
     """
     Query the LLM with relevant document chunks as context
     
@@ -344,19 +346,20 @@ def query_with_context(query: str, max_chunks: int = 2, include_context_preview:
         max_chunks: Maximum number of document chunks to include (default: 2)
         include_context_preview: Whether to show source documents (default: True)
         conversation_history: List of previous messages for conversation context
+        stream: Whether to stream the response (default: False)
     """
     # Get relevant chunks using semantic search
     semantic_results = semantic_search(query, top_k=max_chunks)
     
     if not semantic_results:
-        return query_model(query, conversation_history=conversation_history)
+        return query_model(query, conversation_history=conversation_history, stream=stream)
     
     # Check if the best match has good similarity (threshold: 0.3)
     best_score = semantic_results[0][1]
     
     # If similarity is too low, treat as general query without document context
     if best_score < 0.4:
-        return query_model(query, conversation_history=conversation_history)
+        return query_model(query, conversation_history=conversation_history, stream=stream)
     
     # Build context from search results (max 2000 chars per chunk)
     context_parts = [
