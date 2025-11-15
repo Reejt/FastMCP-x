@@ -1,9 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+
+// Dynamically import the animated background to avoid SSR issues
+const AnoAI = dynamic(() => import('@/app/components/UI/animated-shader-background'), { ssr: false })
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -83,31 +87,39 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900">
-      {/* Left side - Branding, Logo, and Text */}
-      <div className="w-3/5 flex flex-col p-12">
-        {/* VARYS AI Branding and Logo - Top Left */}
-        <div className="flex items-center gap-3 mb-16 ml-16">
-          <Image
-            src="/logo.png"
-            alt="Varys AI Logo"
-            width={40}
-            height={40}
-            className="opacity-90"
-            priority
-          />
-          <h1 className="text-2xl font-bold text-white tracking-wider">
-            VARYS AI
-          </h1>
+    <div className="min-h-screen flex">
+      {/* Left side - Branding, Logo, and Text with Animated Background */}
+      <div className="relative w-3/5 flex flex-col p-12 overflow-hidden">
+        {/* Animated Shader Background - Only in left section */}
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <AnoAI />
         </div>
 
-        {/* Large Text - Left Aligned */}
-        <div className="flex-1 flex flex-col justify-center ml-16 -mt-20">
-          <h2 className="text-5xl font-bold text-white mb-6">
-            Your AI, on your terms.
-          </h2>
-          <div className="text-5xl font-bold text-white">
-            {typedText}<span className="animate-pulse">|</span>
+        {/* Left content with z-index above background */}
+        <div className="relative z-10 flex flex-col h-full">
+          {/* VARYS AI Branding and Logo - Top Left */}
+          <div className="flex items-center gap-3 mb-16 ml-16">
+            <Image
+              src="/logo.png"
+              alt="Varys AI Logo"
+              width={40}
+              height={40}
+              className="opacity-90"
+              priority
+            />
+            <h1 className="text-2xl font-bold text-white tracking-wider">
+              VARYS AI
+            </h1>
+          </div>
+
+          {/* Large Text - Left Aligned */}
+          <div className="flex-1 flex flex-col justify-center ml-16 -mt-20">
+            <h2 className="text-5xl font-bold text-white mb-6">
+              Your AI, on your terms.
+            </h2>
+            <div className="text-5xl font-bold text-white">
+              {typedText}<span className="animate-pulse">|</span>
+            </div>
           </div>
         </div>
       </div>

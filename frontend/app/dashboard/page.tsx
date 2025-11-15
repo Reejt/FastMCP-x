@@ -8,6 +8,7 @@ import Sidebar from '@/app/components/Sidebar/Sidebar'
 import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
 import ChatContainer from '@/app/components/Chat/ChatContainer'
 import ChatInput from '@/app/components/Chat/ChatInput'
+import Breadcrumb from '@/app/components/Breadcrumb'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -23,6 +24,18 @@ export default function DashboardPage() {
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
   const [workspaceChatSessions, setWorkspaceChatSessions] = useState<ChatSession[]>([])
   const [currentChatId, setCurrentChatId] = useState<string>('')
+  const [isWorkspaceSidebarCollapsed, setIsWorkspaceSidebarCollapsed] = useState(false)
+  const [shouldCollapseMainSidebar, setShouldCollapseMainSidebar] = useState(false)
+
+  // Load workspace sidebar collapse state from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('workspace-sidebar-collapsed')
+    if (saved !== null) {
+      const collapsed = saved === 'true'
+      setIsWorkspaceSidebarCollapsed(collapsed)
+      setShouldCollapseMainSidebar(!collapsed)
+    }
+  }, [])
 
   useEffect(() => {
     const checkUser = async () => {
@@ -184,6 +197,19 @@ export default function DashboardPage() {
     setChatSessions(prev => ({ ...prev, [newSession.id]: newSession }))
   }
 
+  const handleWorkspaceSidebarToggle = (isCollapsed: boolean) => {
+    setIsWorkspaceSidebarCollapsed(isCollapsed)
+    // Only collapse main sidebar when workspace sidebar is expanded (not collapsed)
+    // When workspace sidebar is collapsed, don't force main sidebar (let it use its own state)
+    setShouldCollapseMainSidebar(!isCollapsed)
+  }
+
+  const handleExpandWorkspaceSidebar = () => {
+    setIsWorkspaceSidebarCollapsed(false)
+    localStorage.setItem('workspace-sidebar-collapsed', 'false')
+    setShouldCollapseMainSidebar(true)
+  }
+
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/login')
@@ -229,9 +255,9 @@ export default function DashboardPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           query: content,
-          conversation_history 
+          conversation_history
         }),
       })
 
@@ -250,7 +276,7 @@ export default function DashboardPage() {
         if (reader) {
           while (true) {
             const { done, value } = await reader.read()
-            
+
             if (done) break
 
             const chunk = decoder.decode(value, { stream: true })
@@ -260,11 +286,11 @@ export default function DashboardPage() {
               if (line.startsWith('data: ')) {
                 try {
                   const data = JSON.parse(line.slice(6))
-                  
+
                   if (data.chunk) {
                     // Append chunk to accumulated content
                     accumulatedContent += data.chunk
-                    
+
                     // Update the assistant message with new content
                     setMessages((prev) =>
                       prev.map((msg) =>
@@ -295,7 +321,7 @@ export default function DashboardPage() {
       } else {
         // Fallback for non-streaming responses
         const data = await response.json()
-        
+
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMessageId
@@ -313,7 +339,7 @@ export default function DashboardPage() {
         timestamp: new Date(),
         isStreaming: false
       }
-      
+
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId ? errorMessage : msg
@@ -339,7 +365,11 @@ export default function DashboardPage() {
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Main Sidebar */}
-      <Sidebar user={user} onSignOutAction={handleSignOut} />
+      <Sidebar
+        user={user}
+        onSignOutAction={handleSignOut}
+        forceCollapse={shouldCollapseMainSidebar}
+      />
 
       {/* Workspace Sidebar */}
       {workspaceId && currentWorkspace && (
@@ -349,11 +379,42 @@ export default function DashboardPage() {
           currentChatId={currentChatId}
           onChatSelect={handleChatSelect}
           onNewChat={handleNewChat}
+          onToggleSidebar={handleWorkspaceSidebarToggle}
         />
       )}
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Breadcrumb Navigation with Expand Button */}
+        {workspaceId && currentWorkspace && (
+          <div className="flex items-center gap-3 px-8 py-4 bg-gray-50">
+            {isWorkspaceSidebarCollapsed && (
+              <button
+                onClick={handleExpandWorkspaceSidebar}
+                className="p-2 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
+                aria-label="Expand sidebar"
+              >
+                <svg className="w-5 h-5 text-gray-600" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M14 2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h12zM2 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H2z" />
+                  <path d="M3 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4z" />
+                </svg>
+              </button>
+            )}
+            <nav className="flex items-center gap-2 text-sm text-gray-600">
+              <button
+                onClick={() => router.push('/workspaces')}
+                className="hover:text-gray-900 transition-colors"
+              >
+                Workspaces
+              </button>
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+              <span className="text-gray-900 font-medium">{currentWorkspace.name || 'Workspace'}</span>
+            </nav>
+          </div>
+        )}
+
         {/* Chat Messages */}
         <ChatContainer messages={messages} workspaceName={currentWorkspaceName} />
 
