@@ -489,4 +489,3 @@ def answer_link_query(link, question):
     
 
 
-

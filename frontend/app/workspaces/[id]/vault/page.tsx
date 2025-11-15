@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { User } from '@/app/types'
+import { User, Workspace, ChatSession } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
+import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
+import Breadcrumb from '@/app/components/Breadcrumb'
 
 interface VaultFile {
   name: string
@@ -28,7 +30,22 @@ export default function WorkspaceVaultPage() {
   const [uploadedFiles, setUploadedFiles] = useState<VaultFile[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [shouldCollapseMainSidebar, setShouldCollapseMainSidebar] = useState(false)
+  const [isWorkspaceSidebarCollapsed, setIsWorkspaceSidebarCollapsed] = useState(false)
+  const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
+  const [workspaceChatSessions, setWorkspaceChatSessions] = useState<ChatSession[]>([])
+  const [currentChatId, setCurrentChatId] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    // Load workspace sidebar collapse state from localStorage
+    const saved = localStorage.getItem('workspace-sidebar-collapsed')
+    if (saved !== null) {
+      const collapsed = saved === 'true'
+      setIsWorkspaceSidebarCollapsed(collapsed)
+      setShouldCollapseMainSidebar(!collapsed)
+    }
+  }, [])
 
   useEffect(() => {
     const checkUser = async () => {
@@ -47,6 +64,45 @@ export default function WorkspaceVaultPage() {
         role: userRole
       })
 
+      // Load workspace data
+      const storedWorkspaces = localStorage.getItem('myWorkspaces')
+      if (storedWorkspaces) {
+        try {
+          const workspaces = JSON.parse(storedWorkspaces)
+          const workspace = workspaces.find((w: any) => w.id === workspaceId)
+          if (workspace) {
+            setCurrentWorkspace({
+              ...workspace,
+              createdAt: new Date(workspace.createdAt),
+              updatedAt: new Date(workspace.updatedAt)
+            })
+          }
+        } catch (error) {
+          console.error('Error loading workspace:', error)
+        }
+      }
+
+      // Load chat sessions for workspace
+      const allSessions: ChatSession[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key?.startsWith(`chat_session_${workspaceId}_`)) {
+          try {
+            const session = JSON.parse(localStorage.getItem(key) || '')
+            allSessions.push({
+              ...session,
+              createdAt: new Date(session.createdAt),
+              updatedAt: new Date(session.updatedAt)
+            })
+          } catch (error) {
+            console.error('Error loading session:', error)
+          }
+        }
+      }
+      setWorkspaceChatSessions(allSessions.sort((a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      ))
+
       await loadDocuments()
       setLoading(false)
     }
@@ -63,6 +119,7 @@ export default function WorkspaceVaultPage() {
 
       const result = await response.json()
       if (result.success && result.documents) {
+        // Transform documents (workspace filtering removed - shows all user documents)
         const transformedDocs = result.documents.map((doc: any) => ({
           name: doc.file_name,
           size: doc.file_size,
@@ -76,6 +133,29 @@ export default function WorkspaceVaultPage() {
     } catch (error) {
       console.error('Error loading documents:', error)
     }
+  }
+
+  const handleWorkspaceSidebarToggle = (isCollapsed: boolean) => {
+    setIsWorkspaceSidebarCollapsed(isCollapsed)
+    // Only collapse main sidebar when workspace sidebar is expanded (not collapsed)
+    // When workspace sidebar is collapsed, don't force main sidebar (let it use its own state)
+    setShouldCollapseMainSidebar(!isCollapsed)
+  }
+
+  const handleExpandWorkspaceSidebar = () => {
+    setIsWorkspaceSidebarCollapsed(false)
+    localStorage.setItem('workspace-sidebar-collapsed', 'false')
+    setShouldCollapseMainSidebar(true)
+  }
+
+  const handleChatSelect = (chatId: string) => {
+    // Navigate back to dashboard with selected chat
+    router.push(`/dashboard?workspace=${workspaceId}`)
+  }
+
+  const handleNewChat = () => {
+    // Navigate back to dashboard with new chat
+    router.push(`/dashboard?workspace=${workspaceId}`)
   }
 
   const handleSignOut = async () => {
@@ -183,22 +263,66 @@ export default function WorkspaceVaultPage() {
         disabled={uploading}
       />
 
-      <Sidebar user={user} onSignOutAction={handleSignOut} />
+      <Sidebar
+        user={user}
+        onSignOutAction={handleSignOut}
+        forceCollapse={shouldCollapseMainSidebar}
+      />
+
+      {/* Workspace Sidebar */}
+      {currentWorkspace && (
+        <WorkspaceSidebar
+          workspace={currentWorkspace}
+          chatSessions={workspaceChatSessions}
+          currentChatId={currentChatId}
+          onChatSelect={handleChatSelect}
+          onNewChat={handleNewChat}
+          onToggleSidebar={handleWorkspaceSidebarToggle}
+        />
+      )}
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-8 py-6">
-          <div className="flex items-center justify-between">
+        {/* Breadcrumb Navigation with Expand Button */}
+        <div className="flex items-center gap-3 px-8 py-4 bg-gray-50">
+          {isWorkspaceSidebarCollapsed && (
+            <button
+              onClick={handleExpandWorkspaceSidebar}
+              className="p-2 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
+              aria-label="Expand sidebar"
+            >
+              <svg className="w-5 h-5 text-gray-600" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M14 2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h12zM2 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H2z" />
+                <path d="M3 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4z" />
+              </svg>
+            </button>
+          )}
+          <nav className="flex items-center gap-2 text-sm text-gray-600">
+            <button
+              onClick={() => router.push('/workspaces')}
+              className="hover:text-gray-900 transition-colors"
+            >
+              Workspaces
+            </button>
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <button
+              onClick={() => router.push(`/dashboard?workspace=${workspaceId}`)}
+              className="hover:text-gray-900 transition-colors"
+            >
+              {currentWorkspace?.name || 'Workspace'}
+            </button>
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span className="text-gray-900 font-medium">Vault</span>
+          </nav>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-auto px-8 pb-8">
+          <div className="mb-8 flex items-center justify-between pt-8">
             <div>
-              <button
-                onClick={() => router.push(`/workspaces/${workspaceId}`)}
-                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-                Back to Workspace
-              </button>
               <h1 className="text-2xl font-semibold text-gray-900">Vault</h1>
             </div>
             <div className="flex items-center gap-4">
@@ -228,14 +352,10 @@ export default function WorkspaceVaultPage() {
           </div>
 
           {uploadProgress && (
-            <div className="mt-4 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+            <div className="mb-6 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
               {uploadProgress}
             </div>
           )}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-auto px-8 py-6">
           {filteredFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="w-16 h-16 mb-4 text-gray-400">
