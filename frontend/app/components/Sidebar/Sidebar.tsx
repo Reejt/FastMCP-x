@@ -9,11 +9,13 @@ import SidebarItem from './SidebarItem'
 interface SidebarProps {
   user: User
   onSignOutAction: () => void
+  forceCollapse?: boolean
 }
 
 export default function Sidebar({
   user,
   onSignOutAction,
+  forceCollapse = false,
 }: SidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -41,6 +43,9 @@ export default function Sidebar({
       setIsCollapsed(saved === 'true')
     }
   }, [])
+
+  // Note: forceCollapse is kept for future use but doesn't restrict manual toggling
+  // Users can always expand/collapse the main sidebar regardless of workspace sidebar state
 
   // Toggle collapse state and save to localStorage
   const toggleCollapse = () => {
