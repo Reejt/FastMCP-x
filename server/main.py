@@ -12,6 +12,7 @@ from server.document_ingestion import ingest_file
 from server.query_handler import answer_query,query_model
 from server.excel_csv import ExcelQueryEngine, CSVQueryEngine
 from server.web_search_file import tavily_web_search
+from server.query_handler import answer_link_query 
 
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
 
@@ -181,6 +182,28 @@ Instructions:
         
     except Exception as e:
         return f"Error in web search tool: {str(e)}"
+    
+@mcp.tool
+def answer_link_query_tool(url: str, query: str) -> str:
+    """
+    Answer a query based on the content of a specific URL
+    
+    Args:
+        url: The URL to extract content from
+        query: The user's question related to the URL content
+    
+    Returns:
+        LLM-generated answer based on the extracted content from the URL
+    """
+    try:
+        result = answer_link_query(url, query)
+        print(f"Link query result: {result}")
+        return result
+    except Exception as e:
+        error_msg = f"Error in answer_link_query_tool: {str(e)}"
+        print(error_msg)
+        return error_msg
+
 
 
 if __name__ == "__main__":

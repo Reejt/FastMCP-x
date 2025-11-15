@@ -24,6 +24,7 @@ from client.fast_mcp_client import (
     ingest_file as mcp_ingest_file,
     query_excel_with_llm as mcp_query_excel,
     web_search as mcp_web_search,
+    answer_link_query as mcp_answer_link_query,
 )
 
 # Initialize FastAPI app
@@ -68,7 +69,6 @@ class WebSearchRequest(BaseModel):
     query: str
 
 
-
 # Helper function to extract text from MCP result
 def extract_response(result) -> str:
     """Extract text response from MCP result object"""
@@ -101,9 +101,53 @@ async def query_endpoint(request: QueryRequest):
         if request.conversation_history:
             print(f"📜 With conversation history: {len(request.conversation_history)} messages")
         
-        # Detect if query requires real-time/current information from web search
+        # Detect if query contains a URL - route to link query handler
         import re
         
+        # Check if query contains a URL (http/https)
+        url_pattern = r'https?://[^\s]+'
+        url_match = re.search(url_pattern, request.query)
+        
+        if url_match:
+            detected_url = url_match.group(0)
+            print(f"🔗 Detected URL in query: {detected_url}")
+            
+            # Check if it's a supported social media or web link
+            if detected_url.startswith("http"):
+                if "youtube.com" in detected_url or "youtu.be" in detected_url:
+                    print("📺 YouTube link detected")
+                elif "twitter.com" in detected_url or "x.com" in detected_url:
+                    print("🐦 Twitter/X link detected")
+                elif "instagram.com" in detected_url:
+                    print("📷 Instagram link detected")
+                else:
+                    print("🌐 Web link detected")
+                
+                # Extract the question part (everything except the URL)
+                question = re.sub(url_pattern, '', request.query).strip()
+                if not question:
+                    question = "Summarize the content of this link"
+                
+                print(f"❓ Question: {question}")
+                
+                # Call link query handler
+                response = await mcp_answer_link_query(detected_url, question)
+                
+                def event_generator():
+                    yield f"data: {json.dumps({'chunk': response})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                
+                return StreamingResponse(
+                    event_generator(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no"
+                    }
+                )
+        
+        # Detect if query requires real-time/current information from web search
         query_lower = request.query.lower()
         
         # Check for year mentions after 2023
@@ -349,7 +393,7 @@ async def health_check():
             "mode": "routes_to_fast_mcp_client",
             "mcp_connection": "connected",
             "endpoints": {
-                "query": "/api/query",
+                "query": "/api/query (supports URLs, web search, and document queries)",
                 "ingest": "/api/ingest",
                 "query_excel": "/api/query-excel",
                 "web_search": "/api/web-search"

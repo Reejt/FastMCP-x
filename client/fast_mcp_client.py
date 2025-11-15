@@ -120,5 +120,32 @@ async def web_search(search_query: str):
             response = str(result)
                         
         return response
+    
+
+async def answer_link_query(url: str, question: str):
+    """
+    Answer a question based on the content of a provided link URL.
+    
+    Args:
+        url: The URL of the link to analyze
+        question: The question to answer based on the link content
+    """
+    async with Client(FASTMCP_SERVER_URL) as client:
+        tool_params = {
+            "url": url,
+            "query": question  # Changed from "question" to "query" to match answer_link_query_tool parameter
+        }
+        
+        result = await client.call_tool("answer_link_query_tool", tool_params)
+                        
+        # Extract response from MCP result
+        if hasattr(result, 'content') and result.content:
+            response = result.content[0].text
+        elif hasattr(result, 'data') and result.data:
+            response = result.data
+        else:
+            response = str(result)
+                        
+        return response
                 
                

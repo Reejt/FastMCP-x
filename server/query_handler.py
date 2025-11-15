@@ -400,6 +400,91 @@ DOCUMENT CONTENT:
         return f"{llm_response}\n\n---\n**Sources:** {source_text}"
     
     return llm_response 
+
+
+
+def answer_link_query(link, question):
+    """Answer a question based on the content of a given link (web or social media)"""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        
+        if link.startswith("http"):
+            # Fetch the web page
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            resp = requests.get(link, timeout=30, headers=headers)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+            
+            # Check if it's a social media link
+            if "youtube.com" in link or "youtu.be" in link:
+                # Extract YouTube video description and comments area
+                content = ""
+                
+                # Try to get video title
+                title = soup.find("meta", property="og:title")
+                if title and title.get("content"):
+                    content += f"Title: {title['content']}\n\n"
+                
+                # Try to get video description
+                description = soup.find("meta", property="og:description")
+                if description and description.get("content"):
+                    content += f"Description: {description['content']}\n\n"
+                
+                # Extract any visible text content (fallback)
+                if not content.strip():
+                    content = soup.get_text(separator="\n", strip=True)
+                    
+            elif "twitter.com" in link or "x.com" in link:
+                # Extract Twitter/X post content
+                content = ""
+                
+                # Try to get tweet description
+                description = soup.find("meta", property="og:description")
+                if description and description.get("content"):
+                    content += f"Tweet: {description['content']}\n\n"
+                
+                # Extract article text if available
+                articles = soup.find_all("article")
+                for article in articles:
+                    content += article.get_text(separator="\n", strip=True) + "\n"
+                
+                # Fallback to general text
+                if not content.strip():
+                    content = soup.get_text(separator="\n", strip=True)
+                    
+            elif "instagram.com" in link:
+                # Extract Instagram post content
+                content = ""
+                
+                # Try to get post description
+                description = soup.find("meta", property="og:description")
+                if description and description.get("content"):
+                    content += f"Post: {description['content']}\n\n"
+                
+                # Try to get title
+                title = soup.find("meta", property="og:title")
+                if title and title.get("content"):
+                    content += f"Caption: {title['content']}\n\n"
+                
+                # Fallback to general text
+                if not content.strip():
+                    content = soup.get_text(separator="\n", strip=True)
+                    
+            else:
+                # General web link: extract all text
+                content = soup.get_text(separator="\n", strip=True)
+        else:
+            return "Unsupported link type. Please provide a valid HTTP/HTTPS URL."
+        
+        # Clean up excessive whitespace
+        content = "\n".join(line.strip() for line in content.split("\n") if line.strip())
+        
+        # Build prompt for LLM
+        prompt = f"Answer this question using the content below:\nQuestion: {question}\n\nContent:\n{content[:4000]}"
+        return query_model(prompt)
+    except Exception as e:
+        return f"Error: {str(e)}"
        
     
 
