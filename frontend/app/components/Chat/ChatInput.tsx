@@ -54,7 +54,7 @@ export default function ChatInput({ onSendMessage, disabled = false, hasMessages
   }, [input])
 
   return (
-    <div className="border-t border-gray-200 p-6" style={{ backgroundColor: '#fcfcfc' }}>
+    <div className="p-6" style={{ backgroundColor: '#fcfcfc' }}>
       <motion.form
         onSubmit={handleSubmit}
         className="max-w-4xl mx-auto"

@@ -74,7 +74,7 @@ export default function Sidebar({
         aria-expanded={!isCollapsed}
       >
         {/* Header */}
-        <div className={`border-b border-gray-200 transition-all duration-300 ${isCollapsed ? 'p-3' : 'p-4'}`}>
+        <div className={`transition-all duration-300 ${isCollapsed ? 'p-3' : 'p-4'}`}>
           <div className="flex items-center justify-between">
             <motion.h1
               initial={false}
@@ -221,7 +221,7 @@ export default function Sidebar({
         </div>
 
         {/* User Profile Section */}
-        <div className="p-3 border-t border-gray-200">
+        <div className="p-3">
           {!isCollapsed ? (
             <motion.div
               initial={{ opacity: 0 }}
