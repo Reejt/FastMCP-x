@@ -74,7 +74,7 @@ export default function Sidebar({
         aria-expanded={!isCollapsed}
       >
         {/* Header */}
-        <div className={`transition-all duration-300 ${isCollapsed ? 'p-3' : 'p-4'}`}>
+        <div className="transition-all duration-300 py-3 px-4">
           <div className="flex items-center justify-between">
             <motion.h1
               initial={false}
@@ -82,8 +82,8 @@ export default function Sidebar({
                 opacity: isCollapsed ? 0 : 1,
                 width: isCollapsed ? 0 : 'auto',
               }}
-              transition={{ duration: 0.3 }}
-              className="text-xl font-medium tracking-wider whitespace-nowrap overflow-hidden"
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="text-base font-medium tracking-wide whitespace-nowrap overflow-hidden"
               style={{ color: '#060606' }}
             >
               VARYS AI
