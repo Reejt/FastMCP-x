@@ -3,21 +3,21 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Workspace, User } from '@/app/types'
+import { Workspace, WorkspaceSummary, User } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
 import WorkspaceCard from './components/WorkspaceCard'
 import CreateWorkspaceModal from './components/CreateWorkspaceModal'
+import EditWorkspaceModal from './components/EditWorkspaceModal'
 
 export default function WorkspacesPage() {
   const router = useRouter()
   const supabase = createClient()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'my' | 'shared' | 'examples'>('my')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [myWorkspaces, setMyWorkspaces] = useState<Workspace[]>([])
-  const [sharedWorkspaces, setSharedWorkspaces] = useState<Workspace[]>([])
-  const [exampleWorkspaces, setExampleWorkspaces] = useState<Workspace[]>([])
+  const [editingWorkspace, setEditingWorkspace] = useState<WorkspaceSummary | null>(null)
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     const checkUser = async () => {
@@ -42,29 +42,25 @@ export default function WorkspacesPage() {
     checkUser()
   }, [router, supabase])
 
-  // Load workspaces from localStorage on mount
+  // Load workspaces from database
   useEffect(() => {
-    const storedWorkspaces = localStorage.getItem('myWorkspaces')
-    if (storedWorkspaces) {
-      try {
-        const workspaces = JSON.parse(storedWorkspaces)
-        setMyWorkspaces(workspaces.map((w: any) => ({
-          ...w,
-          createdAt: new Date(w.createdAt),
-          updatedAt: new Date(w.updatedAt)
-        })))
-      } catch (error) {
-        console.error('Error loading workspaces:', error)
-      }
-    }
-  }, [])
+    if (!user) return
 
-  // Save workspaces to localStorage whenever they change
-  useEffect(() => {
-    if (myWorkspaces.length > 0) {
-      localStorage.setItem('myWorkspaces', JSON.stringify(myWorkspaces))
+    loadWorkspaces()
+  }, [user])
+
+  const loadWorkspaces = async () => {
+    try {
+      const response = await fetch('/api/workspaces?withSummary=true')
+      const data = await response.json()
+
+      if (data.success) {
+        setWorkspaces(data.workspaces)
+      }
+    } catch (error) {
+      console.error('Error loading workspaces:', error)
     }
-  }, [myWorkspaces])
+  }
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -72,32 +68,87 @@ export default function WorkspacesPage() {
     router.refresh()
   }
 
-  const handleCreateWorkspace = (name: string, instructions: string) => {
-    const newWorkspace: Workspace = {
-      id: Date.now().toString(),
-      name: name,
-      description: instructions,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
+  const handleCreateWorkspace = async (name: string, description: string) => {
+    try {
+      const response = await fetch('/api/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description })
+      })
 
-    setMyWorkspaces([...myWorkspaces, newWorkspace])
-  }
+      const data = await response.json()
 
-  const getWorkspaces = () => {
-    switch (activeTab) {
-      case 'my':
-        return myWorkspaces
-      case 'shared':
-        return sharedWorkspaces
-      case 'examples':
-        return exampleWorkspaces
-      default:
-        return []
+      if (data.success) {
+        setIsCreateModalOpen(false)
+        await loadWorkspaces()
+      } else {
+        console.error('Failed to create workspace:', data.error)
+        alert('Failed to create workspace: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error creating workspace:', error)
+      alert('Failed to create workspace')
     }
   }
 
-  const workspaces = getWorkspaces()
+  const handleDeleteWorkspace = async (workspaceId: string) => {
+    if (!confirm('Are you sure you want to delete this workspace? This will also delete all documents and instructions.')) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/workspaces', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        await loadWorkspaces()
+      } else {
+        console.error('Failed to delete workspace:', data.error)
+        alert('Failed to delete workspace: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error deleting workspace:', error)
+      alert('Failed to delete workspace')
+    }
+  }
+
+  const handleEditWorkspace = (workspace: WorkspaceSummary) => {
+    setEditingWorkspace(workspace)
+  }
+
+  const handleUpdateWorkspace = async (workspaceId: string, name: string, description: string | null) => {
+    try {
+      const response = await fetch('/api/workspaces', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, name, description })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setEditingWorkspace(null)
+        await loadWorkspaces()
+      } else {
+        console.error('Failed to update workspace:', data.error)
+        alert('Failed to update workspace: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error updating workspace:', error)
+      alert('Failed to update workspace')
+    }
+  }
+
+  // Filter workspaces by search query
+  const filteredWorkspaces = workspaces.filter(workspace =>
+    workspace.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    workspace.description?.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   if (loading) {
     return (
@@ -143,6 +194,8 @@ export default function WorkspacesPage() {
                 <input
                   type="text"
                   placeholder="Search for workspace"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-400 text-sm text-gray-500"
                 />
               </div>
@@ -151,7 +204,7 @@ export default function WorkspacesPage() {
 
           {/* Workspace Grid - Centered Container */}
           <div className="max-w-5xl mx-auto px-12 pb-8">
-            {workspaces.length === 0 ? (
+            {filteredWorkspaces.length === 0 && workspaces.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-gray-400 mb-4">
                   <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -170,10 +223,19 @@ export default function WorkspacesPage() {
                   Create Workspace
                 </button>
               </div>
+            ) : filteredWorkspaces.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-gray-600">No workspaces match your search</p>
+              </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {workspaces.map((workspace) => (
-                  <WorkspaceCard key={workspace.id} workspace={workspace} />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredWorkspaces.map((workspace) => (
+                  <WorkspaceCard
+                    key={workspace.id}
+                    workspace={workspace}
+                    onEditAction={() => handleEditWorkspace(workspace)}
+                    onDeleteAction={() => handleDeleteWorkspace(workspace.id)}
+                  />
                 ))}
               </div>
             )}
@@ -185,6 +247,15 @@ export default function WorkspacesPage() {
             onCloseAction={() => setIsCreateModalOpen(false)}
             onCreateAction={handleCreateWorkspace}
           />
+
+          {/* Edit Workspace Modal */}
+          {editingWorkspace && (
+            <EditWorkspaceModal
+              workspace={editingWorkspace}
+              onCloseAction={() => setEditingWorkspace(null)}
+              onUpdateAction={handleUpdateWorkspace}
+            />
+          )}
         </div>
       </div>
     </div>

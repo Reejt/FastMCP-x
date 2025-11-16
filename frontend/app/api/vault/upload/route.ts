@@ -19,12 +19,30 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
+    const workspaceId = formData.get('workspaceId') as string | null;
 
     if (!file) {
       return NextResponse.json(
         { error: 'No file provided' },
         { status: 400 }
       );
+    }
+
+    // Validate workspace_id if provided
+    if (workspaceId) {
+      const { data: workspace, error: workspaceError } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('id', workspaceId)
+        .eq('owner_id', user.id)
+        .single();
+
+      if (workspaceError || !workspace) {
+        return NextResponse.json(
+          { error: 'Invalid workspace ID or access denied' },
+          { status: 403 }
+        );
+      }
     }
 
     // Validate file type (you can expand this list)
@@ -110,6 +128,7 @@ export async function POST(request: NextRequest) {
       .from('vault_documents')
       .insert({
         user_id: user.id,
+        workspace_id: workspaceId || null, // Include workspace_id
         file_name: file.name,
         file_path: storageData.path,
         file_size: file.size,
@@ -165,7 +184,7 @@ export async function POST(request: NextRequest) {
 }
 
 // GET method to list uploaded files from Supabase
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -177,12 +196,23 @@ export async function GET() {
       );
     }
 
-    // Fetch user's documents from vault_documents table
-    const { data: documents, error: dbError } = await supabase
+    // Get workspace_id from query params (optional)
+    const { searchParams } = new URL(request.url);
+    const workspaceId = searchParams.get('workspaceId');
+
+    // Build query
+    let query = supabase
       .from('vault_documents')
       .select('*')
       .eq('user_id', user.id)
       .order('upload_timestamp', { ascending: false });
+
+    // Filter by workspace if provided
+    if (workspaceId) {
+      query = query.eq('workspace_id', workspaceId);
+    }
+
+    const { data: documents, error: dbError } = await query;
 
     if (dbError) {
       console.error('Database query error:', dbError);
@@ -195,7 +225,8 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       documents: documents || [],
-      count: documents?.length || 0
+      count: documents?.length || 0,
+      workspaceId: workspaceId || null
     });
   } catch (error) {
     return NextResponse.json(
