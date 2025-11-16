@@ -20,28 +20,62 @@ export default function Sidebar({
   const router = useRouter()
   const pathname = usePathname()
   const [activeSection, setActiveSection] = useState<'chat' | 'vault' | 'workspaces' | 'instructions'>('chat')
-  const [workspaces] = useState<Workspace[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
 
-  // Update active section based on current pathname
+  // Update active section based on current pathname and extract workspace ID
   useEffect(() => {
-    if (pathname.startsWith('/workspaces')) {
-      setActiveSection('workspaces')
-    } else if (pathname.startsWith('/vault')) {
-      setActiveSection('vault')
-    } else if (pathname.startsWith('/instructions')) {
-      setActiveSection('instructions')
-    } else if (pathname.startsWith('/dashboard')) {
-      setActiveSection('chat')
+    const updateActiveState = () => {
+      if (pathname.startsWith('/workspaces')) {
+        setActiveSection('workspaces')
+        // Extract workspace ID from pathname if viewing specific workspace
+        const match = pathname.match(/\/workspaces\/([^\/]+)/)
+        if (match) {
+          setCurrentWorkspaceId(match[1])
+        }
+      } else if (pathname.startsWith('/vault')) {
+        setActiveSection('vault')
+      } else if (pathname.startsWith('/instructions')) {
+        setActiveSection('instructions')
+      } else if (pathname.startsWith('/dashboard')) {
+        setActiveSection('chat')
+        // Extract workspace ID from URL query parameters
+        const urlParams = new URLSearchParams(window.location.search)
+        const workspaceId = urlParams.get('workspace')
+        setCurrentWorkspaceId(workspaceId)
+      }
     }
+
+    updateActiveState()
+
+    // Also listen for URL changes (for query parameter updates)
+    const interval = setInterval(updateActiveState, 100)
+    return () => clearInterval(interval)
   }, [pathname])
 
-  // Load collapse state from localStorage on mount
+  // Load collapse state and workspaces on mount
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
     if (saved !== null) {
       setIsCollapsed(saved === 'true')
     }
+
+    // Load workspaces from API
+    const loadWorkspaces = async () => {
+      try {
+        const response = await fetch('/api/workspaces')
+        const data = await response.json()
+
+        if (data.success && data.workspaces) {
+          setWorkspaces(data.workspaces)
+        }
+      } catch (error) {
+        console.error('Error loading workspaces:', error)
+      }
+    }
+
+    loadWorkspaces()
   }, [])
 
   // Note: forceCollapse is kept for future use but doesn't restrict manual toggling
@@ -150,9 +184,9 @@ export default function Sidebar({
               badge={workspaces.length > 0 ? workspaces.length : undefined}
             />
 
-            {/* Sub-items for Workspaces when expanded and active */}
+            {/* Sub-items for Workspaces - always visible when sidebar is expanded */}
             <AnimatePresence>
-              {activeSection === 'workspaces' && !isCollapsed && (
+              {!isCollapsed && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -163,16 +197,29 @@ export default function Sidebar({
                   {workspaces.length === 0 ? (
                     <p className="text-sm text-gray-400 px-4 py-2">No workspaces yet</p>
                   ) : (
-                    workspaces.map((workspace) => (
-                      <button
-                        key={workspace.id}
-                        onClick={() => router.push(`/workspaces/${workspace.id}`)}
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-lg transition-colors"
-                        style={{ color: '#060606' }}
-                      >
-                        {workspace.name}
-                      </button>
-                    ))
+                    <>
+                      {workspaces.slice(0, 5).map((workspace) => (
+                        <button
+                          key={workspace.id}
+                          onClick={() => router.push(`/dashboard?workspace=${workspace.id}`)}
+                          className={`w-full text-left px-4 py-2 text-sm rounded-lg transition-colors ${currentWorkspaceId === workspace.id
+                            ? 'bg-gray-200'
+                            : 'hover:bg-gray-100'
+                            }`}
+                          style={{ color: '#060606' }}
+                        >
+                          {workspace.name}
+                        </button>
+                      ))}
+                      {workspaces.length > 5 && (
+                        <button
+                          onClick={() => router.push('/workspaces')}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                          See all ({workspaces.length})
+                        </button>
+                      )}
+                    </>
                   )}
                   <button
                     onClick={() => router.push('/workspaces')}

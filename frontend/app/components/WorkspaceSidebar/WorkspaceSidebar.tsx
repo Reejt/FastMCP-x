@@ -14,6 +14,14 @@ interface WorkspaceSidebarProps {
   onToggleSidebar?: (isCollapsed: boolean) => void
 }
 
+interface LocalWorkspace {
+  id: string
+  name: string
+  description?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export default function WorkspaceSidebar({
   workspace,
   chatSessions,
@@ -24,6 +32,7 @@ export default function WorkspaceSidebar({
 }: WorkspaceSidebarProps) {
   const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [allWorkspaces, setAllWorkspaces] = useState<LocalWorkspace[]>([])
 
   // Load collapse state from localStorage on mount
   useEffect(() => {
@@ -32,6 +41,17 @@ export default function WorkspaceSidebar({
       const collapsed = saved === 'true'
       setIsCollapsed(collapsed)
       onToggleSidebar?.(collapsed)
+    }
+
+    // Load all workspaces from localStorage
+    const storedWorkspaces = localStorage.getItem('myWorkspaces')
+    if (storedWorkspaces) {
+      try {
+        const workspaces = JSON.parse(storedWorkspaces)
+        setAllWorkspaces(workspaces)
+      } catch (error) {
+        console.error('Error loading workspaces:', error)
+      }
     }
   }, [])
 
@@ -140,6 +160,35 @@ export default function WorkspaceSidebar({
                   </svg>
                   <span className="font-medium" style={{ color: '#060606' }}>Vault</span>
                 </button>
+              </div>
+
+              {/* Workspaces Section */}
+              <div className="border-t border-gray-200 mt-4 pt-4">
+                <h3 className="text-sm font-semibold text-gray-600 uppercase px-4 mb-2">Workspaces</h3>
+                {allWorkspaces.length === 0 ? (
+                  <div className="text-center py-6 px-4">
+                    <p className="text-sm text-gray-500">No workspaces yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1 px-2">
+                    {allWorkspaces.map((ws) => (
+                      <button
+                        key={ws.id}
+                        onClick={() => router.push(`/dashboard?workspace=${ws.id}`)}
+                        className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${workspace?.id === ws.id
+                          ? 'bg-gray-200'
+                          : 'hover:bg-gray-100'
+                          }`}
+                        style={{ color: '#060606' }}
+                      >
+                        <div className="text-sm font-medium truncate">{ws.name}</div>
+                        {ws.description && (
+                          <div className="text-xs text-gray-500 truncate">{ws.description}</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
