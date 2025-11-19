@@ -6,7 +6,7 @@ const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://localhost:300
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, action = 'query', conversation_history = [] } = body;
+    const { query, action = 'query', conversation_history = [], workspace_id } = body;
 
     if (!query) {
       return NextResponse.json(
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     // Determine which endpoint to call based on action
     let endpoint = '/api/query';
-    let requestBody: any = { query, conversation_history };
+    let requestBody: any = { query, conversation_history, workspace_id };
 
     switch (action) {
       case 'query_excel':
@@ -25,12 +25,13 @@ export async function POST(request: NextRequest) {
         requestBody = {
           file_path: body.file_path,
           query,
-          sheet_name: body.sheet_name
+          sheet_name: body.sheet_name,
+          workspace_id
         };
         break;
       default:
         endpoint = '/api/query';
-        requestBody = { query, conversation_history };
+        requestBody = { query, conversation_history, workspace_id };
     }
 
     // Call the bridge server - streaming response

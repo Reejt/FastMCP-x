@@ -52,6 +52,7 @@ class QueryRequest(BaseModel):
     max_chunks: Optional[int] = 3
     include_context_preview: Optional[bool] = True
     conversation_history: Optional[list] = []
+    workspace_id: Optional[str] = None  # For workspace-specific instructions
 
 class IngestRequest(BaseModel):
     file_name: str
@@ -255,15 +256,25 @@ async def query_endpoint(request: QueryRequest):
         # Call the streaming query handler for other queries
         async def event_generator():
             try:
-                # Import streaming handler
+                # Import streaming handler and instructions handler
                 from server.query_handler import answer_query
+                from server.instructions import query_with_instructions_stream
                 
-                # Get streaming response
-                response_generator = answer_query(
-                    request.query, 
-                    conversation_history=request.conversation_history,
-                    stream=True
-                )
+                # If workspace_id is provided, use instructions-aware query
+                if request.workspace_id:
+                    print(f"🎯 Using workspace instructions for workspace: {request.workspace_id}")
+                    response_generator = query_with_instructions_stream(
+                        query=request.query,
+                        workspace_id=request.workspace_id,
+                        conversation_history=request.conversation_history
+                    )
+                else:
+                    # Get streaming response without workspace instructions
+                    response_generator = answer_query(
+                        request.query, 
+                        conversation_history=request.conversation_history,
+                        stream=True
+                    )
                 
                 # Stream chunks as Server-Sent Events
                 for chunk in response_generator:

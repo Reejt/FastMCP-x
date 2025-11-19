@@ -2,15 +2,16 @@
 
 import { useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Message } from '@/app/types'
+import { Message, WorkspaceInstruction } from '@/app/types'
 import ChatMessage from './ChatMessage'
 
 interface ChatContainerProps {
   messages: Message[]
   workspaceName?: string
+  activeInstruction?: WorkspaceInstruction | null
 }
 
-export default function ChatContainer({ messages, workspaceName }: ChatContainerProps) {
+export default function ChatContainer({ messages, workspaceName, activeInstruction }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {

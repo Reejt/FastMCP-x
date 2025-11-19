@@ -260,17 +260,40 @@ def is_query_related_to_history(query: str, conversation_history: list) -> bool:
     return False
 
 
-def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None, stream: bool = False):
+def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None, stream: bool = False, workspace_id: str = None):
     """
-    Query the Ollama model via HTTP API with optional conversation history
+    Query the Ollama model via HTTP API with optional conversation history and workspace instructions
     
     Args:
         query: The current user query
         model_name: Name of the Ollama model to use
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
+        workspace_id: Optional workspace ID to apply custom instructions
     """
     try:
+        # Apply workspace instructions if workspace_id is provided
+        if workspace_id:
+            try:
+                from server.instructions import query_with_instructions, query_with_instructions_stream
+                if stream:
+                    return query_with_instructions_stream(
+                        query=query,
+                        workspace_id=workspace_id,
+                        model_name=model_name,
+                        conversation_history=conversation_history
+                    )
+                else:
+                    return query_with_instructions(
+                        query=query,
+                        workspace_id=workspace_id,
+                        model_name=model_name,
+                        conversation_history=conversation_history
+                    )
+            except ImportError:
+                print("Warning: instructions module not available, proceeding without workspace instructions")
+        
+        # Original query logic without workspace instructions
         response = requests.post(
             'http://localhost:11434/api/generate',
             json={

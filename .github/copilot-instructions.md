@@ -12,7 +12,7 @@ This is a **full-stack application** combining a Model Context Protocol (MCP) se
   - `excel_csv.py` - Natural language queries for Excel/CSV files using pandas
   - `web_search_file.py` - Tavily API integration for web search
 - **Single FastMCP Instance**: All tools registered via `@mcp.tool` decorator in `server/main.py`
-- **LLM Integration**: Ollama (default: llama3.2:3b) via HTTP API at `localhost:11434`
+- **LLM Integration**: Ollama (default: llama3.2:1b) via HTTP API at `localhost:11434`
 
 ### Frontend (Next.js)
 - **Framework**: Next.js 14 with App Router and TypeScript

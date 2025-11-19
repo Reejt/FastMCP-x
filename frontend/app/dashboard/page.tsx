@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Message, User, ChatSession, Workspace } from '@/app/types'
+import { Message, User, ChatSession, Workspace, WorkspaceInstruction } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
 import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
 import ChatContainer from '@/app/components/Chat/ChatContainer'
@@ -26,6 +26,8 @@ export default function DashboardPage() {
   const [currentChatId, setCurrentChatId] = useState<string>('')
   const [isWorkspaceSidebarCollapsed, setIsWorkspaceSidebarCollapsed] = useState(false)
   const [shouldCollapseMainSidebar, setShouldCollapseMainSidebar] = useState(false)
+  const [activeInstruction, setActiveInstruction] = useState<WorkspaceInstruction | null>(null)
+  const [showInstructionBanner, setShowInstructionBanner] = useState(false)
 
   // Load workspace sidebar collapse state from localStorage on mount
   useEffect(() => {
@@ -59,6 +61,37 @@ export default function DashboardPage() {
 
     checkUser()
   }, [router, supabase])
+
+  // Fetch active instruction for workspace
+  useEffect(() => {
+    if (!workspaceId) {
+      setActiveInstruction(null)
+      setShowInstructionBanner(false)
+      return
+    }
+
+    const fetchActiveInstruction = async () => {
+      try {
+        const response = await fetch(`/api/instructions?workspaceId=${workspaceId}&activeOnly=true`)
+        const data = await response.json()
+
+        if (data.success && data.instructions && data.instructions.length > 0) {
+          const instruction = data.instructions[0]
+          setActiveInstruction(instruction)
+          setShowInstructionBanner(true)
+        } else {
+          setActiveInstruction(null)
+          setShowInstructionBanner(false)
+        }
+      } catch (error) {
+        console.error('Error fetching active instruction:', error)
+        setActiveInstruction(null)
+        setShowInstructionBanner(false)
+      }
+    }
+
+    fetchActiveInstruction()
+  }, [workspaceId])
 
   // Load chat session for current workspace
   useEffect(() => {
@@ -257,7 +290,8 @@ export default function DashboardPage() {
         },
         body: JSON.stringify({
           query: content,
-          conversation_history
+          conversation_history,
+          workspace_id: workspaceId  // Pass workspace ID for instruction application
         }),
       })
 
@@ -415,8 +449,46 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Active Instruction Banner */}
+        {showInstructionBanner && activeInstruction && (
+          <div className="mx-8 mt-2 mb-0 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2 flex-1">
+                <svg className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-indigo-900 mb-1">
+                    Active Instruction: {activeInstruction.title}
+                  </h4>
+                  <p className="text-xs text-indigo-700 line-clamp-2">
+                    {activeInstruction.content}
+                  </p>
+                  <button
+                    onClick={() => router.push(`/instructions?workspaceId=${workspaceId}`)}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium mt-1 inline-flex items-center gap-1"
+                  >
+                    View/Edit Instructions
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowInstructionBanner(false)}
+                className="text-indigo-400 hover:text-indigo-600 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Chat Messages */}
-        <ChatContainer messages={messages} workspaceName={currentWorkspaceName} />
+        <ChatContainer messages={messages} workspaceName={currentWorkspaceName} activeInstruction={activeInstruction} />
 
         {/* Chat Input */}
         <ChatInput

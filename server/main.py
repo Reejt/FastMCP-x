@@ -12,7 +12,14 @@ from server.document_ingestion import ingest_file
 from server.query_handler import answer_query,query_model
 from server.excel_csv import ExcelQueryEngine, CSVQueryEngine
 from server.web_search_file import tavily_web_search
-from server.query_handler import answer_link_query 
+from server.query_handler import answer_link_query
+from server.instructions import (
+    query_with_instructions,
+    query_with_instructions_stream,
+    get_active_instruction,
+    get_instruction_preview,
+    clear_instruction_cache
+) 
 
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
 
@@ -203,6 +210,7 @@ def answer_link_query_tool(url: str, query: str) -> str:
         error_msg = f"Error in answer_link_query_tool: {str(e)}"
         print(error_msg)
         return error_msg
+
 
 
 
