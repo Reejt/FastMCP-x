@@ -19,26 +19,34 @@ export {
   getOrCreateDefaultWorkspace
 } from './workspaces'
 
-// Re-export instruction functions
+// Re-export chat functions
 export {
-  getWorkspaceInstructions,
-  getActiveInstruction,
-  getInstructionById,
-  createInstruction,
-  updateInstruction,
-  activateInstruction,
-  deactivateInstruction,
-  deactivateAllInstructions,
-  deleteInstruction,
-  switchActiveInstruction
-} from './instructions'
+  getWorkspaceChats,
+  getChatById,
+  createChatMessage,
+  deleteChatMessage,
+  deleteWorkspaceChats,
+  getWorkspaceChatCount
+} from './chats'
 
-// Re-export document functions
+// Re-export file functions
 export {
-  getUserDocuments,
-  getDocumentById,
-  getWorkspaceDocumentCount,
-  moveDocumentToWorkspace,
-  deleteDocument,
-  getDocumentDownloadUrl
+  getWorkspaceFiles,
+  getFileById,
+  getWorkspaceFileCount,
+  moveFileToWorkspace,
+  deleteFile,
+  getFileDownloadUrl,
+  storeDocumentContent,
+  getDocumentContent,
+  deleteDocumentContent
 } from './documents'
+
+// Re-export embedding functions
+export {
+  storeEmbeddings,
+  getFileEmbeddings,
+  getWorkspaceEmbeddings,
+  deleteFileEmbeddings,
+  getFileEmbeddingCount
+} from './embeddings'

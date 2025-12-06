@@ -1,48 +1,15 @@
 /**
- * Vault Documents Service Layer
- * Handles all interactions with the vault_documents table
+ * Files Service Layer
+ * Handles all interactions with the files and document_content tables
  */
 
 import { createClient } from './server'
-import type { VaultDocument } from '@/app/types'
+import type { File, DocumentContent } from '@/app/types'
 
 /**
- * Get all documents for the current user
- * Optionally filter by workspace_id
+ * Get all files for a workspace
  */
-export async function getUserDocuments(workspaceId?: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    throw new Error('User not authenticated')
-  }
-
-  let query = supabase
-    .from('vault_documents')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('upload_timestamp', { ascending: false })
-
-  // Filter by workspace if provided
-  if (workspaceId) {
-    query = query.eq('workspace_id', workspaceId)
-  }
-
-  const { data, error } = await query
-
-  if (error) {
-    console.error('Error fetching documents:', error)
-    throw error
-  }
-
-  return data as VaultDocument[]
-}
-
-/**
- * Get a specific document by ID
- */
-export async function getDocumentById(documentId: string) {
+export async function getWorkspaceFiles(workspaceId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -51,24 +18,50 @@ export async function getDocumentById(documentId: string) {
   }
 
   const { data, error } = await supabase
-    .from('vault_documents')
+    .from('files')
     .select('*')
-    .eq('document_id', documentId)
-    .eq('user_id', user.id)
-    .single()
+    .eq('workspace_id', workspaceId)
+    .is('deleted_at', null)
+    .order('uploaded_at', { ascending: false })
 
   if (error) {
-    console.error('Error fetching document:', error)
+    console.error('Error fetching files:', error)
     throw error
   }
 
-  return data as VaultDocument
+  return data as File[]
 }
 
 /**
- * Get document count for a workspace
+ * Get a specific file by ID
  */
-export async function getWorkspaceDocumentCount(workspaceId: string) {
+export async function getFileById(fileId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  const { data, error } = await supabase
+    .from('files')
+    .select('*')
+    .eq('id', fileId)
+    .is('deleted_at', null)
+    .single()
+
+  if (error) {
+    console.error('Error fetching file:', error)
+    throw error
+  }
+
+  return data as File
+}
+
+/**
+ * Get file count for a workspace
+ */
+export async function getWorkspaceFileCount(workspaceId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -77,13 +70,13 @@ export async function getWorkspaceDocumentCount(workspaceId: string) {
   }
 
   const { count, error } = await supabase
-    .from('vault_documents')
+    .from('files')
     .select('*', { count: 'exact', head: true })
     .eq('workspace_id', workspaceId)
-    .eq('user_id', user.id)
+    .is('deleted_at', null)
 
   if (error) {
-    console.error('Error counting documents:', error)
+    console.error('Error counting files:', error)
     throw error
   }
 
@@ -91,10 +84,10 @@ export async function getWorkspaceDocumentCount(workspaceId: string) {
 }
 
 /**
- * Move document to a different workspace
+ * Move file to a different workspace
  */
-export async function moveDocumentToWorkspace(
-  documentId: string,
+export async function moveFileToWorkspace(
+  fileId: string,
   workspaceId: string
 ) {
   const supabase = await createClient()
@@ -105,25 +98,24 @@ export async function moveDocumentToWorkspace(
   }
 
   const { data, error } = await supabase
-    .from('vault_documents')
+    .from('files')
     .update({ workspace_id: workspaceId })
-    .eq('document_id', documentId)
-    .eq('user_id', user.id)
+    .eq('id', fileId)
     .select()
     .single()
 
   if (error) {
-    console.error('Error moving document:', error)
+    console.error('Error moving file:', error)
     throw error
   }
 
-  return data as VaultDocument
+  return data as File
 }
 
 /**
- * Delete a document (removes from storage and database)
+ * Soft delete a file (sets deleted_at timestamp)
  */
-export async function deleteDocument(documentId: string) {
+export async function deleteFile(fileId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -131,38 +123,26 @@ export async function deleteDocument(documentId: string) {
     throw new Error('User not authenticated')
   }
 
-  // First, get the document to get the file path
-  const document = await getDocumentById(documentId)
+  const { data, error } = await supabase
+    .from('files')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', fileId)
+    .select()
+    .single()
 
-  // Delete from storage
-  const { error: storageError } = await supabase.storage
-    .from('vault_files')
-    .remove([document.file_path])
-
-  if (storageError) {
-    console.warn('Storage deletion error (continuing with DB deletion):', storageError)
+  if (error) {
+    console.error('Error deleting file:', error)
+    throw error
   }
 
-  // Delete from database
-  const { error: dbError } = await supabase
-    .from('vault_documents')
-    .delete()
-    .eq('document_id', documentId)
-    .eq('user_id', user.id)
-
-  if (dbError) {
-    console.error('Database deletion error:', dbError)
-    throw dbError
-  }
-
-  return true
+  return data as File
 }
 
 /**
- * Get signed URL for downloading a document
+ * Get signed URL for downloading a file
  */
-export async function getDocumentDownloadUrl(
-  documentId: string,
+export async function getFileDownloadUrl(
+  fileId: string,
   expiresIn: number = 60
 ) {
   const supabase = await createClient()
@@ -172,13 +152,13 @@ export async function getDocumentDownloadUrl(
     throw new Error('User not authenticated')
   }
 
-  // Get document to verify ownership and get path
-  const document = await getDocumentById(documentId)
+  // Get file to verify ownership and get path
+  const file = await getFileById(fileId)
 
   // Generate signed URL
   const { data, error } = await supabase.storage
     .from('vault_files')
-    .createSignedUrl(document.file_path, expiresIn)
+    .createSignedUrl(file.file_path, expiresIn)
 
   if (error) {
     console.error('Error creating signed URL:', error)
@@ -186,4 +166,98 @@ export async function getDocumentDownloadUrl(
   }
 
   return data.signedUrl
+}
+
+/**
+ * Store extracted text content for a file
+ * Creates or updates document_content table entry
+ */
+export async function storeDocumentContent(
+  fileId: string,
+  content: string,
+  fileName: string
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  if (!content || content.trim().length === 0) {
+    throw new Error('Document content cannot be empty')
+  }
+
+  const { data, error } = await supabase
+    .from('document_content')
+    .upsert(
+      {
+        file_id: fileId,
+        user_id: user.id,
+        content: content.trim(),
+        file_name: fileName,
+        extracted_at: new Date().toISOString()
+      },
+      { onConflict: 'file_id' }
+    )
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error storing document content:', error)
+    throw error
+  }
+
+  return data as DocumentContent
+}
+
+/**
+ * Get stored content for a file
+ */
+export async function getDocumentContent(fileId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  const { data, error } = await supabase
+    .from('document_content')
+    .select('*')
+    .eq('file_id', fileId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (error) {
+    console.error('Error fetching document content:', error)
+    throw error
+  }
+
+  return data as DocumentContent
+}
+
+/**
+ * Delete document content
+ */
+export async function deleteDocumentContent(fileId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  const { error } = await supabase
+    .from('document_content')
+    .delete()
+    .eq('file_id', fileId)
+    .eq('user_id', user.id)
+
+  if (error) {
+    console.error('Error deleting document content:', error)
+    throw error
+  }
+
+  return true
 }

@@ -14,6 +14,10 @@ import os
 import base64
 import tempfile
 import json
+from dotenv import load_dotenv
+
+# Load environment variables from root .env file
+load_dotenv()
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

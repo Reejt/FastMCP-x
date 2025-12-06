@@ -1,6 +1,20 @@
+"""
+Web Search Handler for FastMCP using Tavily API
+
+Database Schema (4 tables):
+- files: File metadata
+- workspaces: User workspaces  
+- chats: Chat messages
+- document_content: Extracted text from files
+"""
+
 import requests
 from bs4 import BeautifulSoup
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from root .env file
+load_dotenv()
 
 # Tavily API Configuration
 TAVILY_API_BASE_URL = "https://api.tavily.com/search"

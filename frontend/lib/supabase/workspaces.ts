@@ -4,7 +4,7 @@
  */
 
 import { createClient } from './server'
-import type { Workspace, WorkspaceSummary } from '@/app/types'
+import type { Workspace } from '@/app/types'
 
 /**
  * Get all workspaces for the current user (excluding archived)
@@ -38,7 +38,7 @@ export async function getUserWorkspaces(includeArchived: boolean = false) {
 }
 
 /**
- * Get workspace summaries with document count
+ * Get workspace summaries with file count
  */
 export async function getWorkspaceSummaries(includeArchived: boolean = false) {
   const supabase = await createClient()
@@ -48,23 +48,26 @@ export async function getWorkspaceSummaries(includeArchived: boolean = false) {
     throw new Error('User not authenticated')
   }
 
-  let query = supabase
-    .from('workspace_summary')
-    .select('*')
-    .order('created_at', { ascending: false })
+  // Get workspaces
+  const workspaces = await getUserWorkspaces(includeArchived)
 
-  if (!includeArchived) {
-    query = query.eq('is_archived', false)
-  }
+  // Get file counts for each workspace
+  const summaries = await Promise.all(
+    workspaces.map(async (workspace) => {
+      const { count } = await supabase
+        .from('files')
+        .select('*', { count: 'exact', head: true })
+        .eq('workspace_id', workspace.id)
+        .is('deleted_at', null)
 
-  const { data, error } = await query
+      return {
+        ...workspace,
+        file_count: count || 0
+      }
+    })
+  )
 
-  if (error) {
-    console.error('Error fetching workspace summaries:', error)
-    throw error
-  }
-
-  return data as WorkspaceSummary[]
+  return summaries
 }
 
 /**

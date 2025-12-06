@@ -1,7 +1,9 @@
 """
 Workspace Instructions Handler
-Manages project-specific instructions that guide Ollama's responses
-Integrates with Supabase workspace_instructions table
+DISABLED: workspace_instructions table does not exist in the database
+Only files, workspaces, chats, and document_content tables are available
+
+This module is kept for reference but should not be used.
 """
 
 import os
@@ -12,9 +14,11 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# WARNING: This module references a non-existent table
 # Supabase configuration
-SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+# Try both NEXT_PUBLIC_ prefix (from frontend .env.local) and regular prefix
+SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY") or os.getenv("SUPABASE_ANON_KEY")
 
 # Global variable to cache active instruction
 _active_instruction_cache: Dict[str, Optional[Dict[str, Any]]] = {}

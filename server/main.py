@@ -9,17 +9,27 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.document_ingestion import ingest_file
-from server.query_handler import answer_query,query_model
+from server.query_handler import answer_query, query_model
 from server.excel_csv import ExcelQueryEngine, CSVQueryEngine
 from server.web_search_file import tavily_web_search
 from server.query_handler import answer_link_query
-from server.instructions import (
-    query_with_instructions,
-    query_with_instructions_stream,
-    get_active_instruction,
-    get_instruction_preview,
-    clear_instruction_cache
-) 
+
+# pgvector Enterprise Mode Active
+# - Embeddings stored in Supabase document_embeddings table
+# - Similarity search performed at DATABASE LEVEL using <=> operator
+# - No in-memory embedding cache required
+print("🚀 FastMCP Server - pgvector Enterprise Edition")
+print("✅ Database-side similarity search enabled")
+
+# DISABLED: Instructions module references non-existent workspace_instructions table
+# Database schema: files, workspaces, chats, document_content, document_embeddings
+# from server.instructions import (
+#     query_with_instructions,
+#     query_with_instructions_stream,
+#     get_active_instruction,
+#     get_instruction_preview,
+#     clear_instruction_cache
+# ) 
 
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
 
@@ -211,6 +221,19 @@ def answer_link_query_tool(url: str, query: str) -> str:
         print(error_msg)
         return error_msg
 
+
+# DISABLED: Instruction tools require non-existent workspace_instructions table
+# @mcp.tool
+# def get_active_instruction_tool(workspace_id: str) -> str:
+#     return "Instructions feature not available - workspace_instructions table does not exist"
+
+# @mcp.tool
+# def get_instruction_preview_tool(workspace_id: str) -> str:
+#     return "Instructions feature not available - workspace_instructions table does not exist"
+
+# @mcp.tool
+# def clear_instruction_cache_tool(workspace_id: str = None) -> str:
+#     return "Instructions feature not available - workspace_instructions table does not exist"
 
 
 

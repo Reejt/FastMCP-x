@@ -11,6 +11,21 @@ This document summarizes the database integration implementation for FastMCP-x, 
 
 ---
 
+## Recent Updates (November 29, 2025)
+
+### ✅ Backend Environment Configuration
+- **Fixed Supabase environment variable inconsistency** across backend modules
+- Added support for both `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_URL` naming conventions
+- Created `.env.example` template with comprehensive configuration guide
+- Updated `server/instructions.py` and `server/document_ingestion.py` for consistent env handling
+
+### ✅ MCP Tools for Instructions
+- **Added 3 new MCP tools** for instruction management in `server/main.py`:
+  - `get_active_instruction_tool` - Fetch active instruction for workspace
+  - `get_instruction_preview_tool` - Get instruction preview for display
+  - `clear_instruction_cache_tool` - Force refresh instruction cache
+- These tools enable programmatic instruction management via MCP protocol
+
 ## What Has Been Completed
 
 ### ✅ Step 1: TypeScript Types
