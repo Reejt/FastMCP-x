@@ -16,6 +16,11 @@ import tempfile
 import io
 from supabase import create_client
 import base64
+from datetime import datetime
+
+# Supabase configuration
+SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "https://fmlanqjduftxlktygpwe.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs")
 
 # Use pypdf instead of deprecated PyPDF2
 try:
@@ -29,6 +34,29 @@ except ImportError:
     except ImportError:
         PDF_LIBRARY = None
         print("Warning: No PDF library available. Install pypdf: pip install pypdf")
+
+def store_extracted_content(file_id: str, user_id: str, content: str, file_name: str) -> bool:
+    """
+    Store extracted text content in the document_content table
+    Returns True on success, False on failure
+    """
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        
+        # Upsert the content (insert or update if exists)
+        result = supabase.table('document_content').upsert({
+            'file_id': file_id,
+            'user_id': user_id,
+            'content': content.strip(),
+            'file_name': file_name,
+            'extracted_at': datetime.utcnow().isoformat()
+        }, on_conflict='file_id').execute()
+        
+        print(f"Successfully stored extracted content for file: {file_name}")
+        return True
+    except Exception as e:
+        print(f"Error storing extracted content: {str(e)}")
+        return False
 
 def extract_text_from_shape(shape):
     """Recursively extract text from a shape and its sub-shapes (for PPTX files)"""
@@ -76,6 +104,19 @@ def extract_text_from_shape(shape):
     
     return shape_texts
 
+def extract_and_store_file_content(file_path: str, file_id: str, user_id: str, file_name: str) -> tuple[str, bool]:
+    """
+    Extract text from file and store it in Supabase
+    Returns (extracted_text, storage_success)
+    """
+    try:
+        extracted_text = extract_text_from_file(file_path)
+        storage_success = store_extracted_content(file_id, user_id, extracted_text, file_name)
+        return extracted_text, storage_success
+    except Exception as e:
+        print(f"Error in extract_and_store_file_content: {str(e)}")
+        return "", False
+
 def extract_text_from_file(file_path: str) -> str:
     """Extract text from various file formats"""
     print(f"Attempting to parse file: {file_path}")
@@ -83,9 +124,6 @@ def extract_text_from_file(file_path: str) -> str:
 
     # If the file doesn't exist locally, try to download it from Supabase Storage
     if not os.path.exists(file_path):
-        SUPABASE_URL = os.environ.get("https://fmlanqjduftxlktygpwe.supabase.co")
-        SUPABASE_KEY = os.environ.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs")
-
         if SUPABASE_URL and SUPABASE_KEY:
             try:
                 print("File not found locally. Attempting to download from Supabase storage...")

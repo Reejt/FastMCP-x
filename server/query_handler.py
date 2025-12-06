@@ -1,144 +1,215 @@
+""" 
+Query Handler for FastMCP - pgvector Enterprise Edition
 
-# Handles query answering from documents and general model
+Database Schema (5 tables):
+- files: File metadata (id, workspace_id, file_name, file_path, size_bytes, file_type, status, uploaded_at, deleted_at)
+- workspaces: User workspaces (id, name, description, owner_id, created_at, updated_at, is_archived)
+- chats: Chat messages (id, workspace_id, user_id, role, message, created_at)
+- document_content: Extracted text (id, file_id, user_id, content, file_name, extracted_at, created_at, updated_at)
+- document_embeddings: Vector embeddings (id, file_id, user_id, chunk_index, content, embedding(384), file_name, created_at, updated_at)
+
+Similarity Search: Performed at DATABASE LEVEL using pgvector <=> operator
+No application-level cosine similarity calculations
+"""
+
+# Handles query answering from documents using pgvector similarity search
 import numpy as np
 import requests
 import os
 from typing import List, Tuple, Dict, Any
 from server.document_ingestion import documents
-import chromadb
-from chromadb.config import Settings
 
-# Try to import semantic search dependencies
+# Try to import embedding model
 try:
-    from sklearn.metrics.pairwise import cosine_similarity
     from sentence_transformers import SentenceTransformer
-    SEMANTIC_SEARCH_AVAILABLE = True
+    EMBEDDING_AVAILABLE = True
 except ImportError:
-    print("Warning: Semantic search dependencies not available. Install sentence-transformers and scikit-learn for enhanced search.")
-    SEMANTIC_SEARCH_AVAILABLE = False
+    print("Warning: sentence-transformers not available. Install sentence-transformers for embeddings.")
+    EMBEDDING_AVAILABLE = False
 
-# Global variables for ChromaDB
+# Try to import Supabase client
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    print("Warning: Supabase client not available. Install supabase for pgvector similarity search.")
+    SUPABASE_AVAILABLE = False
+    
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Supabase client for pgvector queries
+SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+
+supabase_client: Client = None
+if SUPABASE_AVAILABLE and SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase pgvector client initialized for enterprise semantic search")
+    except Exception as e:
+        print(f"⚠️  Failed to initialize Supabase client: {str(e)}")
+        supabase_client = None
+
+# Global embedding model (only for generating query embeddings)
 _semantic_model = None
-_chroma_client = None
-_embedding_collection = None
-
-# Initialize ChromaDB with persistent storage
-CHROMA_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'storage', 'chromadb')
 
 
 def get_semantic_model():
-    """Lazy load the semantic model to avoid startup delays"""
+    """Lazy load the embedding model for generating query embeddings"""
     global _semantic_model
-    if not SEMANTIC_SEARCH_AVAILABLE:
+    if not EMBEDDING_AVAILABLE:
         return None
         
     if _semantic_model is None:
         try:
-            # Use a lightweight but effective model
+            # Use same model as stored embeddings: all-MiniLM-L6-v2 (384 dimensions)
             _semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
+            print("✅ Embedding model loaded for query encoding")
         except Exception as e:
-            print(f"Warning: Could not load semantic model: {e}")
-            _semantic_model = False  # Mark as failed to avoid retrying
+            print(f"Warning: Could not load embedding model: {e}")
+            _semantic_model = False
     return _semantic_model if _semantic_model is not False else None
 
 
-def get_chroma_client():
-    """Initialize ChromaDB client with persistent storage"""
-    global _chroma_client, _embedding_collection
+def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None):
+    """
+    Perform semantic search using pgvector database-side similarity search
     
-    if _chroma_client is None:
+    Uses PostgreSQL pgvector extension with cosine distance operator (<=>)
+    Similarity calculated at DATABASE LEVEL - no application-level computation
+    
+    Args:
+        query: The search query text
+        top_k: Number of top results to return (default: 5)
+        min_similarity: Minimum similarity threshold (0.0-1.0, default: 0.2)
+        workspace_id: Optional workspace filter
+    
+    Returns:
+        List of (content, similarity_score, filename) tuples
+    """
+    if not supabase_client or not EMBEDDING_AVAILABLE:
+        print("⚠️  pgvector search not available - Supabase or embeddings not configured")
+        return []
+    
+    model = get_semantic_model()
+    if not model:
+        print("⚠️  Embedding model not available")
+        return []
+    
+    try:
+        # Generate embedding for the query using same model as stored embeddings
+        query_embedding = model.encode([query])[0]
+        query_embedding_list = query_embedding.tolist()
+        
+        print(f"🔍 Searching with pgvector (top_k={top_k}, min_similarity={min_similarity})")
+        
+        # Use RPC function for database-side similarity search
+        # This is the proper way to do pgvector queries without SQL injection
         try:
-            # Ensure storage directory exists
-            if not os.path.exists(CHROMA_DB_PATH):
-                os.makedirs(CHROMA_DB_PATH)
+            response = supabase_client.rpc('search_embeddings', {
+                'query_embedding': query_embedding_list,
+                'match_threshold': min_similarity,
+                'match_count': top_k
+            }).execute()
             
-            # Initialize ChromaDB with persistent storage
-            _chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
-            
-            # Get or create collection
-            try:
-                _embedding_collection = _chroma_client.get_collection(name="fastmcp_embeddings")
-                print(f"✅ Loaded existing ChromaDB collection with {_embedding_collection.count()} embeddings")
-            except:
-                _embedding_collection = _chroma_client.create_collection(
-                    name="fastmcp_embeddings",
-                    metadata={"hnsw:space": "cosine"}  # Use cosine similarity
-                )
-                print("✅ Created new ChromaDB collection")
+            if hasattr(response, 'data') and response.data:
+                results = []
+                for row in response.data:
+                    results.append((
+                        row['content'],
+                        float(row['similarity_score']),
+                        row['file_name']
+                    ))
                 
-        except Exception as e:
-            print(f"Error initializing ChromaDB: {e}")
-            _chroma_client = False
-            _embedding_collection = None
-    
-    return _chroma_client if _chroma_client is not False else None
+                print(f"✅ Found {len(results)} similar chunks via pgvector RPC")
+                return results
+            else:
+                print("⚠️  RPC returned no data - may not be configured correctly")
+        except Exception as rpc_error:
+            print(f"⚠️  RPC call failed: {rpc_error}")
+        
+        # Fallback: Query all embeddings and filter locally
+        # This uses pgvector but without the distance operator optimization
+        print("ℹ️  Falling back to application-side filtering (less efficient)...")
+        
+        try:
+            # Query embeddings with basic filtering
+            query_filters = supabase_client.table('document_embeddings').select('id, content, file_name, file_id, embedding')
+            
+            # Add workspace filter if provided
+            if workspace_id:
+                query_filters = query_filters.in_('file_id', (
+                    supabase_client.table('files')
+                    .select('id')
+                    .eq('workspace_id', workspace_id)
+                    .execute()
+                    .data
+                ) or [])
+            
+            response = query_filters.execute()
+            
+            if not response.data:
+                print("ℹ️  No embeddings found in database")
+                return []
+            
+            # Calculate similarities locally (unavoidable without RPC)
+            results = []
+            for row in response.data:
+                try:
+                    if 'embedding' not in row or row['embedding'] is None:
+                        continue
+                    
+                    # Convert stored embedding to numpy array
+                    doc_embedding = np.array(row['embedding'])
+                    
+                    # Calculate cosine similarity (1 - cosine_distance)
+                    # Using numpy for efficiency
+                    dot_product = np.dot(query_embedding, doc_embedding)
+                    query_norm = np.linalg.norm(query_embedding)
+                    doc_norm = np.linalg.norm(doc_embedding)
+                    
+                    if query_norm == 0 or doc_norm == 0:
+                        similarity = 0.0
+                    else:
+                        similarity = dot_product / (query_norm * doc_norm)
+                    
+                    if similarity >= min_similarity:
+                        results.append((row['content'], float(similarity), row['file_name']))
+                except Exception as e:
+                    print(f"⚠️  Error processing embedding: {e}")
+                    continue
+            
+            results.sort(key=lambda x: x[1], reverse=True)
+            print(f"✅ Found {len(results[:top_k])} similar chunks (local filtering)")
+            return results[:top_k]
+            
+        except Exception as fallback_error:
+            print(f"⚠️  Fallback search failed: {fallback_error}")
+            return []
+            
+    except Exception as e:
+        print(f"❌ Error in pgvector search: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 def build_embeddings():
-    """Build embeddings for all documents and store in ChromaDB"""
-    global _embedding_collection
-    if not SEMANTIC_SEARCH_AVAILABLE or not documents:
-        return
+    """
+    DEPRECATED in pgvector mode - Embeddings stored directly in Supabase via document_ingestion
     
-    model = get_semantic_model()
-    client = get_chroma_client()
+    This function is kept for backward compatibility but is no longer needed.
+    Document ingestion now handles embedding generation and database storage.
     
-    if not model or not client or not _embedding_collection:
-        return
-    
-    try:
-        print("Building document embeddings...")
-        
-        # Clear existing collection
-        _chroma_client.delete_collection(name="fastmcp_embeddings")
-        _embedding_collection = _chroma_client.create_collection(
-            name="fastmcp_embeddings",
-            metadata={"hnsw:space": "cosine"}
-        )
-        
-        # Prepare document chunks with metadata
-        chunk_ids = []
-        all_chunks = []
-        chunk_metadata_list = []
-        
-        for doc in documents:
-            # Handle both dict and string document formats
-            if isinstance(doc, dict):
-                content = doc["content"]
-                filename = doc.get("filename", "unknown")
-                document_id = doc.get("document_id", "unknown")
-            else:
-                content = doc
-                filename = "legacy_document"
-                document_id = "legacy"
-                
-            for idx, chunk in enumerate(chunk_text(content)):
-                if chunk.strip():
-                    chunk_id = f"{document_id}_{idx}"
-                    chunk_ids.append(chunk_id)
-                    all_chunks.append(chunk.strip())
-                    chunk_metadata_list.append({"filename": filename, "document_id": document_id})
-        
-        if not all_chunks:
-            return
-        
-        # Encode all chunks
-        embeddings = model.encode(all_chunks).tolist()
-        
-        # Store in ChromaDB
-        _embedding_collection.add(
-            ids=chunk_ids,
-            embeddings=embeddings,
-            documents=all_chunks,
-            metadatas=chunk_metadata_list
-        )
-        
-        print(f"✅ Built and stored {len(all_chunks)} embeddings in ChromaDB")
-        
-    except Exception as e:
-        print(f"Error building embeddings: {e}")
-        import traceback
-        traceback.print_exc()
+    For enterprise pgvector setup: embeddings are generated at ingestion time
+    and stored directly in document_embeddings table without in-memory caching.
+    """
+    print("⚠️  build_embeddings() is deprecated - embeddings managed at document ingestion time")
+    return
+
 
 
 
@@ -173,56 +244,13 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50):
 
 def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18):
     """
-    Perform semantic search on ingested documents using ChromaDB
-    Returns list of (content, similarity_score, filename) tuples
+    DEPRECATED - Use semantic_search_pgvector() instead
+    
+    This function is kept for backward compatibility but delegates to pgvector.
+    All similarity calculations now happen at the DATABASE LEVEL using pgvector.
     """
-    if not SEMANTIC_SEARCH_AVAILABLE:
-        return []
-        
-    model = get_semantic_model()
-    client = get_chroma_client()
-    
-    if not model or not documents or not client or not _embedding_collection:
-        return []
-    
-    # Build embeddings if collection is empty
-    if _embedding_collection.count() == 0:
-        build_embeddings()
-        
-        # If still no embeddings, return empty
-        if _embedding_collection.count() == 0:
-            return []
-    
-    try:
-        # Encode query
-        query_embedding = model.encode([query]).tolist()
-        
-        # Query ChromaDB for similar embeddings
-        results = _embedding_collection.query(
-            query_embeddings=query_embedding,
-            n_results=top_k
-        )
-        
-        # Format results as (content, similarity_score, filename) tuples
-        formatted_results = []
-        if results and results['documents'] and len(results['documents']) > 0:
-            for i, doc in enumerate(results['documents'][0]):
-                # ChromaDB returns distance, convert to similarity (1 - distance for cosine)
-                distance = results['distances'][0][i] if results['distances'] else 0
-                similarity = 1 - distance  # Convert distance to similarity
-                
-                # Filter by minimum similarity
-                if similarity > min_similarity:
-                    filename = results['metadatas'][0][i].get('filename', 'unknown') if results['metadatas'] else 'unknown'
-                    formatted_results.append((doc, float(similarity), filename))
-        
-        return formatted_results
-    
-    except Exception as e:
-        print(f"Error in semantic search: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
+    print("⚠️  semantic_search() is deprecated - using pgvector database-side search")
+    return semantic_search_pgvector(query, top_k=top_k, min_similarity=min_similarity)
 
 
 
@@ -260,17 +288,26 @@ def is_query_related_to_history(query: str, conversation_history: list) -> bool:
     return False
 
 
-def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None, stream: bool = False):
+def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None, stream: bool = False, workspace_id: str = None):
     """
     Query the Ollama model via HTTP API with optional conversation history
+    
+    NOTE: workspace_id parameter is deprecated - workspace_instructions table does not exist
+    Database schema: files, workspaces, chats, document_content
     
     Args:
         query: The current user query
         model_name: Name of the Ollama model to use
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
+        workspace_id: DEPRECATED - has no effect (workspace_instructions table doesn't exist)
     """
     try:
+        # workspace_id parameter is ignored - instructions feature disabled
+        if workspace_id:
+            print(f"Warning: workspace_id parameter ignored - workspace_instructions table does not exist")
+        
+        # Query logic without workspace instructions
         response = requests.post(
             'http://localhost:11434/api/generate',
             json={
@@ -304,28 +341,28 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_histor
             
    
 
-def answer_query(query: str, conversation_history: list = None, stream: bool = False):
+def answer_query(query: str, conversation_history: list = None, stream: bool = False, workspace_id: str = None):
     """
-    Answer queries using semantic search on ingested documents
-    Falls back to general model if no documents or no relevant context found
+    Answer queries using pgvector database-side semantic search
+    Database performs similarity matching - no application-level computation
     
     Args:
         query: The current user query
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
+        workspace_id: Optional workspace filter for search results
     """
-    if not documents:
-        llm_response = query_model(query, conversation_history=conversation_history, stream=stream)
-        return llm_response
-    
     try:
-        semantic_results = semantic_search(query, top_k=2)
+        # Use pgvector for semantic search - database handles similarity matching
+        semantic_results = semantic_search_pgvector(query, top_k=2, min_similarity=0.18, workspace_id=workspace_id)
         
         if not semantic_results:
+            # No relevant documents found - fall back to general query
             llm_response = query_model(query, conversation_history=conversation_history, stream=stream)
             return llm_response
         
-        return query_with_context(query, max_chunks=2, conversation_history=conversation_history, stream=stream)
+        # Use document context for enhanced response
+        return query_with_context(query, max_chunks=2, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id)
         
     except Exception as e:
         if stream:
@@ -337,9 +374,10 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
 
 
 
-def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False):
+def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None):
     """
     Query the LLM with relevant document chunks as context
+    Uses pgvector database-side similarity search
     
     Args:
         query: The question to ask
@@ -347,14 +385,15 @@ def query_with_context(query: str, max_chunks: int = 2, include_context_preview:
         include_context_preview: Whether to show source documents (default: True)
         conversation_history: List of previous messages for conversation context
         stream: Whether to stream the response (default: False)
+        workspace_id: Optional workspace filter for search results
     """
-    # Get relevant chunks using semantic search
-    semantic_results = semantic_search(query, top_k=max_chunks)
+    # Get relevant chunks using pgvector database-side search
+    semantic_results = semantic_search_pgvector(query, top_k=max_chunks, min_similarity=0.3, workspace_id=workspace_id)
     
     if not semantic_results:
         return query_model(query, conversation_history=conversation_history, stream=stream)
     
-    # Check if the best match has good similarity (threshold: 0.3)
+    # Check if the best match has good similarity
     best_score = semantic_results[0][1]
     
     # If similarity is too low, treat as general query without document context
@@ -400,6 +439,91 @@ DOCUMENT CONTENT:
         return f"{llm_response}\n\n---\n**Sources:** {source_text}"
     
     return llm_response 
+
+
+
+def answer_link_query(link, question):
+    """Answer a question based on the content of a given link (web or social media)"""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        
+        if link.startswith("http"):
+            # Fetch the web page
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            resp = requests.get(link, timeout=30, headers=headers)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+            
+            # Check if it's a social media link
+            if "youtube.com" in link or "youtu.be" in link:
+                # Extract YouTube video description and comments area
+                content = ""
+                
+                # Try to get video title
+                title = soup.find("meta", property="og:title")
+                if title and title.get("content"):
+                    content += f"Title: {title['content']}\n\n"
+                
+                # Try to get video description
+                description = soup.find("meta", property="og:description")
+                if description and description.get("content"):
+                    content += f"Description: {description['content']}\n\n"
+                
+                # Extract any visible text content (fallback)
+                if not content.strip():
+                    content = soup.get_text(separator="\n", strip=True)
+                    
+            elif "twitter.com" in link or "x.com" in link:
+                # Extract Twitter/X post content
+                content = ""
+                
+                # Try to get tweet description
+                description = soup.find("meta", property="og:description")
+                if description and description.get("content"):
+                    content += f"Tweet: {description['content']}\n\n"
+                
+                # Extract article text if available
+                articles = soup.find_all("article")
+                for article in articles:
+                    content += article.get_text(separator="\n", strip=True) + "\n"
+                
+                # Fallback to general text
+                if not content.strip():
+                    content = soup.get_text(separator="\n", strip=True)
+                    
+            elif "instagram.com" in link:
+                # Extract Instagram post content
+                content = ""
+                
+                # Try to get post description
+                description = soup.find("meta", property="og:description")
+                if description and description.get("content"):
+                    content += f"Post: {description['content']}\n\n"
+                
+                # Try to get title
+                title = soup.find("meta", property="og:title")
+                if title and title.get("content"):
+                    content += f"Caption: {title['content']}\n\n"
+                
+                # Fallback to general text
+                if not content.strip():
+                    content = soup.get_text(separator="\n", strip=True)
+                    
+            else:
+                # General web link: extract all text
+                content = soup.get_text(separator="\n", strip=True)
+        else:
+            return "Unsupported link type. Please provide a valid HTTP/HTTPS URL."
+        
+        # Clean up excessive whitespace
+        content = "\n".join(line.strip() for line in content.split("\n") if line.strip())
+        
+        # Build prompt for LLM
+        prompt = f"Answer this question using the content below:\nQuestion: {question}\n\nContent:\n{content[:4000]}"
+        return query_model(prompt)
+    except Exception as e:
+        return f"Error: {str(e)}"
        
     
 

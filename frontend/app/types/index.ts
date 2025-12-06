@@ -17,43 +17,63 @@ export interface Workspace {
 }
 
 /**
- * Document from `vault_documents` table
- * Stores document metadata with workspace association
+ * File from `files` table
+ * Stores document/file metadata
  */
-export interface VaultDocument {
-  document_id: string           // UUID primary key
-  user_id: string               // Foreign key to auth.users(id)
-  workspace_id: string | null   // Foreign key to workspaces(id), optional for backward compat
-  file_name: string             // Original filename
-  file_path: string             // Storage path: {workspace_id}/{timestamp}_{filename}
-  file_size: number             // File size in bytes
-  file_type: string             // MIME type
-  upload_timestamp: string      // ISO timestamp
-  metadata: Record<string, any> // JSONB metadata
-  created_at: string            // ISO timestamp
-  updated_at: string            // ISO timestamp (auto-updated)
-}
-
-/**
- * Workspace Instruction from `workspace_instructions` table
- * Custom AI system instructions per workspace
- */
-export interface WorkspaceInstruction {
+export interface File {
   id: string                    // UUID primary key
   workspace_id: string          // Foreign key to workspaces(id)
-  title: string                 // Instruction title
-  content: string               // Full instruction prompt
-  is_active: boolean            // Only one can be active per workspace
-  created_at: string            // ISO timestamp
-  updated_at: string            // ISO timestamp (auto-updated)
+  file_name: string             // Original filename
+  file_type: string             // File type (text, mime type, etc.)
+  file_path: string             // Storage path
+  size_bytes: number            // File size in bytes
+  status: string                // Upload status
+  uploaded_at: string           // ISO timestamp
+  deleted_at: string | null     // ISO timestamp (soft delete)
 }
 
 /**
- * Workspace Summary (from view)
- * Quick overview with document count
+ * Chat from `chats` table
+ * Stores chat messages and conversations
  */
-export interface WorkspaceSummary extends Workspace {
-  document_count: number        // Count of documents in workspace
+export interface Chat {
+  id: string                    // UUID primary key
+  workspace_id: string          // Foreign key to workspaces(id)
+  user_id: string               // Foreign key to auth.users(id)
+  role: string                  // Message role (user, assistant, system, etc.)
+  message: string               // Chat message content
+  created_at: string            // ISO timestamp
+}
+
+/**
+ * Document Content from `document_content` table
+ * Stores extracted text content from files
+ */
+export interface DocumentContent {
+  id: string                    // UUID primary key
+  file_id: string               // Foreign key to files(id)
+  user_id: string               // Foreign key to auth.users(id)
+  content: string               // Extracted text content
+  file_name: string             // Original file name
+  extracted_at: string          // ISO timestamp
+  created_at: string            // ISO timestamp
+  updated_at: string            // ISO timestamp
+}
+
+/**
+ * Document Embedding from `document_embeddings` table
+ * Stores vector embeddings for semantic search
+ */
+export interface DocumentEmbedding {
+  id: string                    // UUID primary key
+  file_id: string               // Foreign key to files(id)
+  user_id: string               // Foreign key to auth.users(id)
+  chunk_index: number           // Index of the chunk within document
+  content: string               // Original text chunk
+  embedding: number[]           // Vector embedding array
+  file_name: string             // Original file name
+  created_at: string            // ISO timestamp
+  updated_at: string            // ISO timestamp
 }
 
 // ============================================
@@ -66,30 +86,6 @@ export interface Message {
   role: 'user' | 'assistant'
   timestamp: Date
   isStreaming?: boolean
-}
-
-/**
- * @deprecated Use VaultDocument instead
- * Legacy interface for backward compatibility
- */
-export interface VaultFile {
-  id: string
-  name: string
-  type: string
-  size: number
-  uploadedAt: Date
-  path: string
-}
-
-/**
- * @deprecated Use WorkspaceInstruction instead
- * Legacy interface for backward compatibility
- */
-export interface Instruction {
-  id: string
-  title: string
-  content: string
-  createdAt: Date
 }
 
 export interface User {

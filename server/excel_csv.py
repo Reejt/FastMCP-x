@@ -1,3 +1,13 @@
+"""
+Excel and CSV Query Engine for FastMCP
+
+Database Schema (4 tables):
+- files: File metadata
+- workspaces: User workspaces
+- chats: Chat messages
+- document_content: Extracted text from files
+"""
+
 import pandas as pd
 import logging
 

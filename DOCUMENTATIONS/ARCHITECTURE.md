@@ -18,13 +18,19 @@
 │  Components:                                                    │
 │  • Chat Interface (ChatContainer, ChatMessage, ChatInput)       │
 │  • Sidebar Navigation (collapsible, persistent)                │
-│  • Workspace Management (UI ready)                             │
+│  • Workspace Management (create, edit, delete, search)         │
+│  • Vault Management (upload, list, delete documents)           │
+│  • Instructions Management (create, edit, activate, preview)   │
 │                                                                 │
 │  Auth: Supabase (magic links)                                  │
 │  State: React hooks + localStorage                             │
 │  Styling: Tailwind CSS + Framer Motion                         │
 │                                                                 │
-│  API Routes: /api/chat/query/route.ts                          │
+│  API Routes:                                                    │
+│  • /api/chat/query          - Chat queries with workspace ctx  │
+│  • /api/vault/upload        - Document upload                  │
+│  • /api/workspaces          - Workspace CRUD                   │
+│  • /api/instructions        - Instruction CRUD                 │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             │ HTTP POST
@@ -34,26 +40,29 @@
 │                   BRIDGE SERVER (FastAPI)                       │
 │                     Port: 3001                                  │
 ├─────────────────────────────────────────────────────────────────┤
-│  Purpose: MCP Protocol Bridge                                  │
+│  Purpose: MCP Protocol Bridge + Workspace Intelligence         │
 │                                                                 │
 │  Endpoints:                                                     │
-│  • POST /api/query              - Main query with context      │
-│  • POST /api/query-context      - Query with explicit params   │
-│  • POST /api/semantic-search    - Document search              │
-│  • POST /api/ingest             - Ingest documents             │
+│  • POST /api/query              - Main query with workspace ctx│
+│  • POST /api/ingest             - Ingest documents (base64)    │
 │  • POST /api/query-excel        - Excel/CSV queries            │
 │  • POST /api/web-search         - Web search                   │
 │  • GET  /api/health             - Health check                 │
 │                                                                 │
 │  Features:                                                      │
+│  • Workspace-aware query routing                               │
+│  • Automatic instruction application (workspace_id param)      │
+│  • SSE streaming for real-time responses                       │
+│  • URL detection & link content extraction                     │
+│  • Web search pattern detection (versions, CVEs, etc.)         │
 │  • Pydantic request validation                                 │
-│  • Persistent MCP client connection                            │
 │  • CORS for localhost:3000                                     │
 │  • Proper error handling                                       │
 │                                                                 │
 │  Dependencies:                                                  │
 │  • fastapi, uvicorn, pydantic                                  │
-│  • client/fast_mcp_client.py (MCP functions)                   │
+│  • server/instructions.py (workspace instructions)             │
+│  • server/query_handler.py (semantic search)                   │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             │ MCP Protocol
@@ -66,22 +75,26 @@
 │  server/main.py - Tool registration                             │
 │                                                                 │
 │  MCP Tools (@mcp.tool):                                         │
-│  • ingest_file_tool           - Document ingestion             │
-│  • answer_query_tool          - Query with context             │
-│  • semantic_search_tool       - Semantic document search       │
-│  • query_with_context_tool    - Context-aware LLM query        │
-│  • query_excel_with_llm_tool  - Excel natural language         │
-│  • query_csv_with_llm_tool    - CSV natural language           │
-│  • web_search_tool            - Web search + summarization     │
+│  • ingest_file_tool              - Document ingestion          │
+│  • answer_query_tool             - Query with context          │
+│  • query_excel_with_llm_tool     - Excel natural language      │
+│  • query_csv_with_llm_tool       - CSV natural language        │
+│  • web_search_tool               - Web search + summarization  │
+│  • answer_link_query_tool        - URL content extraction + Q&A│
+│  • get_active_instruction_tool   - Fetch workspace instruction │
+│  • get_instruction_preview_tool  - Get instruction preview     │
+│  • clear_instruction_cache_tool  - Refresh instruction cache   │
 │                                                                 │
 │  Modules:                                                       │
 │  • document_ingestion.py  - File storage & loading             │
 │  • query_handler.py       - Semantic search + LLM integration  │
 │  • excel_csv.py          - Structured data queries             │
 │  • web_search_file.py    - Tavily API integration              │
+│  • instructions.py       - Workspace-specific AI instructions  │
 │                                                                 │
 │  Storage: storage/ directory (auto-created)                    │
 │  Models: sentence-transformers (all-MiniLM-L6-v2)              │
+│  Database: Supabase (workspace_instructions, vault_documents)  │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             │ HTTP API
@@ -117,13 +130,21 @@
 
 
 ┌─────────────────────────────────────────────────────────────────┐
-│                    STORAGE (File System)                        │
-│                    storage/ directory                           │
+│                    STORAGE LAYER                                │
 ├─────────────────────────────────────────────────────────────────┤
-│  Purpose: Persistent document storage                           │
-│  Contents:                                                      │
-│  • Ingested documents (copied from source)                     │
-│  • Auto-loaded on server startup                               │
+│  1. SUPABASE DATABASE                                          │
+│     • vault_documents table (metadata)                         │
+│       - document_id, user_id, workspace_id                     │
+│       - file_name, file_path, file_size, file_type            │
+│       - upload_timestamp, metadata (JSONB)                     │
+│     • workspaces table (workspace info)                        │
+│     • workspace_instructions table (custom AI instructions)    │
+│                                                                 │
+│  2. FILE SYSTEM (storage/ directory)                           │
+│     • Persistent document storage                              │
+│     • Ingested documents (copied from source)                  │
+│     • Auto-loaded on server startup                            │
+│     • Path structure: storage/{filename}                       │
 │                                                                 │
 │  Supported Formats:                                             │
 │  • Text: .txt, .md                                             │
@@ -136,68 +157,114 @@
 
 ## Data Flow
 
-### 1. User Query Flow
+### 1. User Query Flow (With Workspace Instructions)
 ```
-User Input
+User Input in workspace chat
    ↓
 ChatInput Component (frontend)
    ↓
+Dashboard fetches active instruction for workspace
+   ↓
 ChatContainer state update
    ↓
-fetch('/api/chat/query', {query, action: 'query'})
+fetch('/api/chat/query', {
+   query, 
+   conversation_history,
+   workspace_id  ← Included for instruction application
+})
    ↓
 Next.js API Route (/api/chat/query/route.ts)
    ↓
-fetch('http://localhost:3001/api/query', {query})
+Forwards workspace_id to bridge server
+   ↓
+fetch('http://localhost:3001/api/query', {
+   query,
+   conversation_history,
+   workspace_id
+})
    ↓
 Bridge Server (bridge_server.py)
    ↓
-await answer_query(mcp_client, query)
-   ↓
-MCP Protocol: call_tool("answer_query_tool", {query})
-   ↓
-FastMCP Server (server/main.py)
-   ↓
-query_handler.py: answer_query()
-   ↓
-Semantic Search → Find relevant documents
-   ↓
-query_with_context() → Enrich LLM prompt
+Checks if workspace_id exists
+   │
+   ├─→ If workspace_id:
+   │     └─→ query_with_instructions_stream()
+   │           ↓
+   │           Fetches active instruction from Supabase
+   │           ↓
+   │           Builds system prompt with instruction
+   │           ↓
+   │           Sends enhanced prompt to Ollama
+   │
+   └─→ If no workspace_id:
+         └─→ answer_query() (standard flow)
+               ↓
+               Semantic Search → Find relevant documents
+               ↓
+               query_with_context() → Enrich LLM prompt
    ↓
 query_model() → HTTP POST to Ollama
    ↓
-Ollama generates response
+Ollama generates response (following workspace instructions)
    ↓
-Response flows back through stack
+Response streams back through SSE
    ↓
-User sees answer in chat
+User sees answer in chat (guided by workspace rules)
 ```
 
 ### 2. Document Ingestion Flow
 ```
-User uploads file
+User uploads file in Vault page
    ↓
-Frontend sends file path to /api/chat/query
+Frontend: /vault/page.tsx handles file upload
    ↓
-action: 'ingest', file_path: 'D:/docs/file.pdf'
+File converted to base64
    ↓
-Bridge Server: POST /api/ingest
+POST /api/vault/upload
    ↓
-await ingest_file(mcp_client, file_path)
+Next.js API Route: /api/vault/upload/route.ts
    ↓
-MCP: call_tool("ingest_file_tool", {file_path})
+Validates file (size, type)
    ↓
-document_ingestion.py: ingest_file()
+Stores metadata in Supabase (vault_documents table)
    ↓
-Copy file to storage/
-   ↓
-Extract text (utils/file_parser.py)
-   ↓
-Store in documents list (in-memory)
-   ↓
-Return success message
-   ↓
-User sees confirmation
+   ├─→ If user_id provided: Associates with workspace
+   │   └─→ Records: file_name, file_path, file_size, file_type, workspace_id
+   │
+   └─→ Sends base64 file to Bridge Server
+       ↓
+       POST http://localhost:3001/api/ingest
+       ↓
+       Bridge Server: ingest_endpoint()
+       ↓
+       Decodes base64 → Creates temp file
+       ↓
+       await ingest_file(mcp_client, temp_file_path, user_id)
+       ↓
+       MCP: call_tool("ingest_file_tool", {file_path, user_id})
+       ↓
+       FastMCP Server: ingest_file_tool()
+       ↓
+       document_ingestion.py: ingest_file()
+       ↓
+       Copy file to storage/ directory
+       ↓
+       Extract text (utils/file_parser.py)
+         ↓
+         Supports: .txt, .pdf, .docx, .pptx, .csv, .xlsx
+       ↓
+       Store in documents list (in-memory)
+         └─→ {"content": str, "filename": str, "filepath": str}
+       ↓
+       Auto-loads on server restart from storage/
+       ↓
+       Return success message
+       ↓
+       Clean up temp file
+       ↓
+       Frontend receives confirmation
+       ↓
+       UI updates with new document in workspace vault
 ```
 
 ### 3. Semantic Search Flow

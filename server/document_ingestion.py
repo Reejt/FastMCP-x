@@ -2,19 +2,23 @@
 from fastmcp import FastMCP
 import os
 import shutil
-from utils.file_parser import extract_text_from_file
+from utils.file_parser import extract_and_store_file_content
 from supabase import create_client, Client
 from datetime import datetime
 import uuid
+from dotenv import load_dotenv
+
+# Load environment variables from root .env file
+load_dotenv()
 
 # Store documents with metadata for better semantic search
 documents = []  # List of {"content": str, "filename": str, "filepath": str, "document_id": str, "user_id": str}
 
 # Initialize Supabase client
-# Get from environment variables, with fallback to hardcoded values
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://fmlanqjduftxlktygpwe.supabase.co")
-# Use service role key for backend operations (bypasses RLS)
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs"))
+# Try both NEXT_PUBLIC_ prefix (from frontend .env.local) and regular prefix
+SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL", "https://fmlanqjduftxlktygpwe.supabase.co")
+# Use service role key for backend operations (bypasses RLS), fall back to anon key
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs")
 
 supabase: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
@@ -27,18 +31,6 @@ if SUPABASE_URL and SUPABASE_KEY:
 
 # Import will be done after query_handler is fully loaded to avoid circular import
 
-
-def _import_build_embeddings():
-    """Lazy import to avoid circular dependency"""
-    try:
-        from server.query_handler import build_embeddings
-        return build_embeddings
-    except ImportError:
-        return None
-
-  
-
- 
 def ingest_file(file_path: str, user_id: str = None):
     """
     Implementation function for file ingestion
@@ -73,13 +65,6 @@ def ingest_file(file_path: str, user_id: str = None):
         }
         file_type = file_type_map.get(file_extension, 'application/octet-stream')
         
-        # Extract text content first
-        print(f"Extracting text from: {file_path}")
-        content = extract_text_from_file(file_path)
-        
-        if not content or not content.strip():
-            return f"Warning: No text content extracted from file '{filename}'. File may be empty or unsupported format."
-        
         # Try to store in Supabase first
         if supabase and user_id:
             print(f"☁️  Uploading file to Supabase Storage...")
@@ -101,43 +86,79 @@ def ingest_file(file_path: str, user_id: str = None):
                     
                 print(f"✅ File uploaded to Supabase: {storage_path}")
                     
-                # Insert metadata into vault_documents table
-                document_id = str(uuid.uuid4())
-                db_response = supabase.table('vault_documents').insert({
-                    'document_id': document_id,
-                    'user_id': user_id,
+                # Insert metadata into files table
+                file_id = str(uuid.uuid4())
+                db_response = supabase.table('files').insert({
+                    'id': file_id,
+                    'workspace_id': user_id,  # TODO: Pass actual workspace_id from frontend
                     'file_name': filename,
                     'file_path': storage_path,
-                    'file_size': file_size,
+                    'size_bytes': file_size,
                     'file_type': file_type,
-                    'metadata': {
-                        'original_name': filename,
-                        'processed': True,
-                        'character_count': len(content)
-                    }
+                    'status': 'uploaded'
                 }).execute()
                     
-                print(f"✅ Document metadata saved to Supabase database")
+                print(f"✅ File metadata saved to Supabase database")
+                    
+                # Extract text and store in document_content table
+                print(f"📄 Extracting and storing text content...")
+                content, stored = extract_and_store_file_content(
+                    file_path=file_path,
+                    file_id=file_id,
+                    user_id=user_id,
+                    file_name=filename
+                )
+                
+                if not content or not content.strip():
+                    print(f"⚠️  Warning: No text content extracted from file '{filename}'")
+                elif not stored:
+                    print(f"⚠️  Warning: Failed to store extracted content in database")
+                else:
+                    print(f"✅ Extracted and stored {len(content)} characters")
+                    
+                    # Generate and store embeddings with pgvector
+                    print(f"🧠 Generating embeddings with pgvector...")
+                    try:
+                        from server.query_handler import get_semantic_model, chunk_text
+                        model = get_semantic_model()
+                        if model:
+                            embeddings_to_store = []
+                            chunk_index = 0
+                            
+                            for chunk in chunk_text(content):
+                                if chunk.strip():
+                                    embedding = model.encode([chunk.strip()])[0]
+                                    embeddings_to_store.append({
+                                        'file_id': file_id,
+                                        'user_id': user_id,
+                                        'chunk_index': chunk_index,
+                                        'content': chunk.strip(),
+                                        'embedding': embedding.tolist(),  # pgvector expects float array
+                                        'file_name': filename,
+                                    })
+                                    chunk_index += 1
+                            
+                            # Store in database
+                            if embeddings_to_store:
+                                supabase.table('document_embeddings').insert(embeddings_to_store).execute()
+                                print(f"✅ Generated and stored {len(embeddings_to_store)} embeddings in pgvector")
+                        else:
+                            print(f"⚠️  Embedding model not available")
+                    except Exception as e:
+                        print(f"⚠️  Warning: Could not generate embeddings: {e}")
                     
                 # Store document with metadata in memory
                 doc_info = {
                     "content": content,
                     "filename": filename,
                     "filepath": storage_path,  # Store Supabase path
-                    "document_id": document_id,
+                    "document_id": file_id,
                     "user_id": user_id
                 }
                 documents.append(doc_info)
                     
-                result_msg = f"Successfully ingested file '{filename}' to Supabase. Extracted {len(content)} characters. Total documents: {len(documents)}"
+                result_msg = f"Successfully ingested file '{filename}' to Supabase with pgvector embeddings. Extracted {len(content)} characters. Total documents: {len(documents)}"
                 print(result_msg)
-                    
-                # Rebuild embeddings to ensure all documents are properly embedded
-                build_embeddings_func = _import_build_embeddings()
-                if build_embeddings_func:
-                    print("🔄 Rebuilding embeddings for all documents...")
-                    build_embeddings_func()
-                    print("✅ Embeddings rebuild complete")
                     
                 return result_msg
             except Exception as supabase_error:

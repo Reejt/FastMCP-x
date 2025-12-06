@@ -123,21 +123,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Insert document metadata into vault_documents table
+    // Insert file metadata into files table
     const { data: dbData, error: dbError } = await supabase
-      .from('vault_documents')
+      .from('files')
       .insert({
-        user_id: user.id,
-        workspace_id: workspaceId || null, // Include workspace_id
+        workspace_id: workspaceId || user.id, // Use workspaceId or default to user.id
         file_name: file.name,
         file_path: storageData.path,
-        file_size: file.size,
+        size_bytes: file.size,
         file_type: file.type,
-        metadata: {
-          original_name: file.name,
-          processed: true,
-          bridge_server_response: data
-        }
+        status: 'uploaded'
       })
       .select()
       .single();
@@ -202,17 +197,17 @@ export async function GET(request: NextRequest) {
 
     // Build query
     let query = supabase
-      .from('vault_documents')
+      .from('files')
       .select('*')
-      .eq('user_id', user.id)
-      .order('upload_timestamp', { ascending: false });
+      .is('deleted_at', null)
+      .order('uploaded_at', { ascending: false });
 
     // Filter by workspace if provided
     if (workspaceId) {
-      query = query.eq('workspace_id', workspaceId);
+      query = query.eq('workspace_id', workspaceId)
     }
 
-    const { data: documents, error: dbError } = await query;
+    const { data: files, error: dbError } = await query
 
     if (dbError) {
       console.error('Database query error:', dbError);
@@ -224,8 +219,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      documents: documents || [],
-      count: documents?.length || 0,
+      files: files || [],
+      count: files?.length || 0,
       workspaceId: workspaceId || null
     });
   } catch (error) {
@@ -263,38 +258,27 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // First, fetch the document to get the file path and verify ownership
-    const { data: document, error: fetchError } = await supabase
-      .from('vault_documents')
+    // First, fetch the file to get the file path
+    const { data: file, error: fetchError } = await supabase
+      .from('files')
       .select('*')
-      .eq('document_id', documentId)
-      .eq('user_id', user.id)
+      .eq('id', documentId)
+      .is('deleted_at', null)
       .single();
 
-    if (fetchError || !document) {
-      console.error('Document fetch error:', fetchError);
+    if (fetchError || !file) {
+      console.error('File fetch error:', fetchError);
       return NextResponse.json(
-        { error: 'Document not found or access denied' },
+        { error: 'File not found or already deleted' },
         { status: 404 }
       );
     }
 
-    // Delete from Supabase Storage
-    const { error: storageError } = await supabase.storage
-      .from('vault-files')
-      .remove([document.file_path]);
-
-    if (storageError) {
-      console.error('Storage deletion error:', storageError);
-      // Continue with database deletion even if storage deletion fails
-    }
-
-    // Delete from database
+    // Soft delete in database (set deleted_at timestamp)
     const { error: dbError } = await supabase
-      .from('vault_documents')
-      .delete()
-      .eq('document_id', documentId)
-      .eq('user_id', user.id);
+      .from('files')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', documentId);
 
     if (dbError) {
       console.error('Database deletion error:', dbError);
