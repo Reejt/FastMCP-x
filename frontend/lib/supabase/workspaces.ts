@@ -55,7 +55,7 @@ export async function getWorkspaceSummaries(includeArchived: boolean = false) {
   const summaries = await Promise.all(
     workspaces.map(async (workspace) => {
       const { count } = await supabase
-        .from('files')
+        .from('file_upload')
         .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspace.id)
         .is('deleted_at', null)

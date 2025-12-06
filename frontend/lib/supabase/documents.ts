@@ -18,7 +18,7 @@ export async function getWorkspaceFiles(workspaceId: string) {
   }
 
   const { data, error } = await supabase
-    .from('files')
+    .from('file_upload')
     .select('*')
     .eq('workspace_id', workspaceId)
     .is('deleted_at', null)
@@ -44,7 +44,7 @@ export async function getFileById(fileId: string) {
   }
 
   const { data, error } = await supabase
-    .from('files')
+    .from('file_upload')
     .select('*')
     .eq('id', fileId)
     .is('deleted_at', null)
@@ -70,7 +70,7 @@ export async function getWorkspaceFileCount(workspaceId: string) {
   }
 
   const { count, error } = await supabase
-    .from('files')
+    .from('file_upload')
     .select('*', { count: 'exact', head: true })
     .eq('workspace_id', workspaceId)
     .is('deleted_at', null)
@@ -98,7 +98,7 @@ export async function moveFileToWorkspace(
   }
 
   const { data, error } = await supabase
-    .from('files')
+    .from('file_upload')
     .update({ workspace_id: workspaceId })
     .eq('id', fileId)
     .select()
@@ -124,7 +124,7 @@ export async function deleteFile(fileId: string) {
   }
 
   const { data, error } = await supabase
-    .from('files')
+    .from('file_upload')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', fileId)
     .select()

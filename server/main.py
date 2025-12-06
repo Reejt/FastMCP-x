@@ -3,8 +3,9 @@ import sys
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from server/.env.local
+env_path = os.path.join(os.path.dirname(__file__), '.env.local')
+load_dotenv(dotenv_path=env_path)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

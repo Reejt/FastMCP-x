@@ -160,7 +160,7 @@ async function getWorkspaceFileIds(workspaceId: string): Promise<string[]> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
-    .from('files')
+    .from('file_upload')
     .select('id')
     .eq('workspace_id', workspaceId)
     .is('deleted_at', null)

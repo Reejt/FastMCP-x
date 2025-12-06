@@ -9,8 +9,7 @@
 export interface Workspace {
   id: string                    // UUID primary key
   name: string                  // Workspace name (required, non-empty)
-  description: string | null    // Optional description
-  owner_id: string              // Foreign key to auth.users(id)
+  user_id: string               // Foreign key to auth.users(id)
   created_at: string            // ISO timestamp
   updated_at: string            // ISO timestamp (auto-updated)
   is_archived: boolean          // Soft delete flag
@@ -23,6 +22,7 @@ export interface Workspace {
 export interface File {
   id: string                    // UUID primary key
   workspace_id: string          // Foreign key to workspaces(id)
+  user_id: string               // Foreign key to auth.users(id)
   file_name: string             // Original filename
   file_type: string             // File type (text, mime type, etc.)
   file_path: string             // Storage path

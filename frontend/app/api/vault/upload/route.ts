@@ -123,16 +123,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Insert file metadata into files table
+    // Insert file metadata into file_upload table
     const { data: dbData, error: dbError } = await supabase
-      .from('files')
+      .from('file_upload')
       .insert({
         workspace_id: workspaceId || user.id, // Use workspaceId or default to user.id
         file_name: file.name,
         file_path: storageData.path,
         size_bytes: file.size,
         file_type: file.type,
-        status: 'uploaded'
+        status: 'uploaded',
+        user_id: user.id,
+        uploaded_at: new Date().toISOString()
       })
       .select()
       .single();
@@ -197,8 +199,8 @@ export async function GET(request: NextRequest) {
 
     // Build query
     let query = supabase
-      .from('files')
-      .select('*')
+      .from('file_upload')
+      .select('id, workspace_id, file_name, file_path, size_bytes, status, uploaded_at')
       .is('deleted_at', null)
       .order('uploaded_at', { ascending: false });
 
@@ -207,7 +209,7 @@ export async function GET(request: NextRequest) {
       query = query.eq('workspace_id', workspaceId)
     }
 
-    const { data: files, error: dbError } = await query
+    const { data: files, error: dbError } = await query;
 
     if (dbError) {
       console.error('Database query error:', dbError);
@@ -260,7 +262,7 @@ export async function DELETE(request: NextRequest) {
 
     // First, fetch the file to get the file path
     const { data: file, error: fetchError } = await supabase
-      .from('files')
+      .from('file_upload')
       .select('*')
       .eq('id', documentId)
       .is('deleted_at', null)
@@ -276,7 +278,7 @@ export async function DELETE(request: NextRequest) {
 
     // Soft delete in database (set deleted_at timestamp)
     const { error: dbError } = await supabase
-      .from('files')
+      .from('file_upload')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', documentId);
 

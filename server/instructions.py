@@ -11,8 +11,9 @@ import requests
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from server/.env.local
+env_path = os.path.join(os.path.dirname(__file__), '.env.local')
+load_dotenv(dotenv_path=env_path)
 
 # WARNING: This module references a non-existent table
 # Supabase configuration

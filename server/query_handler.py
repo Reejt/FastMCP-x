@@ -142,7 +142,7 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
             # Add workspace filter if provided
             if workspace_id:
                 query_filters = query_filters.in_('file_id', (
-                    supabase_client.table('files')
+                    supabase_client.table('file_upload')
                     .select('id')
                     .eq('workspace_id', workspace_id)
                     .execute()
