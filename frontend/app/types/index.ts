@@ -3,20 +3,31 @@
 // ============================================
 
 /**
+ * User from `auth.users` table
+ * Built-in Supabase authentication table
+ */
+export interface AuthUser {
+  id: string                    // UUID primary key
+  email: string                 // User email (not nullable)
+  role: string | null           // User role (nullable)
+  created_at: string            // ISO timestamp with time zone
+  updated_at: string            // ISO timestamp with time zone
+}
+
+/**
  * Workspace from `workspaces` table
  * Represents a user's workspace for organizing documents and instructions
  */
 export interface Workspace {
   id: string                    // UUID primary key
-  name: string                  // Workspace name (required, non-empty)
   user_id: string               // Foreign key to auth.users(id)
+  name: string                  // Workspace name (required, non-empty)
   created_at: string            // ISO timestamp
   updated_at: string            // ISO timestamp (auto-updated)
-  is_archived: boolean          // Soft delete flag
 }
 
 /**
- * File from `files` table
+ * File from `file_upload` table
  * Stores document/file metadata
  */
 export interface File {
@@ -29,20 +40,9 @@ export interface File {
   size_bytes: number            // File size in bytes
   status: string                // Upload status
   uploaded_at: string           // ISO timestamp
-  deleted_at: string | null     // ISO timestamp (soft delete)
-}
-
-/**
- * Chat from `chats` table
- * Stores chat messages and conversations
- */
-export interface Chat {
-  id: string                    // UUID primary key
-  workspace_id: string          // Foreign key to workspaces(id)
-  user_id: string               // Foreign key to auth.users(id)
-  role: string                  // Message role (user, assistant, system, etc.)
-  message: string               // Chat message content
   created_at: string            // ISO timestamp
+  updated_at: string            // ISO timestamp (auto-updated)
+  deleted_at: string | null     // ISO timestamp (soft delete)
 }
 
 /**
@@ -51,13 +51,13 @@ export interface Chat {
  */
 export interface DocumentContent {
   id: string                    // UUID primary key
-  file_id: string               // Foreign key to files(id)
+  file_id: string               // Foreign key to file_upload(id)
   user_id: string               // Foreign key to auth.users(id)
-  content: string               // Extracted text content
-  file_name: string             // Original file name
-  extracted_at: string          // ISO timestamp
-  created_at: string            // ISO timestamp
-  updated_at: string            // ISO timestamp
+  content: string               // Extracted text content (not nullable)
+  file_name: string | null      // Original file name (nullable)
+  extracted_at: string          // ISO timestamp without time zone (nullable)
+  created_at: string            // ISO timestamp without time zone (nullable)
+  updated_at: string            // ISO timestamp without time zone (nullable)
 }
 
 /**
@@ -66,14 +66,41 @@ export interface DocumentContent {
  */
 export interface DocumentEmbedding {
   id: string                    // UUID primary key
-  file_id: string               // Foreign key to files(id)
   user_id: string               // Foreign key to auth.users(id)
+  file_id: string               // Foreign key to file_upload(id)
   chunk_index: number           // Index of the chunk within document
-  content: string               // Original text chunk
-  embedding: number[]           // Vector embedding array
-  file_name: string             // Original file name
+  chunk_text: string            // Original text chunk
+  embedding: number[]           // Vector embedding array (USER-DEFINED vector type)
+  metadata: Record<string, any> // Optional metadata as JSONB
   created_at: string            // ISO timestamp
-  updated_at: string            // ISO timestamp
+  updated_at: string            // ISO timestamp (auto-updated)
+}
+
+/**
+ * Chat from `chats` table
+ * Stores chat messages and conversations
+ */
+export interface Chat {
+  id: string                    // UUID primary key
+  workspace_id: string          // Foreign key to workspaces(id) (nullable)
+  user_id: string               // Foreign key to auth.users(id) (nullable)
+  role: string                  // Message role (user, assistant, system, etc.)
+  message: string               // Chat message content
+  created_at: string            // ISO timestamp with time zone
+}
+
+/**
+ * Workspace Instruction from `workspace_instructions` table
+ * Stores custom instructions for workspaces
+ */
+export interface WorkspaceInstruction {
+  id: string                    // UUID primary key
+  workspace_id: string          // Foreign key to workspaces(id)
+  title: string                 // Instruction title
+  instructions: string          // Instruction content (text)
+  is_active: boolean            // Whether this instruction is active
+  created_at: string            // ISO timestamp
+  updated_at: string            // ISO timestamp (auto-updated)
 }
 
 // ============================================

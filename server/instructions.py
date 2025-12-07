@@ -1,9 +1,15 @@
 """
 Workspace Instructions Handler
-DISABLED: workspace_instructions table does not exist in the database
-Only files, workspaces, chats, and document_content tables are available
+Handles custom instructions for workspaces from the workspace_instructions table
 
-This module is kept for reference but should not be used.
+Database table schema:
+- id: UUID primary key
+- workspace_id: UUID foreign key to workspaces table
+- title: Text instruction title
+- instructions: Text instruction content
+- is_active: Boolean (only one can be active per workspace)
+- created_at: Timestamp with time zone
+- updated_at: Timestamp with time zone (auto-updated)
 """
 
 import os

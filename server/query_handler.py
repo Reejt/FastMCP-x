@@ -1,12 +1,14 @@
 """ 
 Query Handler for FastMCP - pgvector Enterprise Edition
 
-Database Schema (5 tables):
-- files: File metadata (id, workspace_id, file_name, file_path, size_bytes, file_type, status, uploaded_at, deleted_at)
-- workspaces: User workspaces (id, name, description, owner_id, created_at, updated_at, is_archived)
-- chats: Chat messages (id, workspace_id, user_id, role, message, created_at)
+Database Schema (7 tables):
+- auth.users: Supabase authentication (id, email, role, created_at, updated_at)
+- workspaces: User workspaces (id, user_id, name, created_at, updated_at)
+- file_upload: File metadata (id, workspace_id, user_id, file_name, file_type, file_path, size_bytes, status, uploaded_at, created_at, updated_at, deleted_at)
 - document_content: Extracted text (id, file_id, user_id, content, file_name, extracted_at, created_at, updated_at)
-- document_embeddings: Vector embeddings (id, file_id, user_id, chunk_index, content, embedding(384), file_name, created_at, updated_at)
+- document_embeddings: Vector embeddings (id, user_id, file_id, chunk_index, chunk_text, embedding[vector], metadata[jsonb], created_at, updated_at)
+- workspace_instructions: Custom instructions (id, workspace_id, title, instructions, is_active, created_at, updated_at)
+- chats: Chat messages (id, workspace_id, user_id, role, message, created_at)
 
 Similarity Search: Performed at DATABASE LEVEL using pgvector <=> operator
 No application-level cosine similarity calculations

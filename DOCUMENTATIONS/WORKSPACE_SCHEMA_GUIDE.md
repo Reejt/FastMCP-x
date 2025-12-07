@@ -185,29 +185,33 @@ All tables use RLS to ensure users can only access their own data.
 
 ### `workspaces` Policies
 
+Since workspaces are now automatically created and managed, the RLS policies should allow all authenticated users to view and manage workspaces they own:
+
 ```sql
 ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
 
 -- View own workspaces
 CREATE POLICY "Users can view their own workspaces"
   ON workspaces FOR SELECT
-  USING (owner_id = auth.uid());
+  USING (id = auth.uid());
 
 -- Create workspaces
 CREATE POLICY "Users can create workspaces"
   ON workspaces FOR INSERT
-  WITH CHECK (owner_id = auth.uid());
+  WITH CHECK (id = auth.uid());
 
 -- Update own workspaces
 CREATE POLICY "Users can update their own workspaces"
   ON workspaces FOR UPDATE
-  USING (owner_id = auth.uid());
+  USING (id = auth.uid());
 
 -- Delete own workspaces
 CREATE POLICY "Users can delete their own workspaces"
   ON workspaces FOR DELETE
-  USING (owner_id = auth.uid());
+  USING (id = auth.uid());
 ```
+
+**Note:** Replace `created_by` with the actual user ID column name in your workspaces table. If workspaces are truly global/shared, you may need to disable RLS or implement a different policy structure.
 
 ### `vault_documents` Policies (Updated)
 
@@ -223,7 +227,7 @@ CREATE POLICY "Users can view their workspace documents"
   ON vault_documents FOR SELECT
   USING (
     workspace_id IN (
-      SELECT id FROM workspaces WHERE owner_id = auth.uid()
+      SELECT id FROM workspaces WHERE created_by = auth.uid()
     ) OR
     user_id = auth.uid()  -- Backward compatibility
   );
@@ -232,7 +236,7 @@ CREATE POLICY "Users can upload documents to their workspaces"
   ON vault_documents FOR INSERT
   WITH CHECK (
     workspace_id IN (
-      SELECT id FROM workspaces WHERE owner_id = auth.uid()
+      SELECT id FROM workspaces WHERE created_by = auth.uid()
     )
   );
 
@@ -240,7 +244,7 @@ CREATE POLICY "Users can delete their workspace documents"
   ON vault_documents FOR DELETE
   USING (
     workspace_id IN (
-      SELECT id FROM workspaces WHERE owner_id = auth.uid()
+      SELECT id FROM workspaces WHERE created_by = auth.uid()
     ) OR
     user_id = auth.uid()  -- Backward compatibility
   );
@@ -256,7 +260,7 @@ CREATE POLICY "Users can view their workspace instructions"
   ON workspace_instructions FOR SELECT
   USING (
     workspace_id IN (
-      SELECT id FROM workspaces WHERE owner_id = auth.uid()
+      SELECT id FROM workspaces WHERE created_by = auth.uid()
     )
   );
 
@@ -265,7 +269,7 @@ CREATE POLICY "Users can create workspace instructions"
   ON workspace_instructions FOR INSERT
   WITH CHECK (
     workspace_id IN (
-      SELECT id FROM workspaces WHERE owner_id = auth.uid()
+      SELECT id FROM workspaces WHERE created_by = auth.uid()
     )
   );
 
@@ -274,7 +278,7 @@ CREATE POLICY "Users can update their workspace instructions"
   ON workspace_instructions FOR UPDATE
   USING (
     workspace_id IN (
-      SELECT id FROM workspaces WHERE owner_id = auth.uid()
+      SELECT id FROM workspaces WHERE created_by = auth.uid()
     )
   );
 
@@ -283,9 +287,31 @@ CREATE POLICY "Users can delete their workspace instructions"
   ON workspace_instructions FOR DELETE
   USING (
     workspace_id IN (
-      SELECT id FROM workspaces WHERE owner_id = auth.uid()
+      SELECT id FROM workspaces WHERE created_by = auth.uid()
     )
   );
+```
+
+**Alternative (If Workspaces Are Shared/Global):**
+
+If the actual schema doesn't have an owner/created_by column and workspaces are intended to be shared across all users, consider disabling RLS on the workspaces table or implementing alternative access control through your application layer:
+
+```sql
+-- If workspaces are public/shared:
+ALTER TABLE workspaces DISABLE ROW LEVEL SECURITY;
+
+-- For vault_documents with shared workspaces:
+CREATE POLICY "Users can view documents in any workspace"
+  ON vault_documents FOR SELECT
+  USING (true);
+
+CREATE POLICY "Users can upload documents to any workspace"
+  ON vault_documents FOR INSERT
+  WITH CHECK (true);
+
+CREATE POLICY "Users can delete their own uploaded documents"
+  ON vault_documents FOR DELETE
+  USING (user_id = auth.uid());
 ```
 
 ---

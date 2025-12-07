@@ -17,24 +17,38 @@ export async function getUserWorkspaces(includeArchived: boolean = false) {
     throw new Error('User not authenticated')
   }
 
-  let query = supabase
-    .from('workspaces')
-    .select('*')
-    .eq('owner_id', user.id)
-    .order('created_at', { ascending: false })
-
-  if (!includeArchived) {
-    query = query.eq('is_archived', false)
-  }
-
-  const { data, error } = await query
+  // Get distinct workspaces that the user has uploaded files to
+  const { data: userWorkspaces, error } = await supabase
+    .from('file_upload')
+    .select('workspace_id')
+    .eq('user_id', user.id)
+    .order('uploaded_at', { ascending: false })
 
   if (error) {
-    console.error('Error fetching workspaces:', error)
+    console.error('Error fetching user workspaces:', error)
     throw error
   }
 
-  return data as Workspace[]
+  // Get unique workspace IDs
+  const workspaceIds = [...new Set(userWorkspaces?.map(f => f.workspace_id) || [])]
+
+  if (workspaceIds.length === 0) {
+    return []
+  }
+
+  // Fetch workspace details
+  const { data: workspaces, error: wsError } = await supabase
+    .from('workspaces')
+    .select('*')
+    .in('id', workspaceIds)
+    .order('created_at', { ascending: false })
+
+  if (wsError) {
+    console.error('Error fetching workspace details:', wsError)
+    throw wsError
+  }
+
+  return workspaces as Workspace[]
 }
 
 /**
@@ -85,7 +99,6 @@ export async function getWorkspaceById(workspaceId: string) {
     .from('workspaces')
     .select('*')
     .eq('id', workspaceId)
-    .eq('owner_id', user.id)
     .single()
 
   if (error) {
@@ -99,10 +112,7 @@ export async function getWorkspaceById(workspaceId: string) {
 /**
  * Create a new workspace
  */
-export async function createWorkspace(
-  name: string,
-  description?: string
-) {
+export async function createWorkspace(name: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -118,9 +128,7 @@ export async function createWorkspace(
   const { data, error } = await supabase
     .from('workspaces')
     .insert({
-      name: name.trim(),
-      description: description?.trim() || null,
-      owner_id: user.id
+      name: name.trim()
     })
     .select()
     .single()
@@ -136,11 +144,13 @@ export async function createWorkspace(
 /**
  * Update an existing workspace
  */
+/**
+ * Update a workspace
+ */
 export async function updateWorkspace(
   workspaceId: string,
   updates: {
     name?: string
-    description?: string | null
   }
 ) {
   const supabase = await createClient()
@@ -158,16 +168,10 @@ export async function updateWorkspace(
     updates.name = updates.name.trim()
   }
 
-  // Trim description if provided
-  if (updates.description !== undefined && updates.description !== null) {
-    updates.description = updates.description.trim()
-  }
-
   const { data, error } = await supabase
     .from('workspaces')
     .update(updates)
     .eq('id', workspaceId)
-    .eq('owner_id', user.id)
     .select()
     .single()
 
@@ -180,64 +184,8 @@ export async function updateWorkspace(
 }
 
 /**
- * Archive a workspace (soft delete)
- * Does not delete documents, just marks workspace as archived
- */
-export async function archiveWorkspace(workspaceId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    throw new Error('User not authenticated')
-  }
-
-  const { data, error } = await supabase
-    .from('workspaces')
-    .update({ is_archived: true })
-    .eq('id', workspaceId)
-    .eq('owner_id', user.id)
-    .select()
-    .single()
-
-  if (error) {
-    console.error('Error archiving workspace:', error)
-    throw error
-  }
-
-  return data as Workspace
-}
-
-/**
- * Unarchive a workspace
- */
-export async function unarchiveWorkspace(workspaceId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    throw new Error('User not authenticated')
-  }
-
-  const { data, error } = await supabase
-    .from('workspaces')
-    .update({ is_archived: false })
-    .eq('id', workspaceId)
-    .eq('owner_id', user.id)
-    .select()
-    .single()
-
-  if (error) {
-    console.error('Error unarchiving workspace:', error)
-    throw error
-  }
-
-  return data as Workspace
-}
-
-/**
  * Permanently delete a workspace
  * WARNING: This cascades to all documents and instructions!
- * Consider using archiveWorkspace() instead.
  */
 export async function deleteWorkspace(workspaceId: string) {
   const supabase = await createClient()
@@ -251,7 +199,6 @@ export async function deleteWorkspace(workspaceId: string) {
     .from('workspaces')
     .delete()
     .eq('id', workspaceId)
-    .eq('owner_id', user.id)
 
   if (error) {
     console.error('Error deleting workspace:', error)
@@ -277,8 +224,6 @@ export async function getOrCreateDefaultWorkspace() {
   const { data: existingWorkspaces } = await supabase
     .from('workspaces')
     .select('*')
-    .eq('owner_id', user.id)
-    .eq('is_archived', false)
     .order('created_at', { ascending: true })
     .limit(1)
 
@@ -288,8 +233,5 @@ export async function getOrCreateDefaultWorkspace() {
   }
 
   // Create default workspace
-  return await createWorkspace(
-    'Personal Workspace',
-    'Your default workspace'
-  )
+  return await createWorkspace('Personal Workspace')
 }

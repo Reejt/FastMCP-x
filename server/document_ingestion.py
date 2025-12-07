@@ -103,15 +103,14 @@ def ingest_file(file_path: str, user_id: str = None, workspace_id: str = None):
                 if not final_workspace_id and supabase and user_id:
                     # Try to get the user's default workspace
                     try:
-                        workspace_response = supabase.table('workspaces').select('id').eq('owner_id', user_id).eq('is_archived', False).order('created_at').limit(1).execute()
+                        workspace_response = supabase.table('workspaces').select('id').eq('user_id', user_id).order('created_at').limit(1).execute()
                         if workspace_response.data and len(workspace_response.data) > 0:
                             final_workspace_id = workspace_response.data[0]['id']
                         else:
                             # Create a default workspace for the user
                             create_response = supabase.table('workspaces').insert({
                                 'name': 'Personal Workspace',
-                                'description': 'Your default workspace',
-                                'owner_id': user_id
+                                'user_id': user_id
                             }).select('id').execute()
                             if create_response.data and len(create_response.data) > 0:
                                 final_workspace_id = create_response.data[0]['id']
@@ -168,9 +167,9 @@ def ingest_file(file_path: str, user_id: str = None, workspace_id: str = None):
                                         'file_id': file_id,
                                         'user_id': user_id,
                                         'chunk_index': chunk_index,
-                                        'content': chunk.strip(),
+                                        'chunk_text': chunk.strip(),
                                         'embedding': embedding.tolist(),  # pgvector expects float array
-                                        'file_name': filename,
+                                        'metadata': {'file_name': filename}  # Store as JSONB metadata
                                     })
                                     chunk_index += 1
                             

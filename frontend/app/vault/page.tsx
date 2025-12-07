@@ -52,15 +52,15 @@ export default function VaultPage() {
       }
 
       const result = await response.json()
-      if (result.success && result.documents) {
-        // Transform Supabase documents to match the UI format
-        const transformedDocs = result.documents.map((doc: any) => ({
-          name: doc.file_name,
-          size: doc.file_size,
-          uploadedAt: doc.upload_timestamp,
-          documentId: doc.document_id,
-          filePath: doc.file_path,
-          fileType: doc.file_type
+      if (result.success && result.files) {
+        // Transform Supabase files to match the UI format
+        const transformedDocs = result.files.map((file: any) => ({
+          id: file.id,
+          name: file.file_name,
+          size: file.size_bytes || 0,
+          uploadedAt: file.uploaded_at,
+          filePath: file.file_path,
+          status: file.status
         }))
         setUploadedFiles(transformedDocs)
       }
@@ -118,12 +118,12 @@ export default function VaultPage() {
     }
   }
 
-  const handleDeleteFile = async (documentId: string, fileName: string) => {
+  const handleDeleteFile = async (fileId: string, fileName: string) => {
     if (!confirm(`Are you sure you want to delete "${fileName}"? This action cannot be undone.`)) {
       return
     }
 
-    setDeletingId(documentId)
+    setDeletingId(fileId)
 
     try {
       const response = await fetch('/api/vault/upload', {
@@ -131,7 +131,7 @@ export default function VaultPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ documentId }),
+        body: JSON.stringify({ fileId }),
       })
 
       const result = await response.json()
@@ -141,7 +141,7 @@ export default function VaultPage() {
       }
 
       // Remove file from local state
-      setUploadedFiles(prev => prev.filter(file => file.documentId !== documentId))
+      setUploadedFiles(prev => prev.filter(file => file.id !== fileId))
 
       // Show success message
       setUploadProgress('File deleted successfully!')
@@ -217,32 +217,54 @@ export default function VaultPage() {
           {/* Content */}
           <div className="max-w-7xl mx-auto px-6 py-8">
             {uploadedFiles.length > 0 ? (
-              <div className="space-y-4">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">Uploaded Files</h2>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {uploadedFiles.map((file, index) => (
-                    <div key={index} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-medium text-gray-900 truncate">{file.name}</h3>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {(file.size / 1024 / 1024).toFixed(2)} MB
-                          </p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            Uploaded {new Date(file.uploadedAt).toLocaleDateString()}
-                          </p>
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Uploaded Files ({uploadedFiles.length})</h2>
+                  <div className="space-y-3">
+                    {uploadedFiles.map((file) => (
+                      <div key={file.id} className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          {/* File Icon */}
+                          <div className="flex-shrink-0">
+                            <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                            </div>
+                          </div>
+                          
+                          {/* File Info */}
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-sm font-medium text-gray-900 truncate">{file.name}</h3>
+                            <div className="flex items-center gap-3 mt-1">
+                              <p className="text-xs text-gray-500">
+                                {file.size > 0 ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown size'}
+                              </p>
+                              <span className="text-gray-300">•</span>
+                              <p className="text-xs text-gray-500">
+                                {new Date(file.uploadedAt).toLocaleDateString()} {new Date(file.uploadedAt).toLocaleTimeString()}
+                              </p>
+                              {file.status && (
+                                <>
+                                  <span className="text-gray-300">•</span>
+                                  <span className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                                    {file.status}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="ml-2 flex items-start gap-2">
-                          <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-3 ml-4">
                           <button
-                            onClick={() => handleDeleteFile(file.documentId, file.name)}
-                            disabled={deletingId === file.documentId}
-                            className="text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                            onClick={() => handleDeleteFile(file.id, file.name)}
+                            disabled={deletingId === file.id}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Delete file"
                           >
-                            {deletingId === file.documentId ? (
+                            {deletingId === file.id ? (
                               <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                               </svg>
@@ -254,8 +276,8 @@ export default function VaultPage() {
                           </button>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : (

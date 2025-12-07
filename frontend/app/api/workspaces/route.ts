@@ -10,7 +10,6 @@ import {
   getWorkspaceSummaries,
   createWorkspace,
   updateWorkspace,
-  archiveWorkspace,
   deleteWorkspace
 } from '@/lib/supabase/workspaces'
 
@@ -132,21 +131,8 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    let workspace
-
-    // Handle archive/unarchive
-    if (archive !== undefined) {
-      if (archive) {
-        workspace = await archiveWorkspace(workspaceId)
-      } else {
-        // Import unarchiveWorkspace if implementing unarchive
-        const { unarchiveWorkspace } = await import('@/lib/supabase/workspaces')
-        workspace = await unarchiveWorkspace(workspaceId)
-      }
-    } else {
-      // Handle name/description updates
-      workspace = await updateWorkspace(workspaceId, { name, description })
-    }
+    // Handle name/description updates
+    const workspace = await updateWorkspace(workspaceId, { name, description })
 
     return NextResponse.json({
       success: true,

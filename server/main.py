@@ -16,35 +16,39 @@ from server.web_search_file import tavily_web_search
 from server.query_handler import answer_link_query
 
 # pgvector Enterprise Mode Active
-# - Embeddings stored in Supabase document_embeddings table
+# - Embeddings stored in Supabase document_embeddings table (chunk_text, embedding[vector], metadata[jsonb])
 # - Similarity search performed at DATABASE LEVEL using <=> operator
+# - Workspace instructions stored in workspace_instructions table (is_active boolean)
+# - Chat history stored in chats table (id, workspace_id, user_id, role, message)
+# - Document content extracted and stored in document_content table
 # - No in-memory embedding cache required
 print("🚀 FastMCP Server - pgvector Enterprise Edition")
 print("✅ Database-side similarity search enabled")
-
-# DISABLED: Instructions module references non-existent workspace_instructions table
-# Database schema: files, workspaces, chats, document_content, document_embeddings
-# from server.instructions import (
-#     query_with_instructions,
-#     query_with_instructions_stream,
-#     get_active_instruction,
-#     get_instruction_preview,
-#     clear_instruction_cache
-# ) 
+print("✅ Multi-workspace support enabled")
+print("✅ Workspace instructions enabled")
+print("✅ Chat history enabled")
+from server.instructions import (
+    query_with_instructions,
+    query_with_instructions_stream,
+    get_active_instruction,
+    get_instruction_preview,
+    clear_instruction_cache
+) 
 
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
 
 @mcp.tool
-def ingest_file_tool(file_path: str, user_id: str = None) -> str:
+def ingest_file_tool(file_path: str, user_id: str = None, workspace_id: str = None) -> str:
     """
     Ingest a file into the system
     
     Args:
         file_path: Path to the file to ingest
-        user_id: Optional user ID for Supabase storage (if not provided, uses local storage)
+        user_id: User ID for Supabase storage and database insert (required for multi-user)
+        workspace_id: Workspace ID to organize files (optional - auto-creates default if not provided)
     """
     try:
-        result = ingest_file(file_path, user_id=user_id)
+        result = ingest_file(file_path, user_id=user_id, workspace_id=workspace_id)
         print(f"Ingest result: {result}")
         return result
     except Exception as e:

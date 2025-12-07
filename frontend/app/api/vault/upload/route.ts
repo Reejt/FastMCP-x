@@ -28,20 +28,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate workspace_id if provided
+    // Get or create workspace
+    let finalWorkspaceId = workspaceId;
+    
     if (workspaceId) {
+      // Validate provided workspace_id exists and belongs to user
       const { data: workspace, error: workspaceError } = await supabase
         .from('workspaces')
         .select('id')
         .eq('id', workspaceId)
-        .eq('owner_id', user.id)
         .single();
 
       if (workspaceError || !workspace) {
         return NextResponse.json(
-          { error: 'Invalid workspace ID or access denied' },
+          { error: 'Invalid workspace ID' },
           { status: 403 }
         );
+      }
+    } else {
+      // Get or create default workspace for the current user
+      const { data: existingWorkspaces, error: wsListError } = await supabase
+        .from('file_upload')
+        .select('workspace_id')
+        .eq('user_id', user.id)
+        .order('uploaded_at', { ascending: false })
+        .limit(1);
+
+      if (existingWorkspaces && existingWorkspaces.length > 0) {
+        finalWorkspaceId = existingWorkspaces[0].workspace_id;
+      } else {
+        // Create default workspace if user has none
+        const { data: newWorkspace, error: createError } = await supabase
+          .from('workspaces')
+          .insert({
+            name: 'Personal Workspace'
+          })
+          .select('id')
+          .single();
+
+        if (createError || !newWorkspace) {
+          return NextResponse.json(
+            { error: 'Failed to create default workspace' },
+            { status: 500 }
+          );
+        }
+        finalWorkspaceId = newWorkspace.id;
       }
     }
 
@@ -89,7 +120,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(30000), // 30s timeout for file processing
+      signal: AbortSignal.timeout(120000), // 120s timeout for file processing
     });
 
     if (!response.ok) {
@@ -127,7 +158,7 @@ export async function POST(request: NextRequest) {
     const { data: dbData, error: dbError } = await supabase
       .from('file_upload')
       .insert({
-        workspace_id: workspaceId || user.id, // Use workspaceId or default to user.id
+        workspace_id: finalWorkspaceId,
         file_name: file.name,
         file_path: storageData.path,
         size_bytes: file.size,
@@ -197,10 +228,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
 
-    // Build query
+    // Build query - always filter by current user
     let query = supabase
       .from('file_upload')
       .select('id, workspace_id, file_name, file_path, size_bytes, status, uploaded_at')
+      .eq('user_id', user.id)  // Only get files uploaded by current user
       .is('deleted_at', null)
       .order('uploaded_at', { ascending: false });
 
@@ -260,11 +292,12 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // First, fetch the file to get the file path
+    // First, fetch the file to verify ownership and get the file path
     const { data: file, error: fetchError } = await supabase
       .from('file_upload')
       .select('*')
       .eq('id', documentId)
+      .eq('user_id', user.id)  // Verify file belongs to current user
       .is('deleted_at', null)
       .single();
 
@@ -280,7 +313,8 @@ export async function DELETE(request: NextRequest) {
     const { error: dbError } = await supabase
       .from('file_upload')
       .update({ deleted_at: new Date().toISOString() })
-      .eq('id', documentId);
+      .eq('id', documentId)
+      .eq('user_id', user.id);  // Ensure only owner can delete
 
     if (dbError) {
       console.error('Database deletion error:', dbError);

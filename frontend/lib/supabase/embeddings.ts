@@ -34,9 +34,9 @@ export async function storeEmbeddings(
     file_id: fileId,
     user_id: userId,
     chunk_index: chunk.index,
-    content: chunk.content,
+    chunk_text: chunk.content,
     embedding: chunk.embedding,
-    file_name: fileName,
+    metadata: { file_name: fileName },
   }))
 
   const { data, error } = await supabase
