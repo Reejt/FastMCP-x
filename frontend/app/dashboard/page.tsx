@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [shouldCollapseMainSidebar, setShouldCollapseMainSidebar] = useState(false)
   const [activeInstruction, setActiveInstruction] = useState<WorkspaceInstruction | null>(null)
   const [showInstructionBanner, setShowInstructionBanner] = useState(false)
+  const [isGeneralChat, setIsGeneralChat] = useState(!workspaceId)
 
   // Load workspace sidebar collapse state from localStorage on mount
   useEffect(() => {
@@ -93,105 +94,125 @@ export default function DashboardPage() {
     fetchActiveInstruction()
   }, [workspaceId])
 
-  // Load chat history from Supabase for current workspace
+  // Load chat history - workspace chat or general chat
   useEffect(() => {
-    const loadWorkspaceData = async () => {
-      if (!workspaceId || !user) {
-        setMessages([])
-        setCurrentWorkspaceName('')
-        setCurrentWorkspace(null)
-        setWorkspaceChatSessions([])
-        return
-      }
-
-      try {
-        // Load workspace from localStorage (for workspace metadata)
-        const storedWorkspaces = localStorage.getItem('myWorkspaces')
-        if (storedWorkspaces) {
-          try {
-            const workspaces = JSON.parse(storedWorkspaces)
-            const workspace = workspaces.find((w: any) => w.id === workspaceId)
-            if (workspace) {
-              setCurrentWorkspaceName(workspace.name)
-              setCurrentWorkspace({
-                ...workspace,
-                createdAt: new Date(workspace.createdAt),
-                updatedAt: new Date(workspace.updatedAt)
-              })
-            }
-          } catch (error) {
-            console.error('Error loading workspace:', error)
-          }
-        }
-
-        // Load chat messages from API
-        const response = await fetch(`/api/chats?workspaceId=${workspaceId}`)
-        if (!response.ok) {
-          throw new Error('Failed to load chats')
-        }
-
-        const result = await response.json()
-        const chats = result.chats || []
-        
-        // Convert Chat records to Message format
-        const messages: Message[] = chats.map((chat: Chat) => ({
-          id: chat.id,
-          content: chat.message,
-          role: chat.role,
-          timestamp: new Date(chat.created_at)
-        }))
-        
-        setMessages(messages)
-        
-        // Create a single session containing all messages for this workspace
-        const sessionId = `${workspaceId}_main`
-        setCurrentChatId(sessionId)
-        setChatSessions(prev => ({
-          ...prev,
-          [sessionId]: {
-            id: sessionId,
-            workspaceId,
-            messages,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }
-        }))
-        
-        // For sidebar, we'll show just this one session if it has messages
-        if (messages.length > 0) {
-          setWorkspaceChatSessions([{
-            id: sessionId,
-            workspaceId,
-            messages,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }])
-        }
-      } catch (error) {
-        console.error('Error loading workspace data:', error)
-        setMessages([])
-      }
+    if (workspaceId) {
+      loadWorkspaceChat()
+    } else if (user) {
+      loadGeneralChat()
     }
-
-    loadWorkspaceData()
   }, [workspaceId, user])
 
-  // Save chat messages to Supabase when they change
+  const loadGeneralChat = async () => {
+    // General chat is ephemeral - start with empty messages, no persistence
+    const newSession: ChatSession = {
+      id: 'general_chat',
+      workspaceId: undefined,
+      messages: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+    setMessages([])
+    setCurrentChatId(newSession.id)
+    setChatSessions(prev => ({ ...prev, [newSession.id]: newSession }))
+    setIsGeneralChat(true)
+    setCurrentWorkspaceName('General Chat')
+    setCurrentWorkspace(null)
+    setWorkspaceChatSessions([])
+    setActiveInstruction(null)
+    setShowInstructionBanner(false)
+  }
+
+  const loadWorkspaceChat = async () => {
+    if (!workspaceId || !user) {
+      setMessages([])
+      setCurrentWorkspaceName('')
+      setCurrentWorkspace(null)
+      setWorkspaceChatSessions([])
+      return
+    }
+
+    try {
+      // Load workspace from localStorage (for workspace metadata)
+      const storedWorkspaces = localStorage.getItem('myWorkspaces')
+      if (storedWorkspaces) {
+        try {
+          const workspaces = JSON.parse(storedWorkspaces)
+          const workspace = workspaces.find((w: any) => w.id === workspaceId)
+          if (workspace) {
+            setCurrentWorkspaceName(workspace.name)
+            setCurrentWorkspace({
+              ...workspace,
+              createdAt: new Date(workspace.createdAt),
+              updatedAt: new Date(workspace.updatedAt)
+            })
+          }
+        } catch (error) {
+          console.error('Error loading workspace:', error)
+        }
+      }
+
+      // Load chat messages from API
+      const response = await fetch(`/api/chats?workspaceId=${workspaceId}`)
+      if (!response.ok) {
+        throw new Error('Failed to load chats')
+      }
+
+      const result = await response.json()
+      const chats = result.chats || []
+      
+      // Convert Chat records to Message format
+      const messages: Message[] = chats.map((chat: Chat) => ({
+        id: chat.id,
+        content: chat.message,
+        role: chat.role,
+        timestamp: new Date(chat.created_at)
+      }))
+      
+      setMessages(messages)
+      setIsGeneralChat(false)
+      
+      // Create a single session containing all messages for this workspace
+      const sessionId = `${workspaceId}_main`
+      setCurrentChatId(sessionId)
+      setChatSessions(prev => ({
+        ...prev,
+        [sessionId]: {
+          id: sessionId,
+          workspaceId,
+          messages,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      }))
+      
+      // For sidebar, we'll show just this one session if it has messages
+      if (messages.length > 0) {
+        setWorkspaceChatSessions([{
+          id: sessionId,
+          workspaceId,
+          messages,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }])
+      }
+    } catch (error) {
+      console.error('Error loading workspace data:', error)
+      setMessages([])
+    }
+  }
+
+  // Save chat messages
   useEffect(() => {
     const saveMessages = async () => {
-      if (!workspaceId || !user) return
+      if (!user) return
 
-      try {
-        // Since messages are saved individually as they're created,
-        // this effect can be used for any additional sync logic
-        // Currently, messages are persisted via createChatMessage in handleSendMessage
-      } catch (error) {
-        console.error('Error syncing messages:', error)
-      }
+      // General chat messages are not stored (ephemeral)
+      // Workspace chats are saved to DB via API in handleSendMessage
     }
 
     saveMessages()
-  }, [messages, workspaceId, user])
+  }, [messages, isGeneralChat, user])
 
   const handleChatSelect = (chatId: string) => {
     const session = chatSessions[chatId]
@@ -231,7 +252,7 @@ export default function DashboardPage() {
   }
 
   const handleSendMessage = async (content: string) => {
-    if (!content.trim() || isProcessing || !workspaceId) return
+    if (!content.trim() || isProcessing) return
 
     // Add user message to state
     const userMessage: Message = {
@@ -244,22 +265,21 @@ export default function DashboardPage() {
     setMessages((prev) => [...prev, userMessage])
     setIsProcessing(true)
 
-    // Save user message to database via API
-    try {
-      const response = await fetch('/api/chats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId,
-          role: 'user',
-          message: content
+    // Save user message to database (only for workspace chats)
+    if (workspaceId) {
+      try {
+        await fetch('/api/chats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workspaceId,
+            role: 'user',
+            message: content
+          })
         })
-      })
-      if (!response.ok) {
-        console.error('Error saving user message')
+      } catch (error) {
+        console.error('Error saving user message:', error)
       }
-    } catch (error) {
-      console.error('Error saving user message:', error)
     }
 
     // Create a placeholder assistant message for streaming
@@ -342,22 +362,21 @@ export default function DashboardPage() {
                       )
                     )
                     
-                    // Save assistant message to database
-                    try {
-                      const response = await fetch('/api/chats', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          workspaceId,
-                          role: 'assistant',
-                          message: accumulatedContent
+                    // Save assistant message to database (only for workspace chats)
+                    if (workspaceId) {
+                      try {
+                        await fetch('/api/chats', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            workspaceId,
+                            role: 'assistant',
+                            message: accumulatedContent
+                          })
                         })
-                      })
-                      if (!response.ok) {
-                        console.error('Error saving assistant message')
+                      } catch (error) {
+                        console.error('Error saving assistant message:', error)
                       }
-                    } catch (error) {
-                      console.error('Error saving assistant message:', error)
                     }
                   } else if (data.error) {
                     throw new Error(data.error)
