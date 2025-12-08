@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Workspace, WorkspaceSummary, User } from '@/app/types'
+import { Workspace, User } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
 import WorkspaceCard from './components/WorkspaceCard'
 import CreateWorkspaceModal from './components/CreateWorkspaceModal'
@@ -15,8 +15,8 @@ export default function WorkspacesPage() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [editingWorkspace, setEditingWorkspace] = useState<WorkspaceSummary | null>(null)
-  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
+  const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null)
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function WorkspacesPage() {
 
   const loadWorkspaces = async () => {
     try {
-      const response = await fetch('/api/workspaces?withSummary=true')
+      const response = await fetch('/api/workspaces')
       const data = await response.json()
 
       if (data.success) {
@@ -117,7 +117,7 @@ export default function WorkspacesPage() {
     }
   }
 
-  const handleEditWorkspace = (workspace: WorkspaceSummary) => {
+  const handleEditWorkspace = (workspace: Workspace) => {
     setEditingWorkspace(workspace)
   }
 

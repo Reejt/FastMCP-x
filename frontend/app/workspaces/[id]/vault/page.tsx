@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { User, Workspace, ChatSession } from '@/app/types'
+import { User, Workspace, ChatSession, Chat } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
 import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
 import Breadcrumb from '@/app/components/Breadcrumb'
@@ -82,27 +82,35 @@ export default function WorkspaceVaultPage() {
         }
       }
 
-      // Load chat sessions for workspace
-      const allSessions: ChatSession[] = []
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (key?.startsWith(`chat_session_${workspaceId}_`)) {
-          try {
-            const session = JSON.parse(localStorage.getItem(key) || '')
-            allSessions.push({
-              ...session,
-              createdAt: new Date(session.createdAt),
-              updatedAt: new Date(session.updatedAt)
-            })
-          } catch (error) {
-            console.error('Error loading session:', error)
+      // Load chat sessions from Supabase via API
+      try {
+        const response = await fetch(`/api/chats?workspaceId=${workspaceId}`)
+        if (response.ok) {
+          const result = await response.json()
+          const chats = result.chats || []
+          
+          // Convert Chat records to ChatSession format
+          const chatSession: ChatSession = {
+            id: `${workspaceId}_main`,
+            workspaceId,
+            messages: chats.map((chat: Chat) => ({
+              id: chat.id,
+              content: chat.message,
+              role: chat.role,
+              timestamp: new Date(chat.created_at)
+            })),
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+          
+          if (chatSession.messages.length > 0) {
+            setWorkspaceChatSessions([chatSession])
+            setCurrentChatId(chatSession.id)
           }
         }
+      } catch (error) {
+        console.error('Error loading chat sessions:', error)
       }
-      setWorkspaceChatSessions(allSessions.sort((a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      ))
-
       await loadDocuments()
       setLoading(false)
     }
