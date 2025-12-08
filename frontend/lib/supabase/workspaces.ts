@@ -112,7 +112,7 @@ export async function getWorkspaceById(workspaceId: string) {
 /**
  * Create a new workspace
  */
-export async function createWorkspace(name: string) {
+export async function createWorkspace(name: string, description?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -128,7 +128,8 @@ export async function createWorkspace(name: string) {
   const { data, error } = await supabase
     .from('workspaces')
     .insert({
-      name: name.trim()
+      name: name.trim(),
+      description: description?.trim() || null
     })
     .select()
     .single()
@@ -142,15 +143,13 @@ export async function createWorkspace(name: string) {
 }
 
 /**
- * Update an existing workspace
- */
-/**
  * Update a workspace
  */
 export async function updateWorkspace(
   workspaceId: string,
   updates: {
     name?: string
+    description?: string | null
   }
 ) {
   const supabase = await createClient()
@@ -166,6 +165,11 @@ export async function updateWorkspace(
       throw new Error('Workspace name cannot be empty')
     }
     updates.name = updates.name.trim()
+  }
+
+  // Trim description if provided
+  if (updates.description !== undefined && updates.description !== null) {
+    updates.description = updates.description.trim() || null
   }
 
   const { data, error } = await supabase

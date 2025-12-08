@@ -132,58 +132,13 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
-
-    // Upload file to Supabase Storage
-    const fileBuffer = await file.arrayBuffer();
-    const fileName = `${user.id}/${Date.now()}_${file.name}`;
-
-    const { data: storageData, error: storageError } = await supabase.storage
-      .from('vault_files')
-      .upload(fileName, fileBuffer, {
-        contentType: file.type,
-        upsert: false
-      });
-
-    console.log('Supabase storageData:', storageData);
-
-    if (storageError) {
-      console.error('Supabase storage error:', storageError);
-      return NextResponse.json(
-        { error: 'Failed to store file in vault', details: storageError.message },
-        { status: 500 }
-      );
-    }
-
-    // Insert file metadata into file_upload table
-    const { data: dbData, error: dbError } = await supabase
-      .from('file_upload')
-      .insert({
-        workspace_id: finalWorkspaceId,
-        file_name: file.name,
-        file_path: storageData.path,
-        size_bytes: file.size,
-        file_type: file.type,
-        status: 'uploaded',
-        user_id: user.id,
-        uploaded_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (dbError) {
-      console.error('Database insert error:', dbError);
-      // Try to clean up the uploaded file
-      await supabase.storage.from('vault_files').remove([fileName]);
-      return NextResponse.json(
-        { error: 'Failed to save document metadata', details: dbError.message },
-        { status: 500 }
-      );
-    }
+    
+    // Note: Backend (bridge_server -> document_ingestion) now handles all storage operations
+    // No need for duplicate upload here - file is already stored in Supabase via the backend
 
     return NextResponse.json({
       success: true,
       message: 'File uploaded and processed successfully',
-      document: dbData,
       file_name: file.name,
       file_size: file.size,
       ...data
@@ -283,9 +238,9 @@ export async function DELETE(request: NextRequest) {
 
     // Get document ID from request body
     const body = await request.json();
-    const { documentId } = body;
+    const { id } = body;
 
-    if (!documentId) {
+    if (!id) {
       return NextResponse.json(
         { error: 'Document ID is required' },
         { status: 400 }
@@ -296,7 +251,7 @@ export async function DELETE(request: NextRequest) {
     const { data: file, error: fetchError } = await supabase
       .from('file_upload')
       .select('*')
-      .eq('id', documentId)
+      .eq('id', id)
       .eq('user_id', user.id)  // Verify file belongs to current user
       .is('deleted_at', null)
       .single();
@@ -313,7 +268,7 @@ export async function DELETE(request: NextRequest) {
     const { error: dbError } = await supabase
       .from('file_upload')
       .update({ deleted_at: new Date().toISOString() })
-      .eq('id', documentId)
+      .eq('id', id)
       .eq('user_id', user.id);  // Ensure only owner can delete
 
     if (dbError) {
@@ -327,7 +282,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'File deleted successfully',
-      documentId: documentId
+      id: id
     });
   } catch (error) {
     console.error('Error deleting file:', error);

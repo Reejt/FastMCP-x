@@ -1,8 +1,6 @@
 /**
  * Workspace Instructions Service Layer
  * Handles all interactions with the workspace_instructions table
- * 
- * IMPORTANT: Only ONE instruction can be active per workspace (enforced by unique index)
  */
 
 import { createClient } from './server'
@@ -11,42 +9,7 @@ import type { WorkspaceInstruction } from '@/app/types'
 /**
  * Get all instructions for a workspace
  */
-export async function getWorkspaceInstructions(
-  workspaceId: string,
-  activeOnly: boolean = false
-) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    throw new Error('User not authenticated')
-  }
-
-  let query = supabase
-    .from('workspace_instructions')
-    .select('*')
-    .eq('workspace_id', workspaceId)
-    .order('created_at', { ascending: false })
-
-  if (activeOnly) {
-    query = query.eq('is_active', true)
-  }
-
-  const { data, error } = await query
-
-  if (error) {
-    console.error('Error fetching workspace instructions:', error)
-    throw error
-  }
-
-  return data as WorkspaceInstruction[]
-}
-
-/**
- * Get the active instruction for a workspace
- * Returns null if no active instruction exists
- */
-export async function getActiveInstruction(workspaceId: string) {
+export async function getWorkspaceInstructions(workspaceId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -58,15 +21,14 @@ export async function getActiveInstruction(workspaceId: string) {
     .from('workspace_instructions')
     .select('*')
     .eq('workspace_id', workspaceId)
-    .eq('is_active', true)
-    .maybeSingle() // Returns null if not found instead of error
+    .order('created_at', { ascending: false })
 
   if (error) {
-    console.error('Error fetching active instruction:', error)
+    console.error('Error fetching workspace instructions:', error)
     throw error
   }
 
-  return data as WorkspaceInstruction | null
+  return data as WorkspaceInstruction[]
 }
 
 /**
@@ -96,13 +58,13 @@ export async function getInstructionById(instructionId: string) {
 
 /**
  * Create a new instruction
- * If isActive is true, will automatically deactivate other instructions
  */
 export async function createInstruction(
   workspaceId: string,
   title: string,
   content: string,
-  isActive: boolean = false
+  instructions?: string,
+  isActive?: boolean
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -120,18 +82,15 @@ export async function createInstruction(
     throw new Error('Instruction content cannot be empty')
   }
 
-  // If setting as active, deactivate all others first
-  if (isActive) {
-    await deactivateAllInstructions(workspaceId)
-  }
-
   const { data, error } = await supabase
     .from('workspace_instructions')
     .insert({
       workspace_id: workspaceId,
       title: title.trim(),
       content: content.trim(),
-      is_active: isActive
+      instructions: instructions?.trim() || null,
+      is_active: isActive || false,
+      user_id: user.id
     })
     .select()
     .single()
@@ -152,6 +111,7 @@ export async function updateInstruction(
   updates: {
     title?: string
     content?: string
+    instructions?: string | null
   }
 ) {
   const supabase = await createClient()
@@ -174,6 +134,10 @@ export async function updateInstruction(
       throw new Error('Instruction content cannot be empty')
     }
     updates.content = updates.content.trim()
+  }
+
+  if (updates.instructions !== undefined && updates.instructions !== null) {
+    updates.instructions = updates.instructions.trim() || null
   }
 
   const { data, error } = await supabase

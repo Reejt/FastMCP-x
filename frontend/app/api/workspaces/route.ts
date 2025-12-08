@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
   getUserWorkspaces,
-  getWorkspaceSummaries,
   createWorkspace,
   updateWorkspace,
   deleteWorkspace
@@ -16,7 +15,7 @@ import {
 /**
  * GET /api/workspaces
  * Get all workspaces for the current user
- * Query params: includeArchived (boolean), withSummary (boolean)
+ * Query params: includeArchived (boolean)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -32,15 +31,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const includeArchived = searchParams.get('includeArchived') === 'true'
-    const withSummary = searchParams.get('withSummary') === 'true'
 
-    let workspaces
-
-    if (withSummary) {
-      workspaces = await getWorkspaceSummaries(includeArchived)
-    } else {
-      workspaces = await getUserWorkspaces(includeArchived)
-    }
+    const workspaces = await getUserWorkspaces(includeArchived)
 
     return NextResponse.json({
       success: true,

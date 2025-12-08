@@ -54,14 +54,22 @@ export default function VaultPage() {
       const result = await response.json()
       if (result.success && result.files) {
         // Transform Supabase files to match the UI format
-        const transformedDocs = result.files.map((file: any) => ({
-          id: file.id,
-          name: file.file_name,
-          size: file.size_bytes || 0,
-          uploadedAt: file.uploaded_at,
-          filePath: file.file_path,
-          status: file.status
-        }))
+        const transformedDocs = result.files.map((file: any) => {
+          // Remove temporary file prefix (tmp{random}__) if present
+          let displayName = file.file_name
+          const tmpMatch = displayName.match(/^tmp[a-z0-9]+__(.+)$/)
+          if (tmpMatch) {
+            displayName = tmpMatch[1]
+          }
+          return {
+            id: file.id,
+            name: displayName,
+            size: file.size_bytes || 0,
+            uploadedAt: file.uploaded_at,
+            filePath: file.file_path,
+            status: file.status
+          }
+        })
         setUploadedFiles(transformedDocs)
       }
     } catch (error) {
@@ -131,7 +139,7 @@ export default function VaultPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ fileId }),
+        body: JSON.stringify({ id: fileId }),
       })
 
       const result = await response.json()
