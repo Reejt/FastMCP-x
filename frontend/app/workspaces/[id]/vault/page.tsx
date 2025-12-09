@@ -44,6 +44,10 @@ export default function WorkspaceVaultPage() {
       const collapsed = saved === 'true'
       setIsWorkspaceSidebarCollapsed(collapsed)
       setShouldCollapseMainSidebar(!collapsed)
+    } else {
+      // Default: workspace sidebar expanded, main sidebar collapsed
+      setIsWorkspaceSidebarCollapsed(false)
+      setShouldCollapseMainSidebar(true)
     }
   }, [])
 
@@ -64,22 +68,34 @@ export default function WorkspaceVaultPage() {
         role: userRole
       })
 
-      // Load workspace data
-      const storedWorkspaces = localStorage.getItem('myWorkspaces')
-      if (storedWorkspaces) {
-        try {
-          const workspaces = JSON.parse(storedWorkspaces)
-          const workspace = workspaces.find((w: any) => w.id === workspaceId)
-          if (workspace) {
-            setCurrentWorkspace({
-              ...workspace,
-              createdAt: new Date(workspace.createdAt),
-              updatedAt: new Date(workspace.updatedAt)
-            })
+      // Load workspace data - try API first, then localStorage
+      try {
+        const response = await fetch(`/api/workspaces?workspaceId=${workspaceId}`)
+        const data = await response.json()
+
+        if (data.success && data.workspace) {
+          setCurrentWorkspace({
+            ...data.workspace,
+            created_at: data.workspace.created_at,
+            updated_at: data.workspace.updated_at
+          })
+        } else {
+          // Fallback to localStorage
+          const storedWorkspaces = localStorage.getItem('myWorkspaces')
+          if (storedWorkspaces) {
+            const workspaces = JSON.parse(storedWorkspaces)
+            const workspace = workspaces.find((w: any) => w.id === workspaceId)
+            if (workspace) {
+              setCurrentWorkspace({
+                ...workspace,
+                created_at: workspace.createdAt || workspace.created_at,
+                updated_at: workspace.updatedAt || workspace.updated_at
+              })
+            }
           }
-        } catch (error) {
-          console.error('Error loading workspace:', error)
         }
+      } catch (error) {
+        console.error('Error loading workspace:', error)
       }
 
       // Load chat sessions for workspace
@@ -119,15 +135,17 @@ export default function WorkspaceVaultPage() {
 
       const result = await response.json()
       if (result.success && result.documents) {
-        // Transform documents (workspace filtering removed - shows all user documents)
-        const transformedDocs = result.documents.map((doc: any) => ({
-          name: doc.file_name,
-          size: doc.file_size,
-          uploadedAt: doc.upload_timestamp,
-          documentId: doc.document_id,
-          filePath: doc.file_path,
-          fileType: doc.file_type
-        }))
+        // Filter documents by workspace ID and transform
+        const transformedDocs = result.documents
+          .filter((doc: any) => doc.workspace_id === workspaceId)
+          .map((doc: any) => ({
+            name: doc.file_name,
+            size: doc.file_size,
+            uploadedAt: doc.upload_timestamp,
+            documentId: doc.document_id,
+            filePath: doc.file_path,
+            fileType: doc.file_type
+          }))
         setUploadedFiles(transformedDocs)
       }
     } catch (error) {
@@ -149,13 +167,13 @@ export default function WorkspaceVaultPage() {
   }
 
   const handleChatSelect = (chatId: string) => {
-    // Navigate back to dashboard with selected chat
-    router.push(`/dashboard?workspace=${workspaceId}`)
+    // Navigate back to workspace chat with selected chat
+    router.push(`/workspaces/${workspaceId}`)
   }
 
   const handleNewChat = () => {
-    // Navigate back to dashboard with new chat
-    router.push(`/dashboard?workspace=${workspaceId}`)
+    // Navigate back to workspace chat with new chat
+    router.push(`/workspaces/${workspaceId}`)
   }
 
   const handleSignOut = async () => {
@@ -307,7 +325,7 @@ export default function WorkspaceVaultPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
             <button
-              onClick={() => router.push(`/dashboard?workspace=${workspaceId}`)}
+              onClick={() => router.push(`/workspaces/${workspaceId}`)}
               className="hover:text-gray-900 transition-colors"
             >
               {currentWorkspace?.name || 'Workspace'}

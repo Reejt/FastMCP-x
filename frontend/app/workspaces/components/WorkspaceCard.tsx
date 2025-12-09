@@ -15,7 +15,7 @@ export default function WorkspaceCard({ workspace, onEditAction, onDeleteAction 
   const [showMenu, setShowMenu] = useState(false)
 
   const handleCardClick = () => {
-    router.push(`/dashboard?workspace=${workspace.id}`)
+    router.push(`/workspaces/${workspace.id}`)
   }
 
   return (

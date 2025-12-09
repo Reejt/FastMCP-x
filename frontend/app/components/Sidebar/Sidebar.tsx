@@ -23,6 +23,7 @@ export default function Sidebar({
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
+  const [isWorkspacesDropdownOpen, setIsWorkspacesDropdownOpen] = useState(true)
 
   // Update active section based on current pathname and extract workspace ID
   useEffect(() => {
@@ -167,26 +168,63 @@ export default function Sidebar({
             />
 
             {/* Workspaces Section */}
-            <SidebarItem
-              icon={
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-              }
-              label="Workspaces"
-              isActive={activeSection === 'workspaces'}
-              isCollapsed={isCollapsed}
-              onClick={(e) => {
-                e.stopPropagation() // Prevent triggering sidebar click
-                setActiveSection('workspaces')
-                router.push('/workspaces')
-              }}
-              badge={workspaces.length > 0 ? workspaces.length : undefined}
-            />
+            <div className="relative group">
+              <SidebarItem
+                icon={
+                  <>
+                    {/* Folder icon - visible by default, hidden on hover */}
+                    <svg className="group-hover:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
 
-            {/* Sub-items for Workspaces - always visible when sidebar is expanded */}
-            <AnimatePresence>
+                    {/* Chevron - appears in place of the icon on hover and toggles dropdown */}
+                    {!isCollapsed && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setIsWorkspacesDropdownOpen(!isWorkspacesDropdownOpen)
+                        }}
+                        className="hidden group-hover:inline-flex p-1 rounded hover:bg-gray-200 transition-colors"
+                        aria-label="Toggle workspaces dropdown"
+                      >
+                        <svg className={`w-4 h-4 text-gray-600 transition-transform ${isWorkspacesDropdownOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    )}
+                  </>
+                }
+                label="Workspaces"
+                isActive={activeSection === 'workspaces'}
+                isCollapsed={isCollapsed}
+                onClick={(e) => {
+                  e.stopPropagation() // Prevent triggering sidebar click
+                  // Navigate to workspaces page when clicking the main item
+                  setActiveSection('workspaces')
+                  router.push('/workspaces')
+                }}
+              />
+
+              {/* Plus icon on the right (create new workspace) */}
               {!isCollapsed && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    router.push('/workspaces')
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-200 rounded transition-colors"
+                  aria-label="Create new workspace"
+                >
+                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Sub-items for Workspaces - visible when dropdown is open and sidebar is expanded */}
+            <AnimatePresence>
+              {!isCollapsed && isWorkspacesDropdownOpen && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -201,7 +239,7 @@ export default function Sidebar({
                       {workspaces.slice(0, 5).map((workspace) => (
                         <button
                           key={workspace.id}
-                          onClick={() => router.push(`/dashboard?workspace=${workspace.id}`)}
+                          onClick={() => router.push(`/workspaces/${workspace.id}`)}
                           className={`w-full text-left px-4 py-2 text-sm rounded-lg transition-colors ${currentWorkspaceId === workspace.id
                             ? 'bg-gray-200'
                             : 'hover:bg-gray-100'
