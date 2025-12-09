@@ -27,9 +27,12 @@ export async function middleware(request: NextRequest) {
   )
 
   // Refresh session if expired - required for Server Components
-  const { data: { user } } = await supabase.auth.getUser()
+  // This also handles the auth callback by exchanging code for session
+  await supabase.auth.getUser()
 
   // If user is not signed in and the current path is not /login, redirect to /login
+  const { data: { user } } = await supabase.auth.getUser()
+
   if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }

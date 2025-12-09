@@ -8,8 +8,10 @@ from datetime import datetime
 import uuid
 from dotenv import load_dotenv
 
-# Load environment variables from root .env file
-load_dotenv()
+# Load environment variables from server/.env.local
+# This ensures we pick up the service role key from the backend config
+env_path = os.path.join(os.path.dirname(__file__), '.env.local')
+load_dotenv(dotenv_path=env_path)
 
 # Store documents with metadata for better semantic search
 documents = []  # List of {"content": str, "filename": str, "filepath": str, "document_id": str, "user_id": str}
@@ -17,8 +19,14 @@ documents = []  # List of {"content": str, "filename": str, "filepath": str, "do
 # Initialize Supabase client
 # Try both NEXT_PUBLIC_ prefix (from frontend .env.local) and regular prefix
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL", "https://fmlanqjduftxlktygpwe.supabase.co")
-# Use service role key for backend operations (bypasses RLS), fall back to anon key
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs")
+# IMPORTANT: Use SERVICE ROLE KEY for backend operations (bypasses RLS policies)
+# The anon key will fail RLS checks when uploading from backend
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+if not SUPABASE_KEY:
+    print("⚠️  WARNING: SUPABASE_SERVICE_ROLE_KEY not found in environment!")
+    print("⚠️  File uploads will fail with RLS policy violation errors.")
+    print("⚠️  Please set SUPABASE_SERVICE_ROLE_KEY in your .env file.")
+    print("⚠️  You can find it in Supabase Dashboard → Settings → API → Service Role Key")
 
 supabase: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
@@ -31,13 +39,14 @@ if SUPABASE_URL and SUPABASE_KEY:
 
 # Import will be done after query_handler is fully loaded to avoid circular import
 
-def ingest_file(file_path: str, user_id: str = None):
+def ingest_file(file_path: str, user_id: str = None, workspace_id: str = None):
     """
     Implementation function for file ingestion
     
     Args:
         file_path: Path to the file to ingest
-        user_id: Optional user ID for Supabase storage (required when using Supabase)
+        user_id: User ID for Supabase storage (required when using Supabase)
+        workspace_id: Workspace ID to organize files (required for database insert)
     """
     print(f"Starting ingestion of file: {file_path}")
     
@@ -86,16 +95,42 @@ def ingest_file(file_path: str, user_id: str = None):
                     
                 print(f"✅ File uploaded to Supabase: {storage_path}")
                     
-                # Insert metadata into files table
+                # Insert metadata into file_upload table
                 file_id = str(uuid.uuid4())
-                db_response = supabase.table('files').insert({
+                
+                # Handle workspace_id - get or create default workspace if needed
+                final_workspace_id = workspace_id
+                if not final_workspace_id and supabase and user_id:
+                    # Try to get the user's default workspace
+                    try:
+                        workspace_response = supabase.table('workspaces').select('id').eq('user_id', user_id).order('created_at').limit(1).execute()
+                        if workspace_response.data and len(workspace_response.data) > 0:
+                            final_workspace_id = workspace_response.data[0]['id']
+                        else:
+                            # Create a default workspace for the user
+                            create_response = supabase.table('workspaces').insert({
+                                'name': 'Personal Workspace',
+                                'user_id': user_id
+                            }).select('id').execute()
+                            if create_response.data and len(create_response.data) > 0:
+                                final_workspace_id = create_response.data[0]['id']
+                                print(f"✅ Created default workspace: {final_workspace_id}")
+                    except Exception as e:
+                        print(f"⚠️  Warning: Could not get or create default workspace: {str(e)}")
+                        return f"Error: Could not get or create workspace for file ingestion: {str(e)}"
+                
+                if not final_workspace_id:
+                    return "Error: workspace_id is required for file upload"
+                
+                db_response = supabase.table('file_upload').insert({
                     'id': file_id,
-                    'workspace_id': user_id,  # TODO: Pass actual workspace_id from frontend
+                    'workspace_id': final_workspace_id,
                     'file_name': filename,
                     'file_path': storage_path,
                     'size_bytes': file_size,
                     'file_type': file_type,
-                    'status': 'uploaded'
+                    'status': 'uploaded',
+                    'user_id': user_id
                 }).execute()
                     
                 print(f"✅ File metadata saved to Supabase database")
@@ -132,9 +167,9 @@ def ingest_file(file_path: str, user_id: str = None):
                                         'file_id': file_id,
                                         'user_id': user_id,
                                         'chunk_index': chunk_index,
-                                        'content': chunk.strip(),
+                                        'chunk_text': chunk.strip(),
                                         'embedding': embedding.tolist(),  # pgvector expects float array
-                                        'file_name': filename,
+                                        'metadata': {'file_name': filename}  # Store as JSONB metadata
                                     })
                                     chunk_index += 1
                             

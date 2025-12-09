@@ -1,6 +1,15 @@
 /**
  * Supabase Service Layer Exports
  * Centralized exports for all Supabase service functions
+ * 
+ * Exported tables:
+ * - auth.users: Authentication via supabase.auth.getUser()
+ * - workspaces: User workspace management
+ * - file_upload: File metadata and storage
+ * - document_content: Extracted text content
+ * - document_embeddings: Vector embeddings for semantic search
+ * - workspace_instructions: Custom workspace instructions
+ * - chats: Chat messages and conversation history
  */
 
 // Re-export client
@@ -13,8 +22,6 @@ export {
   getWorkspaceById,
   createWorkspace,
   updateWorkspace,
-  archiveWorkspace,
-  unarchiveWorkspace,
   deleteWorkspace,
   getOrCreateDefaultWorkspace
 } from './workspaces'
@@ -50,3 +57,16 @@ export {
   deleteFileEmbeddings,
   getFileEmbeddingCount
 } from './embeddings'
+
+// Re-export instruction functions
+export {
+  getWorkspaceInstructions,
+  getActiveInstruction,
+  getInstructionById,
+  createInstruction,
+  updateInstruction,
+  activateInstruction,
+  deactivateAllInstructions,
+  deleteInstruction,
+  getInstructionPreview
+} from './instructions'

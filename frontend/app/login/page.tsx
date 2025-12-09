@@ -21,6 +21,18 @@ export default function LoginPage() {
   const textToType = 'Own your AI.'
 
   useEffect(() => {
+    // Check for error from auth callback
+    const params = new URLSearchParams(window.location.search)
+    const errorParam = params.get('error')
+    
+    if (errorParam === 'not_authorized') {
+      setError('This email is not authorized. Please contact an administrator.')
+    } else if (errorParam === 'auth_failed') {
+      setError('Authentication failed. Please try again.')
+    }
+  }, [])
+
+  useEffect(() => {
     let currentIndex = 0
     const typingInterval = setInterval(() => {
       if (currentIndex <= textToType.length) {
@@ -41,29 +53,7 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      // First, check if the email exists in the profiles table
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('email')
-        .eq('email', email.trim().toLowerCase())
-        .maybeSingle()
-
-      console.log('Profile check:', { profileData, profileError })
-
-      if (profileError) {
-        console.error('Profile query error:', profileError)
-        setError(`Database error: ${profileError.message}`)
-        setLoading(false)
-        return
-      }
-
-      if (!profileData) {
-        setError('This email is not authorized. Please contact an administrator.')
-        setLoading(false)
-        return
-      }
-
-      // Email exists in profiles, send magic link
+      // Send magic link for authentication
       const { error: signInError } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
         options: {

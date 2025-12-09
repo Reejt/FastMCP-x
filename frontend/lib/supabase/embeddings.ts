@@ -34,9 +34,9 @@ export async function storeEmbeddings(
     file_id: fileId,
     user_id: userId,
     chunk_index: chunk.index,
-    content: chunk.content,
+    chunk_text: chunk.content,
     embedding: chunk.embedding,
-    file_name: fileName,
+    metadata: { file_name: fileName },
   }))
 
   const { data, error } = await supabase
@@ -160,7 +160,7 @@ async function getWorkspaceFileIds(workspaceId: string): Promise<string[]> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
-    .from('files')
+    .from('file_upload')
     .select('id')
     .eq('workspace_id', workspaceId)
     .is('deleted_at', null)

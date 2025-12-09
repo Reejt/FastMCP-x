@@ -7,17 +7,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
   getUserWorkspaces,
-  getWorkspaceSummaries,
   createWorkspace,
   updateWorkspace,
-  archiveWorkspace,
   deleteWorkspace
 } from '@/lib/supabase/workspaces'
 
 /**
  * GET /api/workspaces
+<<<<<<< HEAD
  * Get all workspaces for the current user or a specific workspace by ID
  * Query params: workspaceId (string), includeArchived (boolean), withSummary (boolean)
+=======
+ * Get all workspaces for the current user
+ * Query params: includeArchived (boolean)
+>>>>>>> upstream/main
  */
 export async function GET(request: NextRequest) {
   try {
@@ -34,8 +37,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const workspaceId = searchParams.get('workspaceId')
     const includeArchived = searchParams.get('includeArchived') === 'true'
-    const withSummary = searchParams.get('withSummary') === 'true'
 
+<<<<<<< HEAD
     // If workspaceId is provided, fetch specific workspace
     if (workspaceId) {
       const { data: workspace, error } = await supabase
@@ -66,6 +69,9 @@ export async function GET(request: NextRequest) {
     } else {
       workspaces = await getUserWorkspaces(includeArchived)
     }
+=======
+    const workspaces = await getUserWorkspaces(includeArchived)
+>>>>>>> upstream/main
 
     return NextResponse.json({
       success: true,
@@ -156,21 +162,8 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    let workspace
-
-    // Handle archive/unarchive
-    if (archive !== undefined) {
-      if (archive) {
-        workspace = await archiveWorkspace(workspaceId)
-      } else {
-        // Import unarchiveWorkspace if implementing unarchive
-        const { unarchiveWorkspace } = await import('@/lib/supabase/workspaces')
-        workspace = await unarchiveWorkspace(workspaceId)
-      }
-    } else {
-      // Handle name/description updates
-      workspace = await updateWorkspace(workspaceId, { name, description })
-    }
+    // Handle name/description updates
+    const workspace = await updateWorkspace(workspaceId, { name, description })
 
     return NextResponse.json({
       success: true,

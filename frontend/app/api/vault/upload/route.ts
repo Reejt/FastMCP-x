@@ -28,20 +28,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate workspace_id if provided
+    // Get or create workspace
+    let finalWorkspaceId = workspaceId;
+    
     if (workspaceId) {
+      // Validate provided workspace_id exists and belongs to user
       const { data: workspace, error: workspaceError } = await supabase
         .from('workspaces')
         .select('id')
         .eq('id', workspaceId)
-        .eq('owner_id', user.id)
         .single();
 
       if (workspaceError || !workspace) {
         return NextResponse.json(
-          { error: 'Invalid workspace ID or access denied' },
+          { error: 'Invalid workspace ID' },
           { status: 403 }
         );
+      }
+    } else {
+      // Get or create default workspace for the current user
+      const { data: existingWorkspaces, error: wsListError } = await supabase
+        .from('file_upload')
+        .select('workspace_id')
+        .eq('user_id', user.id)
+        .order('uploaded_at', { ascending: false })
+        .limit(1);
+
+      if (existingWorkspaces && existingWorkspaces.length > 0) {
+        finalWorkspaceId = existingWorkspaces[0].workspace_id;
+      } else {
+        // Create default workspace if user has none
+        const { data: newWorkspace, error: createError } = await supabase
+          .from('workspaces')
+          .insert({
+            name: 'Personal Workspace'
+          })
+          .select('id')
+          .single();
+
+        if (createError || !newWorkspace) {
+          return NextResponse.json(
+            { error: 'Failed to create default workspace' },
+            { status: 500 }
+          );
+        }
+        finalWorkspaceId = newWorkspace.id;
       }
     }
 
@@ -89,7 +120,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(30000), // 30s timeout for file processing
+      signal: AbortSignal.timeout(120000), // 120s timeout for file processing
     });
 
     if (!response.ok) {
@@ -101,56 +132,13 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
-
-    // Upload file to Supabase Storage
-    const fileBuffer = await file.arrayBuffer();
-    const fileName = `${user.id}/${Date.now()}_${file.name}`;
-
-    const { data: storageData, error: storageError } = await supabase.storage
-      .from('vault_files')
-      .upload(fileName, fileBuffer, {
-        contentType: file.type,
-        upsert: false
-      });
-
-    console.log('Supabase storageData:', storageData);
-
-    if (storageError) {
-      console.error('Supabase storage error:', storageError);
-      return NextResponse.json(
-        { error: 'Failed to store file in vault', details: storageError.message },
-        { status: 500 }
-      );
-    }
-
-    // Insert file metadata into files table
-    const { data: dbData, error: dbError } = await supabase
-      .from('files')
-      .insert({
-        workspace_id: workspaceId || user.id, // Use workspaceId or default to user.id
-        file_name: file.name,
-        file_path: storageData.path,
-        size_bytes: file.size,
-        file_type: file.type,
-        status: 'uploaded'
-      })
-      .select()
-      .single();
-
-    if (dbError) {
-      console.error('Database insert error:', dbError);
-      // Try to clean up the uploaded file
-      await supabase.storage.from('vault_files').remove([fileName]);
-      return NextResponse.json(
-        { error: 'Failed to save document metadata', details: dbError.message },
-        { status: 500 }
-      );
-    }
+    
+    // Note: Backend (bridge_server -> document_ingestion) now handles all storage operations
+    // No need for duplicate upload here - file is already stored in Supabase via the backend
 
     return NextResponse.json({
       success: true,
       message: 'File uploaded and processed successfully',
-      document: dbData,
       file_name: file.name,
       file_size: file.size,
       ...data
@@ -195,10 +183,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
 
-    // Build query
+    // Build query - always filter by current user
     let query = supabase
-      .from('files')
-      .select('*')
+      .from('file_upload')
+      .select('id, workspace_id, file_name, file_path, size_bytes, status, uploaded_at')
+      .eq('user_id', user.id)  // Only get files uploaded by current user
       .is('deleted_at', null)
       .order('uploaded_at', { ascending: false });
 
@@ -207,7 +196,7 @@ export async function GET(request: NextRequest) {
       query = query.eq('workspace_id', workspaceId)
     }
 
-    const { data: files, error: dbError } = await query
+    const { data: files, error: dbError } = await query;
 
     if (dbError) {
       console.error('Database query error:', dbError);
@@ -249,20 +238,21 @@ export async function DELETE(request: NextRequest) {
 
     // Get document ID from request body
     const body = await request.json();
-    const { documentId } = body;
+    const { id } = body;
 
-    if (!documentId) {
+    if (!id) {
       return NextResponse.json(
         { error: 'Document ID is required' },
         { status: 400 }
       );
     }
 
-    // First, fetch the file to get the file path
+    // First, fetch the file to verify ownership and get the file path
     const { data: file, error: fetchError } = await supabase
-      .from('files')
+      .from('file_upload')
       .select('*')
-      .eq('id', documentId)
+      .eq('id', id)
+      .eq('user_id', user.id)  // Verify file belongs to current user
       .is('deleted_at', null)
       .single();
 
@@ -276,9 +266,10 @@ export async function DELETE(request: NextRequest) {
 
     // Soft delete in database (set deleted_at timestamp)
     const { error: dbError } = await supabase
-      .from('files')
+      .from('file_upload')
       .update({ deleted_at: new Date().toISOString() })
-      .eq('id', documentId);
+      .eq('id', id)
+      .eq('user_id', user.id);  // Ensure only owner can delete
 
     if (dbError) {
       console.error('Database deletion error:', dbError);
@@ -291,7 +282,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'File deleted successfully',
-      documentId: documentId
+      id: id
     });
   } catch (error) {
     console.error('Error deleting file:', error);
