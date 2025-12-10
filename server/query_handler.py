@@ -101,120 +101,38 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
         print("⚠️  Embedding model not available")
         return []
     
+    
+    # Generate embedding for the query using same model as stored embeddings
+    query_embedding = model.encode([query])[0]
+    query_embedding_list = query_embedding.tolist()
+        
+    print(f"🔍 Searching with pgvector (top_k={top_k}, min_similarity={min_similarity})")
+        
+    # Use RPC function for database-side similarity search
+    # This is the proper way to do pgvector queries without SQL injection
     try:
-        # Generate embedding for the query using same model as stored embeddings
-        query_embedding = model.encode([query])[0]
-        query_embedding_list = query_embedding.tolist()
-        
-        print(f"🔍 Searching with pgvector (top_k={top_k}, min_similarity={min_similarity})")
-        
-        # Use RPC function for database-side similarity search
-        # This is the proper way to do pgvector queries without SQL injection
-        try:
-            response = supabase_client.rpc('search_embeddings', {
-                'query_embedding': query_embedding_list,
-                'match_threshold': min_similarity,
-                'match_count': top_k
-            }).execute()
+        response = supabase_client.rpc('search_embeddings', {
+            'query_embedding': query_embedding_list,
+            'match_threshold': min_similarity,
+            'match_count': top_k
+        }).execute()
             
-            if hasattr(response, 'data') and response.data:
-                results = []
-                for row in response.data:
-                    results.append((
-                        row['content'],
-                        float(row['similarity_score']),
-                        row['file_name']
-                    ))
-                
-                print(f"✅ Found {len(results)} similar chunks via pgvector RPC")
-                return results
-            else:
-                print("⚠️  RPC returned no data - may not be configured correctly")
-        except Exception as rpc_error:
-            print(f"⚠️  RPC call failed: {rpc_error}")
-        
-        # Fallback: Query all embeddings and filter locally
-        # This uses pgvector but without the distance operator optimization
-        print("ℹ️  Falling back to application-side filtering (less efficient)...")
-        
-        try:
-            # Query embeddings with basic filtering
-            query_filters = supabase_client.table('document_embeddings').select('id, content, file_name, file_id, embedding')
-            
-            # Add workspace filter if provided
-            if workspace_id:
-                query_filters = query_filters.in_('file_id', (
-                    supabase_client.table('file_upload')
-                    .select('id')
-                    .eq('workspace_id', workspace_id)
-                    .execute()
-                    .data
-                ) or [])
-            
-            response = query_filters.execute()
-            
-            if not response.data:
-                print("ℹ️  No embeddings found in database")
-                return []
-            
-            # Calculate similarities locally (unavoidable without RPC)
+        if hasattr(response, 'data') and response.data:
             results = []
             for row in response.data:
-                try:
-                    if 'embedding' not in row or row['embedding'] is None:
-                        continue
-                    
-                    # Convert stored embedding to numpy array
-                    doc_embedding = np.array(row['embedding'])
-                    
-                    # Calculate cosine similarity (1 - cosine_distance)
-                    # Using numpy for efficiency
-                    dot_product = np.dot(query_embedding, doc_embedding)
-                    query_norm = np.linalg.norm(query_embedding)
-                    doc_norm = np.linalg.norm(doc_embedding)
-                    
-                    if query_norm == 0 or doc_norm == 0:
-                        similarity = 0.0
-                    else:
-                        similarity = dot_product / (query_norm * doc_norm)
-                    
-                    if similarity >= min_similarity:
-                        results.append((row['content'], float(similarity), row['file_name']))
-                except Exception as e:
-                    print(f"⚠️  Error processing embedding: {e}")
-                    continue
-            
-            results.sort(key=lambda x: x[1], reverse=True)
-            print(f"✅ Found {len(results[:top_k])} similar chunks (local filtering)")
-            return results[:top_k]
-            
-        except Exception as fallback_error:
-            print(f"⚠️  Fallback search failed: {fallback_error}")
-            return []
-            
-    except Exception as e:
-        print(f"❌ Error in pgvector search: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-
-def build_embeddings():
-    """
-    DEPRECATED in pgvector mode - Embeddings stored directly in Supabase via document_ingestion
-    
-    This function is kept for backward compatibility but is no longer needed.
-    Document ingestion now handles embedding generation and database storage.
-    
-    For enterprise pgvector setup: embeddings are generated at ingestion time
-    and stored directly in document_embeddings table without in-memory caching.
-    """
-    print("⚠️  build_embeddings() is deprecated - embeddings managed at document ingestion time")
-    return
-
-
-
-
+                results.append((
+                    row['content'],
+                    float(row['similarity_score']),
+                    row['file_name']
+                ))
+                
+            print(f"✅ Found {len(results)} similar chunks via pgvector RPC")
+            return results
+        else:
+            print("⚠️  RPC returned no data - may not be configured correctly")
+    except Exception as rpc_error:
+        print(f"⚠️  RPC call failed: {rpc_error}")
+        
 
 
 def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50):
@@ -243,18 +161,6 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50):
         start = end - overlap
     
     return chunks
-
-def semantic_search(query: str, top_k: int = 2, min_similarity: float = 0.18):
-    """
-    DEPRECATED - Use semantic_search_pgvector() instead
-    
-    This function is kept for backward compatibility but delegates to pgvector.
-    All similarity calculations now happen at the DATABASE LEVEL using pgvector.
-    """
-    print("⚠️  semantic_search() is deprecated - using pgvector database-side search")
-    return semantic_search_pgvector(query, top_k=top_k, min_similarity=min_similarity)
-
-
 
 
 def is_query_related_to_history(query: str, conversation_history: list) -> bool:
@@ -355,14 +261,6 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
         workspace_id: Optional workspace filter for search results
     """
     try:
-        # Use pgvector for semantic search - database handles similarity matching
-        semantic_results = semantic_search_pgvector(query, top_k=2, min_similarity=0.18, workspace_id=workspace_id)
-        
-        if not semantic_results:
-            # No relevant documents found - fall back to general query
-            llm_response = query_model(query, conversation_history=conversation_history, stream=stream)
-            return llm_response
-        
         # Use document context for enhanced response
         return query_with_context(query, max_chunks=2, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id)
         
@@ -376,7 +274,7 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
 
 
 
-def query_with_context(query: str, max_chunks: int = 2, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None):
+def query_with_context(query: str, max_chunks: int = 5, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None):
     """
     Query the LLM with relevant document chunks as context
     Uses pgvector database-side similarity search
@@ -390,7 +288,7 @@ def query_with_context(query: str, max_chunks: int = 2, include_context_preview:
         workspace_id: Optional workspace filter for search results
     """
     # Get relevant chunks using pgvector database-side search
-    semantic_results = semantic_search_pgvector(query, top_k=max_chunks, min_similarity=0.3, workspace_id=workspace_id)
+    semantic_results = semantic_search_pgvector(query, top_k=max_chunks, min_similarity=0.2, workspace_id=workspace_id)
     
     if not semantic_results:
         return query_model(query, conversation_history=conversation_history, stream=stream)

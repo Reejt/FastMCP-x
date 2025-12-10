@@ -55,11 +55,16 @@ export default function VaultPage() {
       if (result.success && result.files) {
         // Transform Supabase files to match the UI format
         const transformedDocs = result.files.map((file: any) => {
-          // Remove temporary file prefix (tmp{random}__) if present
+          // Remove temporary file prefix (tmpXXXX_XXXX_) if present
           let displayName = file.file_name
-          const tmpMatch = displayName.match(/^tmp[a-z0-9]+__(.+)$/)
-          if (tmpMatch) {
-            displayName = tmpMatch[1]
+          if (displayName.startsWith('tmp')) {
+            // Remove everything up to and including the last underscore before the actual filename
+            const parts = displayName.split('_')
+            if (parts.length > 2) {
+              displayName = parts.slice(2).join('_')
+            } else if (parts.length === 2) {
+              displayName = parts[1]
+            }
           }
           return {
             id: file.id,
