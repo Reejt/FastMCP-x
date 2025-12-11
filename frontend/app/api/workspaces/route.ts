@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const workspace = await createWorkspace(name, description)
+    const workspace = await createWorkspace(name, description, user.id)
 
     return NextResponse.json({
       success: true,
@@ -124,7 +124,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Handle name/description updates
-    const workspace = await updateWorkspace(workspaceId, { name, description })
+    const workspace = await updateWorkspace(workspaceId, { name, description }, user.id)
 
     return NextResponse.json({
       success: true,
@@ -169,7 +169,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    await deleteWorkspace(workspaceId)
+    await deleteWorkspace(workspaceId, user.id)
 
     return NextResponse.json({
       success: true,

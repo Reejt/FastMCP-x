@@ -17,71 +17,19 @@ export async function getUserWorkspaces(includeArchived: boolean = false) {
     throw new Error('User not authenticated')
   }
 
-  // Get distinct workspaces that the user has uploaded files to
-  const { data: userWorkspaces, error } = await supabase
-    .from('file_upload')
-    .select('workspace_id')
+  // Fetch all workspaces owned by the user
+  const { data: workspaces, error } = await supabase
+    .from('workspaces')
+    .select('*')
     .eq('user_id', user.id)
-    .order('uploaded_at', { ascending: false })
+    .order('created_at', { ascending: false })
 
   if (error) {
     console.error('Error fetching user workspaces:', error)
     throw error
   }
 
-  // Get unique workspace IDs
-  const workspaceIds = [...new Set(userWorkspaces?.map(f => f.workspace_id) || [])]
-
-  if (workspaceIds.length === 0) {
-    return []
-  }
-
-  // Fetch workspace details
-  const { data: workspaces, error: wsError } = await supabase
-    .from('workspaces')
-    .select('*')
-    .in('id', workspaceIds)
-    .order('created_at', { ascending: false })
-
-  if (wsError) {
-    console.error('Error fetching workspace details:', wsError)
-    throw wsError
-  }
-
   return workspaces as Workspace[]
-}
-
-/**
- * Get workspace summaries with file count
- */
-export async function getWorkspaceSummaries(includeArchived: boolean = false) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    throw new Error('User not authenticated')
-  }
-
-  // Get workspaces
-  const workspaces = await getUserWorkspaces(includeArchived)
-
-  // Get file counts for each workspace
-  const summaries = await Promise.all(
-    workspaces.map(async (workspace) => {
-      const { count } = await supabase
-        .from('file_upload')
-        .select('*', { count: 'exact', head: true })
-        .eq('workspace_id', workspace.id)
-        .is('deleted_at', null)
-
-      return {
-        ...workspace,
-        file_count: count || 0
-      }
-    })
-  )
-
-  return summaries
 }
 
 /**
@@ -112,7 +60,7 @@ export async function getWorkspaceById(workspaceId: string) {
 /**
  * Create a new workspace
  */
-export async function createWorkspace(name: string, description?: string) {
+export async function createWorkspace(name: string, description?: string, userId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -128,8 +76,8 @@ export async function createWorkspace(name: string, description?: string) {
   const { data, error } = await supabase
     .from('workspaces')
     .insert({
-      name: name.trim(),
-      description: description?.trim() || null
+      user_id: userId || user.id,
+      name: name.trim()
     })
     .select()
     .single()
@@ -150,7 +98,8 @@ export async function updateWorkspace(
   updates: {
     name?: string
     description?: string | null
-  }
+  },
+  userId?: string
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -191,7 +140,7 @@ export async function updateWorkspace(
  * Permanently delete a workspace
  * WARNING: This cascades to all documents and instructions!
  */
-export async function deleteWorkspace(workspaceId: string) {
+export async function deleteWorkspace(workspaceId: string, userId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 

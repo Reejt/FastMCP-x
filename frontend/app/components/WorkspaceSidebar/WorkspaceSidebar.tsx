@@ -128,19 +128,6 @@ export default function WorkspaceSidebar({
                   </div>
                 </button>
               </div>
-
-              {/* Vault Section */}
-              <div>
-                <button
-                  onClick={() => router.push(`/workspaces/${workspace.id}/vault`)}
-                  className="w-full flex items-center gap-2 p-3 hover:bg-gray-100 rounded-lg transition-colors text-left"
-                >
-                  <svg className="w-5 h-5 flex-shrink-0" style={{ color: '#060606' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                  </svg>
-                  <span className="font-medium" style={{ color: '#060606' }}>Vault</span>
-                </button>
-              </div>
             </div>
 
             {/* Chats Section */}
