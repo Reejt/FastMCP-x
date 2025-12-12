@@ -119,7 +119,8 @@ def build_system_prompt(workspace_id: str, base_prompt: str = ""):
     if not instruction:
         return base_prompt
     
-    instruction_content = instruction.get("content", "")
+    # Use 'instructions' field (the actual database column name)
+    instruction_content = instruction.get("instructions", "")
     instruction_title = instruction.get("title", "Custom Instruction")
     
     if not instruction_content:

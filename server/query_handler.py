@@ -265,11 +265,12 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
         return query_with_context(query, max_chunks=2, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id)
         
     except Exception as e:
+        error_message = f"Error processing query: {str(e)}"
         if stream:
             def error_generator():
-                yield {"response": f"Error processing query: {str(e)}"}
+                yield {"response": error_message}
             return error_generator()
-        return f"Error processing query: {str(e)}"
+        return error_message
 
 
 

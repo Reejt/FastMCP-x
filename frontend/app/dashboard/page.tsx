@@ -498,7 +498,7 @@ export default function DashboardPage() {
                     Active Instruction: {activeInstruction.title}
                   </h4>
                   <p className="text-xs text-indigo-700 line-clamp-2">
-                    {activeInstruction.content}
+                    {activeInstruction.instructions}
                   </p>
                   <button
                     onClick={() => router.push(`/instructions?workspaceId=${workspaceId}`)}

@@ -1,76 +1,221 @@
 /**
  * Workspace Instructions API Route
- * DISABLED: workspace_instructions table does not exist
- * Only files, workspaces, chats, and document_content tables are available
+ * Connects frontend page.tsx and components to Supabase via instructions.ts service layer
+ * 
+ * Flow: page.tsx → route.ts → instructions.ts → Supabase
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-
-// Instructions functionality disabled - table does not exist
-// import {
-//   getWorkspaceInstructions,
-//   getActiveInstruction,
-//   createInstruction,
-//   updateInstruction,
-//   activateInstruction,
-//   deactivateInstruction,
-//   deleteInstruction,
-//   switchActiveInstruction
-// } from '@/lib/supabase/instructions'
+import {
+  getWorkspaceInstructions,
+  getInstructionById,
+  createInstruction,
+  updateInstruction,
+  activateInstruction,
+  deactivateInstruction,
+  deleteInstruction,
+  switchActiveInstruction
+} from '@/lib/supabase/instructions'
 
 /**
- * GET /api/instructions
- * DISABLED: workspace_instructions table does not exist
+ * Helper function to clear instruction cache on the backend
+ */
+async function clearBackendInstructionCache(workspaceId: string) {
+  try {
+    const bridgeServerUrl = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001'
+    await fetch(`${bridgeServerUrl}/api/clear-instruction-cache?workspace_id=${workspaceId}`, {
+      method: 'POST'
+    })
+    console.log(`✅ Cleared backend cache for workspace: ${workspaceId}`)
+  } catch (error) {
+    console.warn(`⚠️  Failed to clear backend instruction cache: ${error}`)
+    // Don't fail the request if cache clearing fails - just log warning
+  }
+}
+
+/**
+ * GET /api/instructions?workspaceId=X
+ * Fetch all instructions for a workspace
  */
 export async function GET(request: NextRequest) {
-  return NextResponse.json(
-    { 
-      error: 'Instructions feature not available',
-      message: 'workspace_instructions table does not exist. Only files, workspaces, chats, and document_content tables are available.'
-    },
-    { status: 501 }
-  )
+  try {
+    const workspaceId = request.nextUrl.searchParams.get('workspaceId')
+
+    if (!workspaceId) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Workspace ID is required'
+        },
+        { status: 400 }
+      )
+    }
+
+    const instructions = await getWorkspaceInstructions(workspaceId)
+
+    return NextResponse.json({
+      success: true,
+      instructions
+    })
+  } catch (error) {
+    console.error('Error fetching instructions:', error)
+    return NextResponse.json(
+      { 
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch instructions'
+      },
+      { status: 500 }
+    )
+  }
 }
 
 /**
  * POST /api/instructions
- * DISABLED: workspace_instructions table does not exist
+ * Create a new instruction
  */
 export async function POST(request: NextRequest) {
-  return NextResponse.json(
-    { 
-      error: 'Instructions feature not available',
-      message: 'workspace_instructions table does not exist.'
-    },
-    { status: 501 }
-  )
+  try {
+    const body = await request.json()
+    const { workspaceId, title, instructions, isActive } = body
+
+    if (!workspaceId || !title || !instructions) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Missing required fields: workspaceId, title, instructions'
+        },
+        { status: 400 }
+      )
+    }
+
+    const instruction = await createInstruction(
+      workspaceId,
+      title,
+      instructions,
+      isActive
+    )
+
+    // Clear backend cache after creating instruction
+    await clearBackendInstructionCache(workspaceId)
+
+    return NextResponse.json({
+      success: true,
+      instruction
+    })
+  } catch (error) {
+    console.error('Error creating instruction:', error)
+    return NextResponse.json(
+      { 
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create instruction'
+      },
+      { status: 500 }
+    )
+  }
 }
 
 /**
  * PATCH /api/instructions
- * DISABLED: workspace_instructions table does not exist
+ * Update, activate, or deactivate an instruction
  */
 export async function PATCH(request: NextRequest) {
-  return NextResponse.json(
-    { 
-      error: 'Instructions feature not available',
-      message: 'workspace_instructions table does not exist.'
-    },
-    { status: 501 }
-  )
+  try {
+    const body = await request.json()
+    const { instructionId, title, instructions, activate, deactivate } = body
+
+    if (!instructionId) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Instruction ID is required'
+        },
+        { status: 400 }
+      )
+    }
+
+    let instruction
+
+    if (activate) {
+      instruction = await activateInstruction(instructionId)
+    } else if (deactivate) {
+      instruction = await deactivateInstruction(instructionId)
+    } else if (title !== undefined || instructions !== undefined) {
+      const updates: any = {}
+      if (title !== undefined) updates.title = title
+      if (instructions !== undefined) updates.content = instructions
+      instruction = await updateInstruction(instructionId, updates)
+    } else {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'No updates provided'
+        },
+        { status: 400 }
+      )
+    }
+
+    // Clear backend cache after any instruction change
+    if (instruction && instruction.workspace_id) {
+      await clearBackendInstructionCache(instruction.workspace_id)
+    }
+
+    return NextResponse.json({
+      success: true,
+      instruction
+    })
+  } catch (error) {
+    console.error('Error updating instruction:', error)
+    return NextResponse.json(
+      { 
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update instruction'
+      },
+      { status: 500 }
+    )
+  }
 }
 
 /**
  * DELETE /api/instructions
- * DISABLED: workspace_instructions table does not exist
+ * Delete an instruction
  */
 export async function DELETE(request: NextRequest) {
-  return NextResponse.json(
-    { 
-      error: 'Instructions feature not available',
-      message: 'workspace_instructions table does not exist.'
-    },
-    { status: 501 }
-  )
+  try {
+    const body = await request.json()
+    const { instructionId } = body
+
+    if (!instructionId) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Instruction ID is required'
+        },
+        { status: 400 }
+      )
+    }
+
+    // Get instruction before deleting to know which workspace to clear cache for
+    const instruction = await getInstructionById(instructionId)
+    
+    await deleteInstruction(instructionId)
+
+    // Clear backend cache after deletion
+    if (instruction && instruction.workspace_id) {
+      await clearBackendInstructionCache(instruction.workspace_id)
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Instruction deleted successfully'
+    })
+  } catch (error) {
+    console.error('Error deleting instruction:', error)
+    return NextResponse.json(
+      { 
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete instruction'
+      },
+      { status: 500 }
+    )
+  }
 }

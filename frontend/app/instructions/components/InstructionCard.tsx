@@ -28,9 +28,9 @@ export default function InstructionCard({
     year: 'numeric'
   })
 
-  const contentPreview = instruction.content.length > 150
-    ? instruction.content.substring(0, 150) + '...'
-    : instruction.content
+  const contentPreview = instruction.instructions.length > 150
+    ? instruction.instructions.substring(0, 150) + '...'
+    : instruction.instructions
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl hover:shadow-md transition-all duration-200">
@@ -139,9 +139,9 @@ export default function InstructionCard({
         {/* Content */}
         <div className="text-sm text-gray-600 leading-relaxed">
           <p className="whitespace-pre-wrap">
-            {isExpanded ? instruction.content : contentPreview}
+            {isExpanded ? instruction.instructions : contentPreview}
           </p>
-          {instruction.content.length > 150 && (
+          {instruction.instructions.length > 150 && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
               className="mt-2 text-indigo-600 hover:text-indigo-700 font-medium text-xs"

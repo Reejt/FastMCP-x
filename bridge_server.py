@@ -14,6 +14,7 @@ import os
 import base64
 import tempfile
 import json
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables from root .env file
@@ -421,6 +422,40 @@ async def health_check():
             "mcp_connection": "failed",
             "error": str(e)
         }
+
+@app.post("/api/clear-instruction-cache")
+async def clear_instruction_cache_endpoint(workspace_id: Optional[str] = None):
+    """
+    Clear cached instructions for a workspace or all workspaces
+    
+    Args:
+        workspace_id: Optional workspace ID to clear. If not provided, clears all.
+    
+    Returns:
+        Success message
+    """
+    try:
+        from server.instructions import clear_instruction_cache
+        
+        print(f"📥 Cache clearing request received")
+        print(f"   workspace_id: {workspace_id}")
+        
+        if workspace_id:
+            print(f"🧹 Clearing instruction cache for workspace: {workspace_id}")
+            clear_instruction_cache(workspace_id)
+            print(f"✅ Cache cleared for workspace: {workspace_id}")
+        else:
+            print(f"🧹 Clearing all instruction caches")
+            clear_instruction_cache()
+            print(f"✅ All instruction caches cleared")
+        
+        return {
+            "success": True,
+            "message": f"Cache cleared" + (f" for workspace {workspace_id}" if workspace_id else " for all workspaces")
+        }
+    except Exception as e:
+        print(f"❌ Cache clearing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Cache clearing failed: {str(e)}")
 
 if __name__ == "__main__":
     print("=" * 60)

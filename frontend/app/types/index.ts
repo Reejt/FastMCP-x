@@ -98,8 +98,7 @@ export interface WorkspaceInstruction {
   id: string                    // UUID primary key
   workspace_id: string          // Foreign key to workspaces(id) (NOT nullable)
   title: string                 // Instruction title (NOT nullable)
-  content: string               // Instruction content/prompt (NOT nullable)
-  instructions?: string | null  // Optional instruction text (NOT nullable)
+  instructions: string          // Instruction content/prompt (NOT nullable)
   is_active?: boolean           // Whether this instruction is active (nullable)
   user_id?: string | null       // User who created the instruction (nullable)
   created_at: string            // ISO timestamp (NOT nullable)
