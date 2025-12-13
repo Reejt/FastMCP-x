@@ -14,13 +14,8 @@ import {
 
 /**
  * GET /api/workspaces
-<<<<<<< HEAD
- * Get all workspaces for the current user or a specific workspace by ID
- * Query params: workspaceId (string), includeArchived (boolean), withSummary (boolean)
-=======
  * Get all workspaces for the current user
  * Query params: includeArchived (boolean)
->>>>>>> upstream/main
  */
 export async function GET(request: NextRequest) {
   try {
@@ -38,40 +33,7 @@ export async function GET(request: NextRequest) {
     const workspaceId = searchParams.get('workspaceId')
     const includeArchived = searchParams.get('includeArchived') === 'true'
 
-<<<<<<< HEAD
-    // If workspaceId is provided, fetch specific workspace
-    if (workspaceId) {
-      const { data: workspace, error } = await supabase
-        .from('workspaces')
-        .select('*')
-        .eq('id', workspaceId)
-        .eq('owner_id', user.id)
-        .single()
-
-      if (error || !workspace) {
-        return NextResponse.json(
-          { error: 'Workspace not found' },
-          { status: 404 }
-        )
-      }
-
-      return NextResponse.json({
-        success: true,
-        workspace
-      })
-    }
-
-    // Otherwise, fetch all workspaces
-    let workspaces
-
-    if (withSummary) {
-      workspaces = await getWorkspaceSummaries(includeArchived)
-    } else {
-      workspaces = await getUserWorkspaces(includeArchived)
-    }
-=======
     const workspaces = await getUserWorkspaces(includeArchived)
->>>>>>> upstream/main
 
     return NextResponse.json({
       success: true,
@@ -117,7 +79,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const workspace = await createWorkspace(name, description, user.id)
+    const workspace = await createWorkspace(name, description)
 
     return NextResponse.json({
       success: true,
@@ -163,7 +125,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Handle name/description updates
-    const workspace = await updateWorkspace(workspaceId, { name, description }, user.id)
+    const workspace = await updateWorkspace(workspaceId, { name, description })
 
     return NextResponse.json({
       success: true,
@@ -208,7 +170,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    await deleteWorkspace(workspaceId, user.id)
+    await deleteWorkspace(workspaceId)
 
     return NextResponse.json({
       success: true,
