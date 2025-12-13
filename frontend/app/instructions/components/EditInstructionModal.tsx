@@ -12,11 +12,11 @@ interface EditInstructionModalProps {
 
 export default function EditInstructionModal({ instruction, onClose, onUpdate }: EditInstructionModalProps) {
   const [title, setTitle] = useState(instruction.title)
-  const [content, setContent] = useState(instruction.content)
+  const [content, setContent] = useState(instruction.instructions)
 
   useEffect(() => {
     setTitle(instruction.title)
-    setContent(instruction.content)
+    setContent(instruction.instructions)
   }, [instruction])
 
   const handleSubmit = (e: React.FormEvent) => {

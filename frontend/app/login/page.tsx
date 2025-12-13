@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+import { Suspense } from 'react'
 
 // Dynamically import the animated background to avoid SSR issues
 const AnoAI = dynamic(() => import('@/app/components/UI/animated-shader-background'), { ssr: false })
@@ -129,7 +130,8 @@ export default function LoginPage() {
 
           {/* Login Card */}
           <div className="bg-white/20 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/30">
-            <form className="space-y-6" onSubmit={handleLogin}>
+            <Suspense fallback={null}>
+              <form className="space-y-6" onSubmit={handleLogin}>
               <div>
                 <input
                   id="email"
@@ -170,6 +172,7 @@ export default function LoginPage() {
                 </button>
               </div>
             </form>
+            </Suspense>
           </div>
         </div>
       </div>

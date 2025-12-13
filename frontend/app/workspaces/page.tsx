@@ -54,8 +54,10 @@ export default function WorkspacesPage() {
       const response = await fetch('/api/workspaces')
       const data = await response.json()
 
-      if (data.success) {
+      if (data.success && data.workspaces) {
         setWorkspaces(data.workspaces)
+      } else {
+        console.error('Failed to load workspaces:', data)
       }
     } catch (error) {
       console.error('Error loading workspaces:', error)
@@ -80,14 +82,16 @@ export default function WorkspacesPage() {
 
       if (data.success) {
         setIsCreateModalOpen(false)
+        // Refresh workspaces list
         await loadWorkspaces()
+        alert('Workspace created successfully!')
       } else {
         console.error('Failed to create workspace:', data.error)
-        alert('Failed to create workspace: ' + data.error)
+        alert('Failed to create workspace: ' + (data.error || 'Unknown error'))
       }
     } catch (error) {
       console.error('Error creating workspace:', error)
-      alert('Failed to create workspace')
+      alert('Failed to create workspace: ' + (error instanceof Error ? error.message : 'Unknown error'))
     }
   }
 

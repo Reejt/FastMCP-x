@@ -62,8 +62,7 @@ export async function getInstructionById(instructionId: string) {
 export async function createInstruction(
   workspaceId: string,
   title: string,
-  content: string,
-  instructions?: string,
+  instructions: string,
   isActive?: boolean
 ) {
   const supabase = await createClient()
@@ -78,7 +77,7 @@ export async function createInstruction(
     throw new Error('Instruction title cannot be empty')
   }
 
-  if (!content || content.trim().length === 0) {
+  if (!instructions || instructions.trim().length === 0) {
     throw new Error('Instruction content cannot be empty')
   }
 
@@ -87,8 +86,7 @@ export async function createInstruction(
     .insert({
       workspace_id: workspaceId,
       title: title.trim(),
-      content: content.trim(),
-      instructions: instructions?.trim() || null,
+      instructions: instructions.trim(),
       is_active: isActive || false,
       user_id: user.id
     })
@@ -129,20 +127,20 @@ export async function updateInstruction(
     updates.title = updates.title.trim()
   }
 
+  // Map content to instructions column in database
+  const dbUpdates: any = { ...updates }
   if (updates.content !== undefined) {
-    if (!updates.content || updates.content.trim().length === 0) {
-      throw new Error('Instruction content cannot be empty')
-    }
-    updates.content = updates.content.trim()
+    dbUpdates.instructions = updates.content.trim()
+    delete dbUpdates.content
   }
 
-  if (updates.instructions !== undefined && updates.instructions !== null) {
-    updates.instructions = updates.instructions.trim() || null
+  if (dbUpdates.instructions !== undefined && dbUpdates.instructions !== null) {
+    dbUpdates.instructions = dbUpdates.instructions.trim() || null
   }
 
   const { data, error } = await supabase
     .from('workspace_instructions')
-    .update(updates)
+    .update(dbUpdates)
     .eq('id', instructionId)
     .select()
     .single()

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { User, WorkspaceInstruction, WorkspaceSummary } from '@/app/types'
+import { User, Workspace, WorkspaceInstruction } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
 import CreateInstructionModal from './components/CreateInstructionModal'
 import EditInstructionModal from './components/EditInstructionModal'
@@ -16,7 +16,7 @@ export default function InstructionsPage() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [instructions, setInstructions] = useState<WorkspaceInstruction[]>([])
-  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingInstruction, setEditingInstruction] = useState<WorkspaceInstruction | null>(null)
@@ -58,7 +58,7 @@ export default function InstructionsPage() {
 
   const loadWorkspaces = async () => {
     try {
-      const response = await fetch('/api/workspaces?withSummary=true')
+      const response = await fetch('/api/workspaces')
       const data = await response.json()
 
       if (data.success) {
@@ -98,7 +98,7 @@ export default function InstructionsPage() {
     router.refresh()
   }
 
-  const handleCreateInstruction = async (title: string, content: string, isActive: boolean) => {
+  const handleCreateInstruction = async (title: string, instructions: string, isActive: boolean) => {
     if (!selectedWorkspaceId) {
       alert('Please select a workspace first')
       return
@@ -111,7 +111,7 @@ export default function InstructionsPage() {
         body: JSON.stringify({
           workspaceId: selectedWorkspaceId,
           title,
-          content,
+          instructions,
           isActive
         })
       })
@@ -138,7 +138,7 @@ export default function InstructionsPage() {
         body: JSON.stringify({
           instructionId,
           title,
-          content
+          instructions: content
         })
       })
 
