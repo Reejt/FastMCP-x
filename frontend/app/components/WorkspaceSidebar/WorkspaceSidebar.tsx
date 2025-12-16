@@ -32,8 +32,12 @@ export default function WorkspaceSidebar({
       const collapsed = saved === 'true'
       setIsCollapsed(collapsed)
       onToggleSidebar?.(collapsed)
+    } else {
+      // Default to not collapsed (sidebar visible)
+      setIsCollapsed(false)
+      onToggleSidebar?.(false)
     }
-  }, [])
+  }, [onToggleSidebar])
 
   // Listen for localStorage changes (for when parent expands the sidebar)
   useEffect(() => {
@@ -50,7 +54,7 @@ export default function WorkspaceSidebar({
     const interval = setInterval(handleStorageChange, 100)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [onToggleSidebar])
 
   const handleToggleCollapse = () => {
     const newState = !isCollapsed
@@ -59,7 +63,10 @@ export default function WorkspaceSidebar({
     onToggleSidebar?.(newState)
   }
 
+  console.log('WorkspaceSidebar render:', { workspace: workspace?.name, isCollapsed })
+
   if (!workspace) {
+    console.log('WorkspaceSidebar: No workspace provided, returning null')
     return null
   }
 
@@ -126,6 +133,22 @@ export default function WorkspaceSidebar({
                       {workspace.description || 'Set up instructions for Varys in this project'}
                     </div>
                   </div>
+                </button>
+              </div>
+
+              {/* Files Section */}
+              <div className="border-t border-gray-200 mt-4 pt-4">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase px-3 mb-2">
+                  Files - {workspace.name}
+                </h3>
+                <button
+                  onClick={() => router.push(`/workspaces/${workspace.id}/vault`)}
+                  className="w-full flex items-center gap-2 p-3 hover:bg-gray-100 rounded-lg transition-colors text-left"
+                >
+                  <svg className="w-5 h-5 flex-shrink-0" style={{ color: '#060606' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                  <span className="font-medium" style={{ color: '#060606' }}>Vault</span>
                 </button>
               </div>
             </div>

@@ -2,6 +2,11 @@
 .env
 .env.local
 
+# Node.js (root level - should use frontend/ for Node packages)
+node_modules/
+package.json
+package-lock.json
+
 # Python
 __pycache__/
 *.pyc

@@ -77,7 +77,8 @@ export async function createWorkspace(name: string, description?: string, userId
     .from('workspaces')
     .insert({
       user_id: userId || user.id,
-      name: name.trim()
+      name: name.trim(),
+      description: description || null
     })
     .select()
     .single()

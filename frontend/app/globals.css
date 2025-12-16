@@ -85,10 +85,17 @@ textarea {
   transition: all 0.2s ease-in-out;
 }
 
-/* Focus styles for accessibility */
-button:focus-visible,
+/* Remove default focus outlines */
+input:focus,
+textarea:focus,
 input:focus-visible,
 textarea:focus-visible {
+  outline: none;
+  border-color: inherit;
+}
+
+/* Focus styles for buttons only */
+button:focus-visible {
   outline: 2px solid #6366f1;
   outline-offset: 2px;
 }

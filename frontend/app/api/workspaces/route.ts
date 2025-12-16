@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
+    const workspaceId = searchParams.get('workspaceId')
     const includeArchived = searchParams.get('includeArchived') === 'true'
 
     const workspaces = await getUserWorkspaces(includeArchived)
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const workspace = await createWorkspace(name, description, user.id)
+    const workspace = await createWorkspace(name, description)
 
     return NextResponse.json({
       success: true,
@@ -124,7 +125,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Handle name/description updates
-    const workspace = await updateWorkspace(workspaceId, { name, description }, user.id)
+    const workspace = await updateWorkspace(workspaceId, { name, description })
 
     return NextResponse.json({
       success: true,
@@ -169,7 +170,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    await deleteWorkspace(workspaceId, user.id)
+    await deleteWorkspace(workspaceId)
 
     return NextResponse.json({
       success: true,

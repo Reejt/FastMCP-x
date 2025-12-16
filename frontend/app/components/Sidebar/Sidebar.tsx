@@ -20,28 +20,63 @@ export default function Sidebar({
   const router = useRouter()
   const pathname = usePathname()
   const [activeSection, setActiveSection] = useState<'chat' | 'vault' | 'workspaces' | 'instructions'>('chat')
-  const [workspaces] = useState<Workspace[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
+  const [isWorkspacesDropdownOpen, setIsWorkspacesDropdownOpen] = useState(true)
 
-  // Update active section based on current pathname
+  // Update active section based on current pathname and extract workspace ID
   useEffect(() => {
-    if (pathname.startsWith('/workspaces')) {
-      setActiveSection('workspaces')
-    } else if (pathname.startsWith('/vault')) {
-      setActiveSection('vault')
-    } else if (pathname.startsWith('/instructions')) {
-      setActiveSection('instructions')
-    } else if (pathname.startsWith('/dashboard')) {
-      setActiveSection('chat')
+    const updateActiveState = () => {
+      if (pathname.startsWith('/workspaces')) {
+        setActiveSection('workspaces')
+        // Extract workspace ID from pathname if viewing specific workspace
+        const match = pathname.match(/\/workspaces\/([^\/]+)/)
+        if (match) {
+          setCurrentWorkspaceId(match[1])
+        }
+      } else if (pathname.startsWith('/vault')) {
+        setActiveSection('vault')
+      } else if (pathname.startsWith('/instructions')) {
+        setActiveSection('instructions')
+      } else if (pathname.startsWith('/dashboard')) {
+        setActiveSection('chat')
+        // Extract workspace ID from URL query parameters
+        const urlParams = new URLSearchParams(window.location.search)
+        const workspaceId = urlParams.get('workspace')
+        setCurrentWorkspaceId(workspaceId)
+      }
     }
+
+    updateActiveState()
+
+    // Also listen for URL changes (for query parameter updates)
+    const interval = setInterval(updateActiveState, 100)
+    return () => clearInterval(interval)
   }, [pathname])
 
-  // Load collapse state from localStorage on mount
+  // Load collapse state and workspaces on mount
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
     if (saved !== null) {
       setIsCollapsed(saved === 'true')
     }
+
+    // Load workspaces from API
+    const loadWorkspaces = async () => {
+      try {
+        const response = await fetch('/api/workspaces')
+        const data = await response.json()
+
+        if (data.success && data.workspaces) {
+          setWorkspaces(data.workspaces)
+        }
+      } catch (error) {
+        console.error('Error loading workspaces:', error)
+      }
+    }
+
+    loadWorkspaces()
   }, [])
 
   // Note: forceCollapse is kept for future use but doesn't restrict manual toggling
@@ -74,7 +109,7 @@ export default function Sidebar({
         aria-expanded={!isCollapsed}
       >
         {/* Header */}
-        <div className={`border-b border-gray-200 transition-all duration-300 ${isCollapsed ? 'p-3' : 'p-4'}`}>
+        <div className="transition-all duration-300 py-3 px-4">
           <div className="flex items-center justify-between">
             <motion.h1
               initial={false}
@@ -82,8 +117,8 @@ export default function Sidebar({
                 opacity: isCollapsed ? 0 : 1,
                 width: isCollapsed ? 0 : 'auto',
               }}
-              transition={{ duration: 0.3 }}
-              className="text-xl font-medium tracking-wider whitespace-nowrap overflow-hidden"
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="text-base font-medium tracking-wide whitespace-nowrap overflow-hidden"
               style={{ color: '#060606' }}
             >
               VARYS AI
@@ -133,26 +168,63 @@ export default function Sidebar({
             />
 
             {/* Workspaces Section */}
-            <SidebarItem
-              icon={
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-              }
-              label="Workspaces"
-              isActive={activeSection === 'workspaces'}
-              isCollapsed={isCollapsed}
-              onClick={(e) => {
-                e.stopPropagation() // Prevent triggering sidebar click
-                setActiveSection('workspaces')
-                router.push('/workspaces')
-              }}
-              badge={workspaces.length > 0 ? workspaces.length : undefined}
-            />
+            <div className="relative group">
+              <SidebarItem
+                icon={
+                  <>
+                    {/* Folder icon - visible by default, hidden on hover */}
+                    <svg className="group-hover:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
 
-            {/* Sub-items for Workspaces when expanded and active */}
+                    {/* Chevron - appears in place of the icon on hover and toggles dropdown */}
+                    {!isCollapsed && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setIsWorkspacesDropdownOpen(!isWorkspacesDropdownOpen)
+                        }}
+                        className="hidden group-hover:inline-flex p-1 rounded hover:bg-gray-200 transition-colors"
+                        aria-label="Toggle workspaces dropdown"
+                      >
+                        <svg className={`w-4 h-4 text-gray-600 transition-transform ${isWorkspacesDropdownOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    )}
+                  </>
+                }
+                label="Workspaces"
+                isActive={activeSection === 'workspaces'}
+                isCollapsed={isCollapsed}
+                onClick={(e) => {
+                  e.stopPropagation() // Prevent triggering sidebar click
+                  // Navigate to workspaces page when clicking the main item
+                  setActiveSection('workspaces')
+                  router.push('/workspaces')
+                }}
+              />
+
+              {/* Plus icon on the right (create new workspace) */}
+              {!isCollapsed && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    router.push('/workspaces')
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-200 rounded transition-colors"
+                  aria-label="Create new workspace"
+                >
+                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Sub-items for Workspaces - visible when dropdown is open and sidebar is expanded */}
             <AnimatePresence>
-              {activeSection === 'workspaces' && !isCollapsed && (
+              {!isCollapsed && isWorkspacesDropdownOpen && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -163,16 +235,29 @@ export default function Sidebar({
                   {workspaces.length === 0 ? (
                     <p className="text-sm text-gray-400 px-4 py-2">No workspaces yet</p>
                   ) : (
-                    workspaces.map((workspace) => (
-                      <button
-                        key={workspace.id}
-                        onClick={() => router.push(`/workspaces/${workspace.id}`)}
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-lg transition-colors"
-                        style={{ color: '#060606' }}
-                      >
-                        {workspace.name}
-                      </button>
-                    ))
+                    <>
+                      {workspaces.slice(0, 5).map((workspace) => (
+                        <button
+                          key={workspace.id}
+                          onClick={() => router.push(`/workspaces/${workspace.id}`)}
+                          className={`w-full text-left px-4 py-2 text-sm rounded-lg transition-colors ${currentWorkspaceId === workspace.id
+                            ? 'bg-gray-200'
+                            : 'hover:bg-gray-100'
+                            }`}
+                          style={{ color: '#060606' }}
+                        >
+                          {workspace.name}
+                        </button>
+                      ))}
+                      {workspaces.length > 5 && (
+                        <button
+                          onClick={() => router.push('/workspaces')}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                          See all ({workspaces.length})
+                        </button>
+                      )}
+                    </>
                   )}
                   <button
                     onClick={() => router.push('/workspaces')}
@@ -221,7 +306,7 @@ export default function Sidebar({
         </div>
 
         {/* User Profile Section */}
-        <div className="p-3 border-t border-gray-200">
+        <div className="p-3">
           {!isCollapsed ? (
             <motion.div
               initial={{ opacity: 0 }}

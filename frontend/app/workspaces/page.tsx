@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Workspace, User } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
 import WorkspaceCard from './components/WorkspaceCard'
-import CreateWorkspaceModal from './components/CreateWorkspaceModal'
 import EditWorkspaceModal from './components/EditWorkspaceModal'
 
 export default function WorkspacesPage() {
@@ -14,7 +13,6 @@ export default function WorkspacesPage() {
   const supabase = createClient()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -70,30 +68,7 @@ export default function WorkspacesPage() {
     router.refresh()
   }
 
-  const handleCreateWorkspace = async (name: string, description: string) => {
-    try {
-      const response = await fetch('/api/workspaces', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description })
-      })
 
-      const data = await response.json()
-
-      if (data.success) {
-        setIsCreateModalOpen(false)
-        // Refresh workspaces list
-        await loadWorkspaces()
-        alert('Workspace created successfully!')
-      } else {
-        console.error('Failed to create workspace:', data.error)
-        alert('Failed to create workspace: ' + (data.error || 'Unknown error'))
-      }
-    } catch (error) {
-      console.error('Error creating workspace:', error)
-      alert('Failed to create workspace: ' + (error instanceof Error ? error.message : 'Unknown error'))
-    }
-  }
 
   const handleDeleteWorkspace = async (workspaceId: string) => {
     if (!confirm('Are you sure you want to delete this workspace? This will also delete all documents and instructions.')) {
@@ -179,7 +154,7 @@ export default function WorkspacesPage() {
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-2xl font-semibold text-gray-900">Workspaces</h1>
               <button
-                onClick={() => setIsCreateModalOpen(true)}
+                onClick={() => router.push('/workspaces/create')}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -218,7 +193,7 @@ export default function WorkspacesPage() {
                 <p className="text-gray-600 text-lg mb-2">No workspaces yet</p>
                 <p className="text-gray-500 text-sm mb-6">Create your first workspace to get started</p>
                 <button
-                  onClick={() => setIsCreateModalOpen(true)}
+                  onClick={() => router.push('/workspaces/create')}
                   className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -232,7 +207,7 @@ export default function WorkspacesPage() {
                 <p className="text-gray-600">No workspaces match your search</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 {filteredWorkspaces.map((workspace) => (
                   <WorkspaceCard
                     key={workspace.id}
@@ -244,13 +219,6 @@ export default function WorkspacesPage() {
               </div>
             )}
           </div>
-
-          {/* Create Workspace Modal */}
-          <CreateWorkspaceModal
-            isOpen={isCreateModalOpen}
-            onCloseAction={() => setIsCreateModalOpen(false)}
-            onCreateAction={handleCreateWorkspace}
-          />
 
           {/* Edit Workspace Modal */}
           {editingWorkspace && (
