@@ -9,13 +9,11 @@ import SidebarItem from './SidebarItem'
 interface SidebarProps {
   user: User
   onSignOutAction: () => void
-  forceCollapse?: boolean
 }
 
 export default function Sidebar({
   user,
   onSignOutAction,
-  forceCollapse = false,
 }: SidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -27,33 +25,25 @@ export default function Sidebar({
 
   // Update active section based on current pathname and extract workspace ID
   useEffect(() => {
-    const updateActiveState = () => {
-      if (pathname.startsWith('/workspaces')) {
-        setActiveSection('workspaces')
-        // Extract workspace ID from pathname if viewing specific workspace
-        const match = pathname.match(/\/workspaces\/([^\/]+)/)
-        if (match) {
-          setCurrentWorkspaceId(match[1])
-        }
-      } else if (pathname.startsWith('/vault')) {
-        setActiveSection('vault')
-      } else if (pathname.startsWith('/instructions')) {
-        setActiveSection('instructions')
-      } else if (pathname.startsWith('/dashboard')) {
-        setActiveSection('chat')
-        // Extract workspace ID from URL query parameters
-        const urlParams = new URLSearchParams(window.location.search)
-        const workspaceId = urlParams.get('workspace')
-        setCurrentWorkspaceId(workspaceId)
+    if (pathname.startsWith('/workspaces')) {
+      setActiveSection('workspaces')
+      // Extract workspace ID from pathname if viewing specific workspace
+      const match = pathname.match(/\/workspaces\/([^\/]+)/)
+      if (match) {
+        setCurrentWorkspaceId(match[1])
       }
+    } else if (pathname.startsWith('/vault')) {
+      setActiveSection('vault')
+    } else if (pathname.startsWith('/instructions')) {
+      setActiveSection('instructions')
+    } else if (pathname.startsWith('/dashboard')) {
+      setActiveSection('chat')
+      // Extract workspace ID from URL query parameters
+      const urlParams = new URLSearchParams(window.location.search)
+      const workspaceId = urlParams.get('workspace')
+      setCurrentWorkspaceId(workspaceId)
     }
-
-    updateActiveState()
-
-    // Also listen for URL changes (for query parameter updates)
-    const interval = setInterval(updateActiveState, 100)
-    return () => clearInterval(interval)
-  }, [pathname])
+  }, [pathname]) // React to pathname changes only
 
   // Load collapse state and workspaces on mount
   useEffect(() => {
@@ -106,7 +96,6 @@ export default function Sidebar({
         style={{ backgroundColor: '#fcfcfc' }}
         role="navigation"
         aria-label="Main navigation"
-        aria-expanded={!isCollapsed}
       >
         {/* Header */}
         <div className="transition-all duration-300 py-3 px-4">

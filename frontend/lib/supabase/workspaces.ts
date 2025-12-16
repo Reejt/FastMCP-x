@@ -9,7 +9,7 @@ import type { Workspace } from '@/app/types'
 /**
  * Get all workspaces for the current user (excluding archived)
  */
-export async function getUserWorkspaces(includeArchived: boolean = false) {
+export async function getUserWorkspaces(_includeArchived: boolean = false) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -100,7 +100,7 @@ export async function updateWorkspace(
     name?: string
     description?: string | null
   },
-  userId?: string
+  _userId?: string
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -141,7 +141,7 @@ export async function updateWorkspace(
  * Permanently delete a workspace
  * WARNING: This cascades to all documents and instructions!
  */
-export async function deleteWorkspace(workspaceId: string, userId?: string) {
+export async function deleteWorkspace(workspaceId: string, _userId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 

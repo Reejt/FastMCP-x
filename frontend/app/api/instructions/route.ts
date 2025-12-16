@@ -13,8 +13,7 @@ import {
   updateInstruction,
   activateInstruction,
   deactivateInstruction,
-  deleteInstruction,
-  switchActiveInstruction
+  deleteInstruction
 } from '@/lib/supabase/instructions'
 
 /**
@@ -43,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     if (!workspaceId) {
       return NextResponse.json(
-        { 
+        {
           success: false,
           error: 'Workspace ID is required'
         },
@@ -60,7 +59,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching instructions:', error)
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to fetch instructions'
       },
@@ -80,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     if (!workspaceId || !title || !instructions) {
       return NextResponse.json(
-        { 
+        {
           success: false,
           error: 'Missing required fields: workspaceId, title, instructions'
         },
@@ -105,7 +104,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating instruction:', error)
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to create instruction'
       },
@@ -125,7 +124,7 @@ export async function PATCH(request: NextRequest) {
 
     if (!instructionId) {
       return NextResponse.json(
-        { 
+        {
           success: false,
           error: 'Instruction ID is required'
         },
@@ -140,13 +139,13 @@ export async function PATCH(request: NextRequest) {
     } else if (deactivate) {
       instruction = await deactivateInstruction(instructionId)
     } else if (title !== undefined || instructions !== undefined) {
-      const updates: any = {}
+      const updates: { title?: string; content?: string } = {}
       if (title !== undefined) updates.title = title
       if (instructions !== undefined) updates.content = instructions
       instruction = await updateInstruction(instructionId, updates)
     } else {
       return NextResponse.json(
-        { 
+        {
           success: false,
           error: 'No updates provided'
         },
@@ -166,7 +165,7 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     console.error('Error updating instruction:', error)
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to update instruction'
       },
@@ -186,7 +185,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!instructionId) {
       return NextResponse.json(
-        { 
+        {
           success: false,
           error: 'Instruction ID is required'
         },
@@ -196,7 +195,7 @@ export async function DELETE(request: NextRequest) {
 
     // Get instruction before deleting to know which workspace to clear cache for
     const instruction = await getInstructionById(instructionId)
-    
+
     await deleteInstruction(instructionId)
 
     // Clear backend cache after deletion
@@ -211,7 +210,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     console.error('Error deleting instruction:', error)
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to delete instruction'
       },

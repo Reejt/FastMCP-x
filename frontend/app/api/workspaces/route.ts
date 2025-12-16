@@ -30,10 +30,10 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const workspaceId = searchParams.get('workspaceId')
-    const includeArchived = searchParams.get('includeArchived') === 'true'
+    const _workspaceId = searchParams.get('workspaceId')
+    const _includeArchived = searchParams.get('includeArchived') === 'true'
 
-    const workspaces = await getUserWorkspaces(includeArchived)
+    const workspaces = await getUserWorkspaces(_includeArchived)
 
     return NextResponse.json({
       success: true,
@@ -115,7 +115,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { workspaceId, name, description, archive } = body
+    const { workspaceId, name, description } = body
 
     if (!workspaceId) {
       return NextResponse.json(

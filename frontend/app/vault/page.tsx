@@ -13,7 +13,7 @@ export default function VaultPage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
-  const [uploadedFiles, setUploadedFiles] = useState<any[]>([])
+  const [uploadedFiles, setUploadedFiles] = useState<{ id: string; name: string; size: number; uploadedAt: string; filePath: string; status: string }[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -54,7 +54,7 @@ export default function VaultPage() {
       const result = await response.json()
       if (result.success && result.files) {
         // Transform Supabase files to match the UI format
-        const transformedDocs = result.files.map((file: any) => {
+        const transformedDocs = result.files.map((file: { id: string; file_name: string; size_bytes: number; uploaded_at: string; file_path: string; status: string }) => {
           // Remove temporary file prefix (tmpXXXX_XXXX_) if present
           let displayName = file.file_name
           if (displayName.startsWith('tmp')) {
@@ -245,7 +245,7 @@ export default function VaultPage() {
                               </svg>
                             </div>
                           </div>
-                          
+
                           {/* File Info */}
                           <div className="flex-1 min-w-0">
                             <h3 className="text-sm font-medium text-gray-900 truncate">{file.name}</h3>

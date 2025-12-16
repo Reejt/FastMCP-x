@@ -72,7 +72,7 @@ export interface DocumentEmbedding {
   chunk_index: number           // Index of the chunk within document (integer, NOT nullable)
   chunk_text: string            // Original text chunk (NOT nullable)
   embedding: number[]           // Vector embedding array (NOT nullable, USER-DEFINED vector type)
-  metadata: Record<string, any> | null // Optional metadata as JSONB (nullable)
+  metadata: Record<string, unknown> | null // Optional metadata as JSONB (nullable)
   created_at: string            // ISO timestamp with time zone (NOT nullable)
   updated_at: string            // ISO timestamp with time zone (NOT nullable)
 }

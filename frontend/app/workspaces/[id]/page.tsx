@@ -2,12 +2,24 @@
 
 import { useRouter, useParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
-import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
-import ChatContainer from '@/app/components/Chat/ChatContainer'
-import ChatInput from '@/app/components/Chat/ChatInput'
+
+// Dynamic imports for heavy components
+const WorkspaceSidebar = dynamic(() => import('@/app/components/WorkspaceSidebar'), {
+  loading: () => <div className="w-64 h-screen bg-gray-50 animate-pulse" />,
+  ssr: false
+})
+const ChatContainer = dynamic(() => import('@/app/components/Chat/ChatContainer'), {
+  loading: () => <div className="flex-1 bg-white" />,
+  ssr: false
+})
+const ChatInput = dynamic(() => import('@/app/components/Chat/ChatInput'), {
+  loading: () => <div className="h-16 bg-white border-t" />,
+  ssr: false
+})
 
 export default function WorkspacePage() {
   const router = useRouter()
@@ -94,7 +106,7 @@ export default function WorkspacePage() {
           if (storedWorkspaces) {
             const workspaces = JSON.parse(storedWorkspaces)
             console.log('All workspaces from localStorage:', workspaces)
-            const workspace = workspaces.find((w: any) => w.id === workspaceId)
+            const workspace = workspaces.find((w: Workspace) => w.id === workspaceId)
             if (workspace) {
               console.log('Workspace found in localStorage:', workspace)
               setCurrentWorkspace({
@@ -199,6 +211,7 @@ export default function WorkspacePage() {
         )
       })
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, workspaceId, currentChatId])
 
   const handleChatSelect = (chatId: string) => {
@@ -394,7 +407,6 @@ export default function WorkspacePage() {
       <Sidebar
         user={user}
         onSignOutAction={handleSignOut}
-        forceCollapse={shouldCollapseMainSidebar}
       />
 
       {/* Workspace Sidebar */}
