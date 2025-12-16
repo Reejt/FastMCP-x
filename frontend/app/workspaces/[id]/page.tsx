@@ -440,7 +440,11 @@ export default function WorkspacePage() {
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
-              <span className="text-gray-900 font-medium">Chat</span>
+              <span className="text-gray-900 font-medium">
+                {chatSessions[currentChatId]?.messages[0]?.content
+                  ? chatSessions[currentChatId].messages[0].content.slice(0, 30) + (chatSessions[currentChatId].messages[0].content.length > 30 ? '...' : '')
+                  : 'New Chat'}
+              </span>
             </nav>
           </div>
         )}
