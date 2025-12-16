@@ -29,12 +29,12 @@ export default function SidebarItem({
         w-full group relative flex items-center transition-all duration-300 ease-in-out
         px-3 py-3 rounded-lg
         ${isActive
-          ? 'bg-indigo-50 border border-indigo-200'
+          ? 'bg-gray-200'
           : 'hover:bg-gray-100'
         }
         ${className}
       `}
-      style={{ color: isActive ? '#4F46E5' : '#060606' }}
+      style={{ color: '#060606' }}
       aria-label={typeof label === 'string' ? label : undefined}
       aria-current={isActive ? 'page' : undefined}
       role="button"
@@ -42,7 +42,7 @@ export default function SidebarItem({
     >
       {/* Icon Container - Fixed position */}
       <div className="flex-shrink-0 w-5 h-5">
-        <div className={`w-5 h-5 ${isActive ? 'text-indigo-700' : 'group-hover:text-gray-900'}`} style={{ color: isActive ? '#4F46E5' : '#060606' }}>
+        <div className={`w-5 h-5 group-hover:text-gray-900`} style={{ color: '#060606' }}>
           {icon}
         </div>
       </div>
