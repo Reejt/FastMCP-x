@@ -1,28 +1,30 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { WorkspaceSummary, WorkspaceInstruction } from '@/app/types'
+import { WorkspaceInstruction } from '@/app/types'
 
 interface EditWorkspaceModalProps {
-  workspace: WorkspaceSummary
+  workspaceId: string
+  workspaceName: string
+  workspaceDescription: string | null
   onCloseAction: () => void
   onUpdateAction: (workspaceId: string, name: string, description: string | null) => void
 }
 
-export default function EditWorkspaceModal({ workspace, onCloseAction, onUpdateAction }: EditWorkspaceModalProps) {
-  const [name, setName] = useState(workspace.name)
-  const [description, setDescription] = useState(workspace.description || '')
+export default function EditWorkspaceModal({ workspaceId, workspaceName, workspaceDescription, onCloseAction, onUpdateAction }: EditWorkspaceModalProps) {
+  const [name, setName] = useState(workspaceName)
+  const [description, setDescription] = useState(workspaceDescription || '')
   const [instructions, setInstructions] = useState<WorkspaceInstruction[]>([])
   const [loadingInstructions, setLoadingInstructions] = useState(true)
   const [activeTab, setActiveTab] = useState<'details' | 'instructions'>('details')
 
   useEffect(() => {
     loadInstructions()
-  }, [workspace.id])
+  }, [workspaceId])
 
   const loadInstructions = async () => {
     try {
-      const response = await fetch(`/api/instructions?workspaceId=${workspace.id}`)
+      const response = await fetch(`/api/instructions?workspaceId=${workspaceId}`)
       const data = await response.json()
 
       if (data.success) {
@@ -37,24 +39,24 @@ export default function EditWorkspaceModal({ workspace, onCloseAction, onUpdateA
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onUpdateAction(workspace.id, name, description || null)
+    onUpdateAction(workspaceId, name, description || null)
   }
 
   const handleCreateInstruction = async () => {
     const title = prompt('Instruction Title:')
     if (!title) return
 
-    const content = prompt('Instruction Content (boilerplate for now):')
-    if (!content) return
+    const instructions = prompt('Instruction Content (boilerplate for now):')
+    if (!instructions) return
 
     try {
       const response = await fetch('/api/instructions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          workspaceId: workspace.id,
+          workspaceId: workspaceId,
           title,
-          content,
+          instructions,
           isActive: instructions.length === 0 // First instruction is active by default
         })
       })
@@ -251,7 +253,7 @@ export default function EditWorkspaceModal({ workspace, onCloseAction, onUpdateA
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-gray-600 mt-1 line-clamp-2">{instruction.content}</p>
+                          <p className="text-sm text-gray-600 mt-1 line-clamp-2">{instruction.instructions}</p>
                         </div>
 
                         <div className="flex items-center gap-2 ml-4">

@@ -12,6 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 import os
 from dotenv import load_dotenv
+from server.query_handler import semantic_similarity_to_last_message, query_model 
 
 # Load environment variables from server/.env.local
 env_path = os.path.join(os.path.dirname(__file__), '.env.local')
@@ -24,7 +25,7 @@ load_dotenv()
 TAVILY_API_BASE_URL = "https://api.tavily.com/search"
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "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")  # Store API key in environment variable
 
-def tavily_web_search(query, **kwargs):
+def tavily_web_search(query,conversation_history: list = None, **kwargs):
     """
     Perform a web search using Tavily API and return extracted content from top result
     
@@ -55,14 +56,34 @@ def tavily_web_search(query, **kwargs):
         
         # Extract and return only the top result content
         top_content = extract_top_result_content(search_response)
-        return top_content
+
+        if top_content.startswith("Error") or top_content.startswith("HTTP error") or top_content.startswith("Request failed"):
+            return f"Search error: {top_content}"
+        
+        if top_content in ["No URL found in top result", "No search results found", "No results in response"]:
+            return f"No search results found for query: '{query}'"
     
-    except requests.exceptions.HTTPError as e:
-        return f"HTTP error: {e}, status_code: {response.status_code}"
-    except requests.exceptions.RequestException as e:
-        return f"Request failed: {e}"
+        similarity_to_last = semantic_similarity_to_last_message(query,conversation_history)
+
+         # Build enhanced prompt with conversation continuity
+        conversation_context = ""
+        if similarity_to_last >= 0.6:
+            conversation_context = f"\n\nNote: This question is semantically similar (similarity: {similarity_to_last:.2f}) to the previous message, suggesting it's a continuation of the conversation. Maintain context and reference previous discussion when relevant."
+        
+        # Build prompt for LLM
+        prompt = f"Answer this question using the content below:\nQuestion: {query}\n\nContent:\n{top_content[:4000]}{conversation_context}"
+        
+        llm_response = query_model(prompt)
+        
+        # Append semantic similarity metadata to response if available
+        if similarity_to_last > 0.0:
+            llm_response += f"\n\n---\n**Semantic Similarity to Last Message:** {similarity_to_last:.3f}"
+        
+        return llm_response
+    
     except Exception as e:
-        return f"Unexpected error: {e}"
+        return f"Error: {str(e)}" 
+
 
 
 def extract_top_result_content(search_response):

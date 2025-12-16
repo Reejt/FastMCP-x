@@ -285,45 +285,15 @@ def get_instruction_preview(workspace_id: str) -> str:
         return "No active instruction set for this workspace"
     
     title = instruction.get("title", "Untitled")
-    content = instruction.get("content", "")
+    instructions = instruction.get("instructions", "")
     
     # Truncate content for preview
     preview_length = 200
-    if len(content) > preview_length:
-        content_preview = content[:preview_length] + "..."
+    if len(instructions) > preview_length:
+        content_preview = instructions[:preview_length] + "..."
     else:
-        content_preview = content
+        content_preview = instructions
     
     return f"Active Instruction: {title}\n{content_preview}"
 
 
-# Example usage
-if __name__ == "__main__":
-    # Test fetching instructions
-    test_workspace_id = "test-workspace-123"
-    
-    print("Testing instruction system...")
-    print("-" * 50)
-    
-    # Get active instruction
-    instruction = get_active_instruction(test_workspace_id)
-    if instruction:
-        print(f"Found active instruction:")
-        print(f"  Title: {instruction.get('title')}")
-        print(f"  Content: {instruction.get('content')[:100]}...")
-    else:
-        print("No active instruction found")
-    
-    print("-" * 50)
-    
-    # Test system prompt building
-    system_prompt = build_system_prompt(test_workspace_id, "You are a helpful assistant.")
-    print(f"Generated system prompt:\n{system_prompt}")
-    
-    print("-" * 50)
-    
-    # Test query with instructions
-    test_query = "What is Python?"
-    response = query_with_instructions(test_query, test_workspace_id)
-    print(f"Query: {test_query}")
-    print(f"Response: {response[:200]}...")

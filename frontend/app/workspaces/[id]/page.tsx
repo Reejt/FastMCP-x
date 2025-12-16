@@ -73,12 +73,9 @@ export default function WorkspacePage() {
 
     const loadWorkspace = async () => {
       try {
-        // Try to fetch from API first
         console.log('Fetching workspace from API...')
         const response = await fetch(`/api/workspaces?workspaceId=${workspaceId}`)
         const data = await response.json()
-
-        console.log('API response:', data)
 
         if (data.success && data.workspace) {
           console.log('Workspace loaded from API:', data.workspace)
@@ -88,26 +85,7 @@ export default function WorkspacePage() {
             updated_at: data.workspace.updated_at
           })
         } else {
-          // Fallback to localStorage
-          console.log('API failed, trying localStorage fallback...')
-          const storedWorkspaces = localStorage.getItem('myWorkspaces')
-          if (storedWorkspaces) {
-            const workspaces = JSON.parse(storedWorkspaces)
-            console.log('All workspaces from localStorage:', workspaces)
-            const workspace = workspaces.find((w: any) => w.id === workspaceId)
-            if (workspace) {
-              console.log('Workspace found in localStorage:', workspace)
-              setCurrentWorkspace({
-                ...workspace,
-                created_at: workspace.createdAt || workspace.created_at,
-                updated_at: workspace.updatedAt || workspace.updated_at
-              })
-            } else {
-              console.error('Workspace not found in localStorage')
-            }
-          } else {
-            console.error('No workspaces in localStorage')
-          }
+          console.error('Failed to load workspace:', data.error || 'Unknown error')
         }
       } catch (error) {
         console.error('Error loading workspace:', error)

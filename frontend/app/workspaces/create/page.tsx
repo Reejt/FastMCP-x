@@ -49,27 +49,48 @@ export default function CreateWorkspacePage() {
     setIsSubmitting(true)
 
     try {
-      // Create workspace with description and instructions
-      const response = await fetch('/api/workspaces', {
+      // 1. Create workspace with name and description
+      const workspaceResponse = await fetch('/api/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim() || 'New Workspace',
-          description: description.trim(),
-          instructions: instructions.trim()
+          description: description.trim()
         })
       })
 
-      const data = await response.json()
+      const workspaceData = await workspaceResponse.json()
 
-      if (data.success && data.workspace) {
-        // Navigate to the workspace chat page
-        router.push(`/workspaces/${data.workspace.id}`)
-      } else {
-        console.error('Failed to create workspace:', data.error)
-        alert('Failed to create workspace: ' + (data.error || 'Unknown error'))
+      if (!workspaceData.success || !workspaceData.workspace) {
+        console.error('Failed to create workspace:', workspaceData.error)
+        alert('Failed to create workspace: ' + (workspaceData.error || 'Unknown error'))
         setIsSubmitting(false)
+        return
       }
+
+      // 2. Create instruction if provided
+      if (instructions.trim()) {
+        const instructionResponse = await fetch('/api/instructions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workspaceId: workspaceData.workspace.id,
+            title: 'Default Instructions',
+            instructions: instructions.trim(),
+            isActive: true
+          })
+        })
+
+        const instructionData = await instructionResponse.json()
+
+        if (!instructionData.success) {
+          console.warn('Failed to create instructions:', instructionData.error)
+          // Don't fail - workspace was created successfully
+        }
+      }
+
+      // 3. Navigate to the workspace chat page
+      router.push(`/workspaces/${workspaceData.workspace.id}`)
     } catch (error) {
       console.error('Error creating workspace:', error)
       alert('Failed to create workspace: ' + (error instanceof Error ? error.message : 'Unknown error'))

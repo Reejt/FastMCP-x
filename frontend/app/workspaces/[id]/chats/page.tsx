@@ -8,7 +8,7 @@ import Sidebar from '@/app/components/Sidebar/Sidebar'
 import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
 import Breadcrumb from '@/app/components/Breadcrumb'
 
-interface VaultFile {
+interface ChatFile {
   name: string
   size: number
   uploadedAt: string
@@ -17,7 +17,7 @@ interface VaultFile {
   fileType: string
 }
 
-export default function WorkspaceVaultPage() {
+export default function WorkspaceChatPage() {
   const router = useRouter()
   const params = useParams()
   const supabase = createClient()
@@ -27,7 +27,7 @@ export default function WorkspaceVaultPage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
-  const [uploadedFiles, setUploadedFiles] = useState<VaultFile[]>([])
+  const [uploadedFiles, setUploadedFiles] = useState<ChatFile[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [shouldCollapseMainSidebar, setShouldCollapseMainSidebar] = useState(false)
@@ -341,7 +341,7 @@ export default function WorkspaceVaultPage() {
             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
-            <span className="text-gray-900 font-medium">Vault</span>
+            <span className="text-gray-900 font-medium">Chats</span>
           </nav>
         </div>
 
@@ -349,7 +349,7 @@ export default function WorkspaceVaultPage() {
         <div className="flex-1 overflow-auto px-8 pb-8">
           <div className="mb-8 flex items-center justify-between pt-8">
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">Vault</h1>
+              <h1 className="text-2xl font-semibold text-gray-900">Chats</h1>
             </div>
             <div className="flex items-center gap-4">
               <div className="relative">

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
   getUserWorkspaces,
+  getWorkspaceById,
   createWorkspace,
   updateWorkspace,
   deleteWorkspace
@@ -14,8 +15,8 @@ import {
 
 /**
  * GET /api/workspaces
- * Get all workspaces for the current user
- * Query params: includeArchived (boolean)
+ * Get all workspaces for the current user, or a specific workspace by ID
+ * Query params: workspaceId (optional), includeArchived (boolean)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -33,6 +34,16 @@ export async function GET(request: NextRequest) {
     const workspaceId = searchParams.get('workspaceId')
     const includeArchived = searchParams.get('includeArchived') === 'true'
 
+    // If workspaceId is provided, fetch that specific workspace
+    if (workspaceId) {
+      const workspace = await getWorkspaceById(workspaceId)
+      return NextResponse.json({
+        success: true,
+        workspace
+      })
+    }
+
+    // Otherwise, fetch all workspaces for the user
     const workspaces = await getUserWorkspaces(includeArchived)
 
     return NextResponse.json({
@@ -44,6 +55,7 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching workspaces:', error)
     return NextResponse.json(
       {
+        success: false,
         error: 'Failed to fetch workspaces',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
