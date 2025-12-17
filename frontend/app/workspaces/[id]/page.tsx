@@ -89,7 +89,7 @@ export default function WorkspacePage() {
 
     const loadWorkspace = async () => {
       try {
-        console.log('Fetching workspace from Supabase API...')
+        console.log('Fetching workspace from API...')
         const response = await fetch(`/api/workspaces?workspaceId=${workspaceId}`)
 
         if (!response.ok) {

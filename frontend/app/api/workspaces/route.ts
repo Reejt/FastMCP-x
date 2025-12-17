@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
   getUserWorkspaces,
+  getWorkspaceById,
   createWorkspace,
   updateWorkspace,
   deleteWorkspace
@@ -14,10 +15,8 @@ import {
 
 /**
  * GET /api/workspaces
- * Get all workspaces for the current user OR a specific workspace by ID
- * Query params: 
- *   - workspaceId (string): If provided, returns single workspace
- *   - includeArchived (boolean): If true, includes archived workspaces
+ * Get all workspaces for the current user, or a specific workspace by ID
+ * Query params: workspaceId (optional), includeArchived (boolean)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -33,21 +32,19 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const workspaceId = searchParams.get('workspaceId')
-    const _includeArchived = searchParams.get('includeArchived') === 'true'
+    const includeArchived = searchParams.get('includeArchived') === 'true'
 
-    // If workspaceId is provided, return single workspace
+    // If workspaceId is provided, fetch that specific workspace
     if (workspaceId) {
-      const { getWorkspaceById } = await import('@/lib/supabase/workspaces')
       const workspace = await getWorkspaceById(workspaceId)
-
       return NextResponse.json({
         success: true,
         workspace
       })
     }
 
-    // Otherwise, return all workspaces
-    const workspaces = await getUserWorkspaces(_includeArchived)
+    // Otherwise, fetch all workspaces for the user
+    const workspaces = await getUserWorkspaces(includeArchived)
 
     return NextResponse.json({
       success: true,
@@ -58,6 +55,7 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching workspaces:', error)
     return NextResponse.json(
       {
+        success: false,
         error: 'Failed to fetch workspaces',
         details: error instanceof Error ? error.message : 'Unknown error'
       },

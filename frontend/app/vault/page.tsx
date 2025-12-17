@@ -66,9 +66,16 @@ export default function VaultPage() {
               displayName = parts[1]
             }
           }
+          
+          // Extract file extension
+          const lastDotIndex = displayName.lastIndexOf('.')
+          const extension = lastDotIndex > -1 ? displayName.substring(lastDotIndex + 1).toLowerCase() : ''
+          const nameWithoutExtension = lastDotIndex > -1 ? displayName.substring(0, lastDotIndex) : displayName
+          
           return {
             id: file.id,
-            name: displayName,
+            name: nameWithoutExtension,
+            extension: extension,
             size: file.size_bytes || 0,
             uploadedAt: file.uploaded_at,
             filePath: file.file_path,
@@ -199,14 +206,14 @@ export default function VaultPage() {
       {/* Sidebar */}
       <Sidebar user={user} onSignOutAction={handleSignOut} />
 
-      {/* Main Vault Area */}
+      {/* Main Chats Area */}
       <div className="flex-1 overflow-auto">
         <div className="min-h-screen bg-white">
           {/* Header */}
           <div className="border-b border-gray-200">
             <div className="max-w-7xl mx-auto px-6 py-6">
               <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-semibold text-gray-900">Vault</h1>
+                <h1 className="text-3xl font-semibold text-gray-900">Chats</h1>
                 <button
                   onClick={triggerFileSelect}
                   disabled={uploading}
@@ -248,7 +255,10 @@ export default function VaultPage() {
 
                           {/* File Info */}
                           <div className="flex-1 min-w-0">
-                            <h3 className="text-sm font-medium text-gray-900 truncate">{file.name}</h3>
+                            <div>
+                              <h3 className="text-base font-medium text-gray-900 truncate">{file.name}</h3>
+                              {file.extension && <p className="text-xs text-gray-400">{file.extension.toUpperCase()}</p>}
+                            </div>
                             <div className="flex items-center gap-3 mt-1">
                               <p className="text-xs text-gray-500">
                                 {file.size > 0 ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown size'}
@@ -300,7 +310,7 @@ export default function VaultPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                   </svg>
                 </div>
-                <p className="text-gray-600 text-lg mb-2">Your Vault is Empty</p>
+                <p className="text-gray-600 text-lg mb-2">Your Chats is Empty</p>
                 <p className="text-gray-500 text-sm mb-6">
                   Upload documents, images, and other files to access them in your conversations
                 </p>

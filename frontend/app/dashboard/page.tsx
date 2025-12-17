@@ -310,8 +310,8 @@ export default function DashboardPage() {
     setMessages((prev) => [...prev, assistantMessage])
 
     try {
-      // Prepare conversation history from existing messages (limit to last 10 messages for context)
-      const conversation_history = messages.slice(-10).map(msg => ({
+      // Prepare conversation history from existing messages (limit to last 2 messages for context)
+      const conversation_history = messages.slice(-2).map(msg => ({
         role: msg.role,
         content: msg.content
       }))

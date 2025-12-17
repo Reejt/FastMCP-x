@@ -61,7 +61,8 @@ export async function POST(request: NextRequest) {
         const { data: newWorkspace, error: createError } = await supabase
           .from('workspaces')
           .insert({
-            name: 'Personal Workspace'
+            name: 'Personal Workspace',
+            user_id: user.id
           })
           .select('id')
           .single();

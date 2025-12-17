@@ -1,5 +1,17 @@
+/**
+ * Chats API Route
+ * Connects frontend page.tsx to Supabase via chats.ts service layer
+ * 
+ * Flow: page.tsx → /api/chats/route.ts → chats.ts → Supabase
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import {
+  getWorkspaceChats,
+  createChatMessage,
+  deleteChatMessage
+} from '@/lib/supabase/chats'
 
 /**
  * GET /api/chats?workspaceId=xxx
@@ -27,22 +39,10 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const { data, error } = await supabase
-      .from('chats')
-      .select('*')
-      .eq('workspace_id', workspaceId)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true })
+    // Use service layer function
+    const chats = await getWorkspaceChats(workspaceId)
 
-    if (error) {
-      console.error('Error fetching chats:', error)
-      return NextResponse.json(
-        { error: 'Failed to fetch chats' },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({ success: true, chats: data })
+    return NextResponse.json({ success: true, chats })
   } catch (error) {
     console.error('API error:', error)
     return NextResponse.json(
@@ -85,26 +85,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { data, error } = await supabase
-      .from('chats')
-      .insert({
-        workspace_id: workspaceId,
-        user_id: user.id,
-        role: role,
-        message: message.trim()
-      })
-      .select()
-      .single()
+    // Use service layer function
+    const chat = await createChatMessage(workspaceId, role, message)
 
-    if (error) {
-      console.error('Error creating chat message:', error)
-      return NextResponse.json(
-        { error: 'Failed to create chat message' },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({ success: true, chat: data })
+    return NextResponse.json({ success: true, chat })
   } catch (error) {
     console.error('API error:', error)
     return NextResponse.json(
@@ -140,19 +124,8 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    const { error } = await supabase
-      .from('chats')
-      .delete()
-      .eq('id', chatId)
-      .eq('user_id', user.id)
-
-    if (error) {
-      console.error('Error deleting chat message:', error)
-      return NextResponse.json(
-        { error: 'Failed to delete chat message' },
-        { status: 500 }
-      )
-    }
+    // Use service layer function
+    await deleteChatMessage(chatId)
 
     return NextResponse.json({ success: true })
   } catch (error) {
