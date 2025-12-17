@@ -2,13 +2,24 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace, WorkspaceInstruction, Chat } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
-import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
-import ChatContainer from '@/app/components/Chat/ChatContainer'
-import ChatInput from '@/app/components/Chat/ChatInput'
-import Breadcrumb from '@/app/components/Breadcrumb'
+
+// Dynamic imports for heavy components
+const WorkspaceSidebar = dynamic(() => import('@/app/components/WorkspaceSidebar'), {
+  loading: () => <div className="w-64 h-screen bg-gray-50 animate-pulse" />,
+  ssr: false
+})
+const ChatContainer = dynamic(() => import('@/app/components/Chat/ChatContainer'), {
+  loading: () => <div className="flex-1 bg-white" />,
+  ssr: false
+})
+const ChatInput = dynamic(() => import('@/app/components/Chat/ChatInput'), {
+  loading: () => <div className="h-16 bg-white border-t" />,
+  ssr: false
+})
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -61,7 +72,8 @@ export default function DashboardPage() {
     }
 
     checkUser()
-  }, [router, supabase])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run once on mount - router and supabase are stable
 
   // Fetch active instruction for workspace
   useEffect(() => {
@@ -96,12 +108,15 @@ export default function DashboardPage() {
 
   // Load chat history - workspace chat or general chat
   useEffect(() => {
+    if (!user) return // Wait for user to be loaded
+
     if (workspaceId) {
       loadWorkspaceChat()
-    } else if (user) {
+    } else {
       loadGeneralChat()
     }
-  }, [workspaceId, user])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, user?.id]) // Only re-run when workspace or user ID changes
 
   const loadGeneralChat = async () => {
     // General chat is ephemeral - start with empty messages, no persistence
@@ -138,7 +153,7 @@ export default function DashboardPage() {
       if (storedWorkspaces) {
         try {
           const workspaces = JSON.parse(storedWorkspaces)
-          const workspace = workspaces.find((w: any) => w.id === workspaceId)
+          const workspace = workspaces.find((w: Workspace) => w.id === workspaceId)
           if (workspace) {
             setCurrentWorkspaceName(workspace.name)
             setCurrentWorkspace({
@@ -160,7 +175,7 @@ export default function DashboardPage() {
 
       const result = await response.json()
       const chats = result.chats || []
-      
+
       // Convert Chat records to Message format
       const messages: Message[] = chats.map((chat: Chat) => ({
         id: chat.id,
@@ -168,10 +183,10 @@ export default function DashboardPage() {
         role: chat.role,
         timestamp: new Date(chat.created_at)
       }))
-      
+
       setMessages(messages)
       setIsGeneralChat(false)
-      
+
       // Create a single session containing all messages for this workspace
       const sessionId = `${workspaceId}_main`
       setCurrentChatId(sessionId)
@@ -185,7 +200,7 @@ export default function DashboardPage() {
           updatedAt: new Date()
         }
       }))
-      
+
       // For sidebar, we'll show just this one session if it has messages
       if (messages.length > 0) {
         setWorkspaceChatSessions([{
@@ -361,7 +376,7 @@ export default function DashboardPage() {
                           : msg
                       )
                     )
-                    
+
                     // Save assistant message to database (only for workspace chats)
                     if (workspaceId) {
                       try {
@@ -438,7 +453,6 @@ export default function DashboardPage() {
       <Sidebar
         user={user}
         onSignOutAction={handleSignOut}
-        forceCollapse={shouldCollapseMainSidebar}
       />
 
       {/* Workspace Sidebar */}

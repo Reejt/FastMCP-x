@@ -10,7 +10,7 @@ interface ChatInputProps {
   workspaceName?: string
 }
 
-export default function ChatInput({ onSendMessage, disabled = false, hasMessages = false, workspaceName }: ChatInputProps) {
+export default function ChatInput({ onSendMessage, disabled = false, workspaceName }: ChatInputProps) {
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)

@@ -47,6 +47,7 @@ export default function InstructionsPage() {
   useEffect(() => {
     if (!user) return
     loadWorkspaces()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   // Load instructions when workspace is selected
@@ -54,6 +55,7 @@ export default function InstructionsPage() {
     if (selectedWorkspaceId) {
       loadInstructions()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWorkspaceId])
 
   const loadWorkspaces = async () => {
@@ -63,7 +65,7 @@ export default function InstructionsPage() {
 
       if (data.success) {
         setWorkspaces(data.workspaces)
-        
+
         // Auto-select first workspace or from query param
         const workspaceIdParam = searchParams.get('workspaceId')
         if (workspaceIdParam) {

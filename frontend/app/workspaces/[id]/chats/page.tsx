@@ -2,11 +2,16 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { User, Workspace, ChatSession, Chat } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
-import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
-import Breadcrumb from '@/app/components/Breadcrumb'
+
+// Dynamic import for heavy component
+const WorkspaceSidebar = dynamic(() => import('@/app/components/WorkspaceSidebar'), {
+  loading: () => <div className="w-64 h-screen bg-gray-50 animate-pulse" />,
+  ssr: false
+})
 
 interface ChatFile {
   name: string
@@ -84,7 +89,7 @@ export default function WorkspaceChatPage() {
           const storedWorkspaces = localStorage.getItem('myWorkspaces')
           if (storedWorkspaces) {
             const workspaces = JSON.parse(storedWorkspaces)
-            const workspace = workspaces.find((w: any) => w.id === workspaceId)
+            const workspace = workspaces.find((w: Workspace) => w.id === workspaceId)
             if (workspace) {
               setCurrentWorkspace({
                 ...workspace,
@@ -104,7 +109,7 @@ export default function WorkspaceChatPage() {
         if (response.ok) {
           const result = await response.json()
           const chats = result.chats || []
-          
+
           // Convert Chat records to ChatSession format
           const chatSession: ChatSession = {
             id: `${workspaceId}_main`,
@@ -118,7 +123,7 @@ export default function WorkspaceChatPage() {
             createdAt: new Date(),
             updatedAt: new Date()
           }
-          
+
           if (chatSession.messages.length > 0) {
             setWorkspaceChatSessions([chatSession])
             setCurrentChatId(chatSession.id)
@@ -132,7 +137,18 @@ export default function WorkspaceChatPage() {
     }
 
     checkUser()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, supabase, workspaceId])
+
+  interface DocumentRecord {
+    workspace_id: string
+    file_name: string
+    file_size: number
+    upload_timestamp: string
+    document_id: string
+    file_path: string
+    file_type: string
+  }
 
   const loadDocuments = async () => {
     try {
@@ -145,8 +161,8 @@ export default function WorkspaceChatPage() {
       if (result.success && result.documents) {
         // Filter documents by workspace ID and transform
         const transformedDocs = result.documents
-          .filter((doc: any) => doc.workspace_id === workspaceId)
-          .map((doc: any) => ({
+          .filter((doc: DocumentRecord) => doc.workspace_id === workspaceId)
+          .map((doc: DocumentRecord) => ({
             name: doc.file_name,
             size: doc.file_size,
             uploadedAt: doc.upload_timestamp,
@@ -174,7 +190,7 @@ export default function WorkspaceChatPage() {
     setShouldCollapseMainSidebar(true)
   }
 
-  const handleChatSelect = (chatId: string) => {
+  const handleChatSelect = (_chatId: string) => {
     // Navigate back to workspace chat with selected chat
     router.push(`/workspaces/${workspaceId}`)
   }
@@ -292,7 +308,6 @@ export default function WorkspaceChatPage() {
       <Sidebar
         user={user}
         onSignOutAction={handleSignOut}
-        forceCollapse={shouldCollapseMainSidebar}
       />
 
       {/* Workspace Sidebar */}

@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Get or create workspace
-    let finalWorkspaceId = workspaceId;
-    
+    let _finalWorkspaceId = workspaceId;
+
     if (workspaceId) {
       // Validate provided workspace_id exists and belongs to user
       const { data: workspace, error: workspaceError } = await supabase
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Get or create default workspace for the current user
-      const { data: existingWorkspaces, error: wsListError } = await supabase
+      const { data: existingWorkspaces } = await supabase
         .from('file_upload')
         .select('workspace_id')
         .eq('user_id', user.id)
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
         .limit(1);
 
       if (existingWorkspaces && existingWorkspaces.length > 0) {
-        finalWorkspaceId = existingWorkspaces[0].workspace_id;
+        _finalWorkspaceId = existingWorkspaces[0].workspace_id;
       } else {
         // Create default workspace if user has none
         const { data: newWorkspace, error: createError } = await supabase
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
             { status: 500 }
           );
         }
-        finalWorkspaceId = newWorkspace.id;
+        _finalWorkspaceId = newWorkspace.id;
       }
     }
 
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
-    
+
     // Note: Backend (bridge_server -> document_ingestion) now handles all storage operations
     // No need for duplicate upload here - file is already stored in Supabase via the backend
 

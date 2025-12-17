@@ -127,7 +127,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { workspaceId, name, description, archive } = body
+    const { workspaceId, name, description } = body
 
     if (!workspaceId) {
       return NextResponse.json(

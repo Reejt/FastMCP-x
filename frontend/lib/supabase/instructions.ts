@@ -128,10 +128,10 @@ export async function updateInstruction(
   }
 
   // Map content to instructions column in database
-  const dbUpdates: any = { ...updates }
+  const dbUpdates: { title?: string; instructions?: string | null } = { ...updates }
   if (updates.content !== undefined) {
     dbUpdates.instructions = updates.content.trim()
-    delete dbUpdates.content
+    delete (dbUpdates as { content?: string }).content
   }
 
   if (dbUpdates.instructions !== undefined && dbUpdates.instructions !== null) {

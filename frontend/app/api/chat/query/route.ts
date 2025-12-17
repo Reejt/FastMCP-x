@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     // Determine which endpoint to call based on action
     let endpoint = '/api/query';
-    let requestBody: any = { query, conversation_history, workspace_id };
+    let requestBody: { query: string; conversation_history?: unknown[]; workspace_id?: string; file_path?: string; sheet_name?: string } = { query, conversation_history, workspace_id };
 
     switch (action) {
       case 'query_excel':
@@ -57,12 +57,11 @@ export async function POST(request: NextRequest) {
       const stream = new ReadableStream({
         async start(controller) {
           const reader = response.body?.getReader();
-          const decoder = new TextDecoder();
 
           try {
             while (true) {
               const { done, value } = await reader!.read();
-              
+
               if (done) {
                 controller.close();
                 break;
@@ -92,9 +91,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error calling bridge server:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to connect to bridge server',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
@@ -109,11 +108,11 @@ export async function GET() {
     const response = await fetch(`${BRIDGE_SERVER_URL}/api/health`, {
       signal: AbortSignal.timeout(5000),
     });
-    
+
     if (!response.ok) {
       throw new Error('Bridge server returned error status');
     }
-    
+
     const data = await response.json();
     return NextResponse.json({
       status: 'healthy',
@@ -122,7 +121,7 @@ export async function GET() {
     });
   } catch (error) {
     return NextResponse.json(
-      { 
+      {
         status: 'unhealthy',
         error: error instanceof Error ? error.message : 'Bridge server not reachable',
         timestamp: new Date().toISOString()

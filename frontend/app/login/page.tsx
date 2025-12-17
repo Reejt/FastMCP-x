@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Suspense } from 'react'
@@ -16,7 +15,6 @@ export default function LoginPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [typedText, setTypedText] = useState('')
-  const router = useRouter()
   const supabase = createClient()
 
   const textToType = 'Own your AI.'
@@ -25,7 +23,7 @@ export default function LoginPage() {
     // Check for error from auth callback
     const params = new URLSearchParams(window.location.search)
     const errorParam = params.get('error')
-    
+
     if (errorParam === 'not_authorized') {
       setError('This email is not authorized. Please contact an administrator.')
     } else if (errorParam === 'auth_failed') {
@@ -71,7 +69,7 @@ export default function LoginPage() {
       // Success - show message
       setSuccess('Check your email! We sent you a login link.')
       setLoading(false)
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred')
       setLoading(false)
     }
@@ -132,46 +130,46 @@ export default function LoginPage() {
           <div className="bg-white/20 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/30">
             <Suspense fallback={null}>
               <form className="space-y-6" onSubmit={handleLogin}>
-              <div>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="appearance-none relative block w-full px-4 py-3 bg-indigo-900/50 border border-indigo-500/30 placeholder-gray-400 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent sm:text-sm"
-                  placeholder="Email address"
-                />
-              </div>
-
-              {error && (
-                <div className="rounded-lg bg-red-900/30 border border-red-500/50 p-4">
-                  <p className="text-sm font-medium text-red-200">
-                    {error}
-                  </p>
+                <div>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="appearance-none relative block w-full px-4 py-3 bg-indigo-900/50 border border-indigo-500/30 placeholder-gray-400 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent sm:text-sm"
+                    placeholder="Email address"
+                  />
                 </div>
-              )}
 
-              {success && (
-                <div className="rounded-lg bg-green-900/30 border border-green-500/50 p-4">
-                  <p className="text-sm font-medium text-green-200">
-                    ✓ {success}
-                  </p>
+                {error && (
+                  <div className="rounded-lg bg-red-900/30 border border-red-500/50 p-4">
+                    <p className="text-sm font-medium text-red-200">
+                      {error}
+                    </p>
+                  </div>
+                )}
+
+                {success && (
+                  <div className="rounded-lg bg-green-900/30 border border-green-500/50 p-4">
+                    <p className="text-sm font-medium text-green-200">
+                      ✓ {success}
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
+                  >
+                    {loading ? 'Checking...' : 'Send Login Link'}
+                  </button>
                 </div>
-              )}
-
-              <div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
-                >
-                  {loading ? 'Checking...' : 'Send Login Link'}
-                </button>
-              </div>
-            </form>
+              </form>
             </Suspense>
           </div>
         </div>

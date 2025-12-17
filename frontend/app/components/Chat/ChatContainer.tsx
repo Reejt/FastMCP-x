@@ -11,7 +11,7 @@ interface ChatContainerProps {
   activeInstruction?: WorkspaceInstruction | null
 }
 
-export default function ChatContainer({ messages, workspaceName, activeInstruction }: ChatContainerProps) {
+export default function ChatContainer({ messages }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {

@@ -2,12 +2,28 @@
 
 import { useRouter, useParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
-import WorkspaceSidebar from '@/app/components/WorkspaceSidebar'
-import ChatContainer from '@/app/components/Chat/ChatContainer'
-import ChatInput from '@/app/components/Chat/ChatInput'
+
+// Dynamic imports for heavy components
+const WorkspaceSidebar = dynamic(() => import('@/app/components/WorkspaceSidebar'), {
+  loading: () => <div className="w-64 h-screen bg-gray-50 animate-pulse" />,
+  ssr: false
+})
+const ChatContainer = dynamic(() => import('@/app/components/Chat/ChatContainer'), {
+  loading: () => <div className="flex-1 bg-white" />,
+  ssr: false
+})
+const ChatInput = dynamic(() => import('@/app/components/Chat/ChatInput'), {
+  loading: () => <div className="h-16 bg-white border-t" />,
+  ssr: false
+})
+const WorkspaceIntroduction = dynamic(() => import('@/app/components/WorkspaceIntroduction/WorkspaceIntroduction'), {
+  loading: () => <div className="flex-1 bg-white" />,
+  ssr: false
+})
 
 export default function WorkspacePage() {
   const router = useRouter()
@@ -75,20 +91,26 @@ export default function WorkspacePage() {
       try {
         console.log('Fetching workspace from API...')
         const response = await fetch(`/api/workspaces?workspaceId=${workspaceId}`)
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch workspace: ${response.statusText}`)
+        }
+
         const data = await response.json()
+        console.log('API response:', data)
 
         if (data.success && data.workspace) {
-          console.log('Workspace loaded from API:', data.workspace)
-          setCurrentWorkspace({
-            ...data.workspace,
-            created_at: data.workspace.created_at,
-            updated_at: data.workspace.updated_at
-          })
+          console.log('Workspace loaded successfully:', data.workspace)
+          setCurrentWorkspace(data.workspace)
         } else {
           console.error('Failed to load workspace:', data.error || 'Unknown error')
+          // Optionally redirect to workspaces list if workspace not found
+          router.push('/workspaces')
         }
       } catch (error) {
         console.error('Error loading workspace:', error)
+        // Optionally redirect to workspaces list on error
+        router.push('/workspaces')
       }
     }
 
@@ -177,6 +199,7 @@ export default function WorkspacePage() {
         )
       })
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, workspaceId, currentChatId])
 
   const handleChatSelect = (chatId: string) => {
@@ -366,79 +389,48 @@ export default function WorkspacePage() {
     return null
   }
 
+  // Show loading state while workspace is being fetched
+  if (!currentWorkspace) {
+    return (
+      <div className="flex h-screen bg-white overflow-hidden">
+        <Sidebar
+          user={user}
+          onSignOutAction={handleSignOut}
+        />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-gray-600">Loading workspace...</div>
+        </div>
+      </div>
+    )
+  }
+
+  // Always render the main layout with WorkspaceIntroduction component
+  // It will handle showing introduction or chat history based on messages
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen bg-white overflow-hidden">
       {/* Main Sidebar */}
       <Sidebar
         user={user}
         onSignOutAction={handleSignOut}
-        forceCollapse={shouldCollapseMainSidebar}
       />
 
       {/* Workspace Sidebar */}
-      {currentWorkspace && (
-        <WorkspaceSidebar
+      <WorkspaceSidebar
+        workspace={currentWorkspace}
+        chatSessions={workspaceChatSessions}
+        currentChatId={currentChatId}
+        onChatSelect={handleChatSelect}
+        onNewChat={handleNewChat}
+        onToggleSidebar={handleWorkspaceSidebarToggle}
+      />
+
+      {/* Main Content Area - Workspace Introduction Page takes full remaining width */}
+      <div className="flex-1 flex overflow-hidden">
+        <WorkspaceIntroduction
           workspace={currentWorkspace}
-          chatSessions={workspaceChatSessions}
-          currentChatId={currentChatId}
-          onChatSelect={handleChatSelect}
-          onNewChat={handleNewChat}
-          onToggleSidebar={handleWorkspaceSidebarToggle}
-        />
-      )}
-
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Breadcrumb Navigation with Expand Button */}
-        {currentWorkspace && (
-          <div className="flex items-center gap-3 px-8 py-4 bg-gray-50 border-b border-gray-200">
-            {isWorkspaceSidebarCollapsed && (
-              <button
-                onClick={handleExpandWorkspaceSidebar}
-                className="p-2 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
-                aria-label="Expand sidebar"
-              >
-                <svg className="w-5 h-5 text-gray-600" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M14 2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h12zM2 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H2z" />
-                  <path d="M3 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4z" />
-                </svg>
-              </button>
-            )}
-            <nav className="flex items-center gap-2 text-sm text-gray-600">
-              <button
-                onClick={() => router.push('/workspaces')}
-                className="hover:text-gray-900 transition-colors"
-              >
-                Workspaces
-              </button>
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              <span className="text-gray-600">{currentWorkspace.name}</span>
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              <span className="text-gray-900 font-medium">
-                {chatSessions[currentChatId]?.messages[0]?.content
-                  ? chatSessions[currentChatId].messages[0].content.slice(0, 30) + (chatSessions[currentChatId].messages[0].content.length > 30 ? '...' : '')
-                  : 'New Chat'}
-              </span>
-            </nav>
-          </div>
-        )}
-
-        {/* Chat Messages */}
-        <ChatContainer
           messages={messages}
-          workspaceName={currentWorkspace?.name || ''}
-        />
-
-        {/* Chat Input */}
-        <ChatInput
+          isProcessing={isProcessing}
           onSendMessage={handleSendMessage}
-          disabled={isProcessing}
-          hasMessages={messages.length > 0}
-          workspaceName={currentWorkspace?.name || ''}
         />
       </div>
     </div>

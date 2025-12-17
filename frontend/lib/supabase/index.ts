@@ -18,7 +18,6 @@ export { createClient } from './client'
 // Re-export workspace functions
 export {
   getUserWorkspaces,
-  getWorkspaceSummaries,
   getWorkspaceById,
   createWorkspace,
   updateWorkspace,
@@ -61,12 +60,12 @@ export {
 // Re-export instruction functions
 export {
   getWorkspaceInstructions,
-  getActiveInstruction,
   getInstructionById,
   createInstruction,
   updateInstruction,
   activateInstruction,
+  deactivateInstruction,
   deactivateAllInstructions,
   deleteInstruction,
-  getInstructionPreview
+  switchActiveInstruction
 } from './instructions'
