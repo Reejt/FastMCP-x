@@ -14,8 +14,10 @@ import {
 
 /**
  * GET /api/workspaces
- * Get all workspaces for the current user
- * Query params: includeArchived (boolean)
+ * Get all workspaces for the current user OR a specific workspace by ID
+ * Query params: 
+ *   - workspaceId (string): If provided, returns single workspace
+ *   - includeArchived (boolean): If true, includes archived workspaces
  */
 export async function GET(request: NextRequest) {
   try {
@@ -30,9 +32,21 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const _workspaceId = searchParams.get('workspaceId')
+    const workspaceId = searchParams.get('workspaceId')
     const _includeArchived = searchParams.get('includeArchived') === 'true'
 
+    // If workspaceId is provided, return single workspace
+    if (workspaceId) {
+      const { getWorkspaceById } = await import('@/lib/supabase/workspaces')
+      const workspace = await getWorkspaceById(workspaceId)
+
+      return NextResponse.json({
+        success: true,
+        workspace
+      })
+    }
+
+    // Otherwise, return all workspaces
     const workspaces = await getUserWorkspaces(_includeArchived)
 
     return NextResponse.json({
