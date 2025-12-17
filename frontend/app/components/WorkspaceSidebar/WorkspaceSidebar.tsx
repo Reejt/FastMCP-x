@@ -1,5 +1,18 @@
 'use client'
 
+/**
+ * Workspace Sidebar Component
+ * Displays chat sessions for a workspace
+ * 
+ * Chat Sessions Flow:
+ * 1. Parent component (page.tsx) fetches chats via /api/chats
+ * 2. /api/chats/route.ts processes the request
+ * 3. route.ts calls getWorkspaceChats() from chats.ts service layer
+ * 4. chats.ts queries Supabase for workspace chats
+ * 5. Results passed to WorkspaceSidebar as chatSessions prop
+ * 6. Component renders the chat list with select/create functionality
+ */
+
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -7,7 +20,7 @@ import { Workspace, ChatSession } from '@/app/types'
 
 interface WorkspaceSidebarProps {
   workspace: Workspace | null
-  chatSessions: ChatSession[]
+  chatSessions: ChatSession[] // Fetched from /api/chats → chats.ts service layer
   currentChatId?: string
   onChatSelect?: (chatId: string) => void
   onNewChat?: () => void
@@ -154,6 +167,14 @@ export default function WorkspaceSidebar({
             </div>
 
             {/* Chats Section */}
+            {/* 
+              Chat sessions are fetched from:
+              1. Parent page component calls: fetch('/api/chats?workspaceId=...')
+              2. /api/chats/route.ts (GET handler) processes the request
+              3. route.ts calls getWorkspaceChats() from chats.ts
+              4. chats.ts queries Supabase 'chats' table
+              5. Results passed back and rendered here
+            */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="p-4">
                 <div className="flex items-center justify-between mb-3">

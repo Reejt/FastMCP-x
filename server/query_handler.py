@@ -366,6 +366,7 @@ DOCUMENT CONTENT:
 def answer_link_query(link, question, conversation_history: list = None):
     """
     Answer a question based on the content of a given link (web or social media)
+    Works with any URL by extracting available content through multiple strategies
     Includes semantic similarity to last message in conversation history
     
     Args:
@@ -377,73 +378,55 @@ def answer_link_query(link, question, conversation_history: list = None):
         import requests
         from bs4 import BeautifulSoup
         
-        if link.startswith("http"):
-            # Fetch the web page
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            resp = requests.get(link, timeout=30, headers=headers)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "html.parser")
-            
-            # Check if it's a social media link
-            if "youtube.com" in link or "youtu.be" in link:
-                # Extract YouTube video description and comments area
-                content = ""
-                
-                # Try to get video title
-                title = soup.find("meta", property="og:title")
-                if title and title.get("content"):
-                    content += f"Title: {title['content']}\n\n"
-                
-                # Try to get video description
-                description = soup.find("meta", property="og:description")
-                if description and description.get("content"):
-                    content += f"Description: {description['content']}\n\n"
-                
-                # Extract any visible text content (fallback)
-                if not content.strip():
-                    content = soup.get_text(separator="\n", strip=True)
-                    
-            elif "twitter.com" in link or "x.com" in link:
-                # Extract Twitter/X post content
-                content = ""
-                
-                # Try to get tweet description
-                description = soup.find("meta", property="og:description")
-                if description and description.get("content"):
-                    content += f"Tweet: {description['content']}\n\n"
-                
-                # Extract article text if available
-                articles = soup.find_all("article")
-                for article in articles:
-                    content += article.get_text(separator="\n", strip=True) + "\n"
-                
-                # Fallback to general text
-                if not content.strip():
-                    content = soup.get_text(separator="\n", strip=True)
-                    
-            elif "instagram.com" in link:
-                # Extract Instagram post content
-                content = ""
-                
-                # Try to get post description
-                description = soup.find("meta", property="og:description")
-                if description and description.get("content"):
-                    content += f"Post: {description['content']}\n\n"
-                
-                # Try to get title
-                title = soup.find("meta", property="og:title")
-                if title and title.get("content"):
-                    content += f"Caption: {title['content']}\n\n"
-                
-                # Fallback to general text
-                if not content.strip():
-                    content = soup.get_text(separator="\n", strip=True)
-                    
-            else:
-                # General web link: extract all text
-                content = soup.get_text(separator="\n", strip=True)
-        else:
+        if not link.startswith("http"):
             return "Unsupported link type. Please provide a valid HTTP/HTTPS URL."
+        
+        # Fetch the web page
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        resp = requests.get(link, timeout=30, headers=headers)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        
+        # Multi-strategy content extraction - works for any platform
+        content = ""
+        
+        # Strategy 1: Extract Open Graph metadata (title, description, image alt text)
+        og_title = soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            content += f"Title: {og_title['content']}\n\n"
+        
+        og_description = soup.find("meta", property="og:description")
+        if og_description and og_description.get("content"):
+            content += f"Description: {og_description['content']}\n\n"
+        
+        # Strategy 2: Extract from article tags (good for articles, social media posts)
+        articles = soup.find_all("article")
+        if articles:
+            for article in articles[:2]:  # Limit to first 2 articles
+                article_text = article.get_text(separator="\n", strip=True)
+                if article_text:
+                    content += f"Article Content:\n{article_text[:1500]}\n\n"
+                    break
+        
+        # Strategy 3: Extract from main content area
+        if not content.strip() or len(content) < 100:
+            main_content = soup.find("main")
+            if main_content:
+                main_text = main_content.get_text(separator="\n", strip=True)
+                if main_text:
+                    content += main_text[:2000]
+        
+        # Strategy 4: Extract markdown body (GitHub, wikis, etc.)
+        if not content.strip() or len(content) < 100:
+            markdown_body = soup.find("div", {"class": "markdown-body"})
+            if markdown_body:
+                md_text = markdown_body.get_text(separator="\n", strip=True)
+                if md_text:
+                    content += md_text[:2000]
+        
+        # Strategy 5: Fallback to all visible text
+        if not content.strip() or len(content) < 100:
+            content = soup.get_text(separator="\n", strip=True)[:3000]
         
         # Clean up excessive whitespace
         content = "\n".join(line.strip() for line in content.split("\n") if line.strip())

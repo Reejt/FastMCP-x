@@ -199,7 +199,7 @@ export default function Sidebar({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push('/workspaces')
+                    router.push('/workspaces/create')
                   }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-200 rounded transition-colors"
                   aria-label="Create new workspace"
@@ -249,7 +249,10 @@ export default function Sidebar({
                     </>
                   )}
                   <button
-                    onClick={() => router.push('/workspaces')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push('/workspaces/create')
+                    }}
                     className="w-full text-left px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors"
                   >
                     + New Workspace

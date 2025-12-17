@@ -118,16 +118,9 @@ async def query_endpoint(request: QueryRequest):
             detected_url = url_match.group(0)
             print(f"🔗 Detected URL in query: {detected_url}")
             
-            # Check if it's a supported social media or web link
+            # Check if it's a supported web link
             if detected_url.startswith("http"):
-                if "youtube.com" in detected_url or "youtu.be" in detected_url:
-                    print("📺 YouTube link detected")
-                elif "twitter.com" in detected_url or "x.com" in detected_url:
-                    print("🐦 Twitter/X link detected")
-                elif "instagram.com" in detected_url:
-                    print("📷 Instagram link detected")
-                else:
-                    print("🌐 Web link detected")
+                print("🔗 Web link detected")
                 
                 # Extract the question part (everything except the URL)
                 question = re.sub(url_pattern, '', request.query).strip()
@@ -154,111 +147,17 @@ async def query_endpoint(request: QueryRequest):
                 )
         
         # Detect if query requires real-time/current information from web search
-        query_lower = request.query.lower()
+        # Try regular query first, only route to web search if model indicates knowledge cutoff
         
-        # Check for year mentions after 2023
-        year_match = re.search(r"\b(202[4-9]|20[3-9][0-9])\b", request.query)
-        
-        # Expanded real-time/current information patterns (case-insensitive)
-        realtime_patterns = [
-            # Version and release information - more flexible patterns
-            r"\b(latest|current|newest|recent|new|updated?)\b.*\b(version|release|update)",
-            r"\bversion\b.*\b(latest|current|newest|recent|new)",
-            r"what.{0,20}(version|release)",
-            r"which\b.*\bversion",
-            r"how to (update|upgrade)",
-            r"(update|upgrade).{0,30}(to|from)",
-            
-            # Security vulnerabilities - semantic patterns
-            r"\bcve[-\s]?\d",
-            r"\b(vulnerability|vulnerabilities|security)\b",
-            r"\b(patch|patched|patching|fix|fixed)\b",
-            r"\b(zero[- ]?day|0[- ]?day)\b",
-            r"\b(exploit|exploited|exploitation)\b",
-            r"\b(security\s+(advisory|alert|issue|flaw|hole))",
-            r"\b(breach|breached|compromised)\b",
-            r"\b(malware|ransomware|trojan|virus)\b",
-            
-            # Migration and deprecation - semantic intent
-            r"\b(breaking\s+change|breaking\s+update)",
-            r"\b(migration|migrate|migrating)\b",
-            r"\b(upgrade|upgrading)\b.*\b(guide|how|from|to)",
-            r"\b(deprecated|deprecation)\b",
-            r"\b(end\s+of\s+life|eol|sunset|sunsetted)\b",
-            r"\b(changelog|change\s+log|release\s+notes)\b",
-            
-            # API documentation and status
-            r"\bapi\b.{0,20}\b(documentation|docs|reference|spec)",
-            r"\b(endpoint|endpoints|route|routes)\b",
-            r"\bapi\b.{0,20}\b(status|health|availability)",
-            r"\b(rate\s+limit|throttl)",
-            r"\bapi\b.{0,20}\b(change|update|deprecat)",
-            
-            # Service status - operational queries
-            r"\b(is|are)\b.{0,30}\b(down|working|available|up|online|offline)",
-            r"\b(outage|incident|downtime)\b",
-            r"\b(service\s+status|status\s+page)",
-            r"\b(uptime|availability)\b",
-            r"\b(degraded|slow|performance\s+issue)",
-            r"\b(aws|azure|gcp|google\s+cloud).{0,20}status",
-            
-            # Comparisons - especially with versions
-            r"\bvs\.?\b|\bversus\b",
-            r"\bcompare[ds]?\s+(to|with|against)",
-            r"\bbenchmark[s]?\b",
-            r"\b(performance\s+comparison|compare\s+performance)",
-            r"\bwhich\s+(is\s+)?(better|faster|best)",
-            r"\b(difference|differences)\s+between",
-            r"\b(pros?\s+and\s+cons?|advantages?\s+and\s+disadvantages?)",
-            
-            # Issues and bugs - problem reports
-            r"\b(known\s+issue|known\s+bug|known\s+problem)",
-            r"\bbug\b.{0,20}\b(in|with|on)",
-            r"\b(error|issue|problem)\s+(with|in|on)",
-            r"\b(not\s+working|doesn't\s+work|does\s+not\s+work)",
-            r"\b(broken|failing|failed)\b.{0,20}\b(in|with|version)",
-            
-            # Compatibility - integration queries
-            r"\b(compatible|compatibility)\s+(with|check)",
-            r"\b(works?\s+with|working\s+with)",
-            r"\b(support|supports|supported)\b",
-            r"\b(available\s+for|runs?\s+on)",
-            r"\bcan\s+i\s+use\b.{0,30}\bwith\b",
-            r"\b(require|requires|requirement)",
-            
-            # Licensing and pricing - business changes
-            r"\b(license|licensing)\b.{0,20}\b(change|update|new)",
-            r"\b(commercial\s+use|enterprise\s+license)",
-            r"\b(open\s+source\s+license|oss\s+license)",
-            r"\b(terms\s+of\s+service|tos|terms\s+and\s+conditions)",
-            r"\b(pricing|price|cost).{0,20}\b(change|update|new)",
-            
-            # General temporal indicators
-            r"\b(now|today|currently|recent|recently|new)\b",
-            r"\b(this\s+(year|month|week))",
-            r"\bas\s+of\s+(now|today|\d{4})",
+        # Check for explicit knowledge cutoff indicators
+        knowledge_cutoff_patterns = [
+            r"\b(knowledge cutoff|training data cutoff|cutoff date)\b",
+            r"\b(don't know|don't have|no information|no data)\b.*\b(about|on|regarding)\b",
+            r"\b(unable to|can't|cannot)\b.*\b(access|find|provide)\b",
+            r"\b(beyond.*knowledge|outside.*knowledge)\b",
         ]
         
-        # Check if query matches any real-time patterns
-        pattern_match = any(re.search(pattern, query_lower) for pattern in realtime_patterns)
-        
-        if year_match or pattern_match:
-            print("🔎 Detected query about post-cutoff event, routing to web_search_tool")
-            response = await mcp_web_search(request.query)
-            def event_generator():
-                yield f"data: {json.dumps({'chunk': response})}\n\n"
-                yield f"data: {json.dumps({'done': True})}\n\n"
-            return StreamingResponse(
-                event_generator(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no"
-                }
-            )
-        
-        # Call the streaming query handler for other queries
+        # Call the streaming query handler first
         async def event_generator():
             try:
                 # Import streaming handler and instructions handler
@@ -281,22 +180,43 @@ async def query_endpoint(request: QueryRequest):
                         stream=True
                     )
                 
-                # Stream chunks as Server-Sent Events
+                # Collect response chunks
+                full_response = ""
                 for chunk in response_generator:
                     if isinstance(chunk, dict) and 'response' in chunk:
                         chunk_text = chunk['response']
+                        full_response += chunk_text
                         # Format as SSE
                         yield f"data: {json.dumps({'chunk': chunk_text})}\n\n"
                 
+                # Check if response indicates knowledge cutoff or is too short
+                is_cutoff_response = any(
+                    re.search(pattern, full_response, re.IGNORECASE) 
+                    for pattern in knowledge_cutoff_patterns
+                )
+                
+                # If response is empty, very short (< 20 chars), or indicates cutoff, try web search
+                if not full_response.strip() or len(full_response.strip()) < 20 or is_cutoff_response:
+                    print(f"⚠️ Inadequate response detected, routing to web_search for better results")
+                    print(f"   Response length: {len(full_response.strip())} chars, Cutoff indicator: {is_cutoff_response}")
+                    
+                    # Yield separator and web search response
+                    web_search_message = "\n\n🔍 Searching the web for more current information...\n\n"
+                    yield f"data: {json.dumps({'chunk': web_search_message})}\n\n"
+                    
+                    web_response = await mcp_web_search(request.query)
+                    yield f"data: {json.dumps({'chunk': web_response})}\n\n"
+                
                 # Send completion signal
                 yield f"data: {json.dumps({'done': True})}\n\n"
-                print(f"✅ Query streaming completed")
+                print(f"✅ Query completed")
                 
             except Exception as e:
-                print(f"❌ Streaming error: {type(e).__name__}: {str(e)}")
+                print(f"❌ Error: {type(e).__name__}: {str(e)}")
                 import traceback
                 traceback.print_exc()
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        
         
         return StreamingResponse(
             event_generator(),
