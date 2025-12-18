@@ -46,11 +46,15 @@ export async function getInstructionById(instructionId: string) {
     .from('workspace_instructions')
     .select('*')
     .eq('id', instructionId)
-    .single()
+    .maybeSingle()
 
   if (error) {
     console.error('Error fetching instruction:', error)
     throw error
+  }
+
+  if (!data) {
+    throw new Error(`Instruction with ID ${instructionId} not found`)
   }
 
   return data as WorkspaceInstruction
@@ -249,17 +253,19 @@ export async function deleteInstruction(instructionId: string) {
     throw new Error('User not authenticated')
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('workspace_instructions')
     .delete()
     .eq('id', instructionId)
+    .select()
+    .single()
 
   if (error) {
     console.error('Error deleting instruction:', error)
     throw error
   }
 
-  return true
+  return data as WorkspaceInstruction
 }
 
 /**
