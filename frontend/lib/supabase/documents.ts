@@ -17,6 +17,18 @@ export async function getWorkspaceFiles(workspaceId: string) {
     throw new Error('User not authenticated')
   }
 
+  // Verify workspace belongs to user
+  const { data: workspace, error: workspaceError } = await supabase
+    .from('workspaces')
+    .select('id')
+    .eq('id', workspaceId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (workspaceError || !workspace) {
+    throw new Error('Workspace not found or access denied')
+  }
+
   const { data, error } = await supabase
     .from('file_upload')
     .select('*')

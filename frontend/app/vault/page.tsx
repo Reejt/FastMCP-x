@@ -13,7 +13,7 @@ export default function VaultPage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
-  const [uploadedFiles, setUploadedFiles] = useState<{ id: string; name: string; size: number; uploadedAt: string; filePath: string; status: string }[]>([])
+  const [uploadedFiles, setUploadedFiles] = useState<{ id: string; name: string; extension?: string; size: number; uploadedAt: string; filePath: string; status: string }[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 

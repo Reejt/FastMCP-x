@@ -11,6 +11,7 @@ interface VaultPanelProps {
 interface VaultFile {
   id: string
   name: string
+  extension?: string
   size: number
   uploadedAt: string
   filePath: string
@@ -22,6 +23,7 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
   const router = useRouter()
   const [files, setFiles] = useState<VaultFile[]>([])
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Load files for this workspace
@@ -29,42 +31,59 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
     loadWorkspaceFiles()
   }, [workspace.id])
 
+  const transformFileData = (file: any) => {
+    let displayName = file.file_name
+    if (displayName.startsWith('tmp')) {
+      const parts = displayName.split('_')
+      if (parts.length > 2) {
+        displayName = parts.slice(2).join('_')
+      } else if (parts.length === 2) {
+        displayName = parts[1]
+      }
+    }
+
+    // Extract file extension
+    const lastDotIndex = displayName.lastIndexOf('.')
+    const extension = lastDotIndex > -1 ? displayName.substring(lastDotIndex + 1).toLowerCase() : ''
+    const nameWithoutExtension = lastDotIndex > -1 ? displayName.substring(0, lastDotIndex) : displayName
+    const fileType = getFileType(extension)
+
+    return {
+      id: file.id,
+      name: nameWithoutExtension,
+      extension: extension,
+      size: file.size_bytes || 0,
+      uploadedAt: file.uploaded_at,
+      filePath: file.file_path,
+      status: file.status,
+      fileType
+    }
+  }
+
   const loadWorkspaceFiles = async () => {
     try {
+      // Fetch workspace files from route.ts GET endpoint
       const response = await fetch(`/api/vault/upload?workspaceId=${workspace.id}`)
-      if (!response.ok) return
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Failed to load files:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData.error,
+          details: errorData.details
+        })
+        return
+      }
 
       const result = await response.json()
       if (result.success && result.files) {
-        const transformedFiles = result.files.map((file: any) => {
-          let displayName = file.file_name
-          if (displayName.startsWith('tmp')) {
-            const parts = displayName.split('_')
-            if (parts.length > 2) {
-              displayName = parts.slice(2).join('_')
-            } else if (parts.length === 2) {
-              displayName = parts[1]
-            }
-          }
-
-          // Determine file type from extension
-          const extension = displayName.split('.').pop()?.toLowerCase() || ''
-          const fileType = getFileType(extension)
-
-          return {
-            id: file.id,
-            name: displayName,
-            size: file.size_bytes || 0,
-            uploadedAt: file.uploaded_at,
-            filePath: file.file_path,
-            status: file.status,
-            fileType
-          }
-        })
+        const transformedFiles = result.files.map(transformFileData)
         setFiles(transformedFiles)
+        console.log(`Loaded ${transformedFiles.length} files for workspace ${workspace.id}`)
       }
     } catch (error) {
-      console.error('Error loading files:', error)
+      console.error('Error loading workspace files from /api/vault/upload:', error)
     }
   }
 
@@ -105,6 +124,8 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
     if (!file) return
 
     setUploading(true)
+    setUploadProgress('Uploading...')
+
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -112,16 +133,30 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
 
       const response = await fetch('/api/vault/upload', {
         method: 'POST',
-        body: formData
+        body: formData,
       })
 
-      if (response.ok) {
-        await loadWorkspaceFiles()
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Upload failed')
       }
+
+      setUploadProgress('File processed successfully!')
+
+      // Reload workspace files from Supabase to get the latest list
+      await loadWorkspaceFiles()
+
+      // Clear progress message after 3 seconds
+      setTimeout(() => setUploadProgress(''), 3000)
+
     } catch (error) {
-      console.error('Error uploading file:', error)
+      console.error('Upload error:', error)
+      setUploadProgress(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setTimeout(() => setUploadProgress(''), 5000)
     } finally {
       setUploading(false)
+      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
@@ -152,6 +187,13 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
         </button>
       </div>
 
+      {/* Upload Progress */}
+      {uploadProgress && (
+        <div className="mb-3 p-2 rounded-lg bg-blue-50 border border-blue-200">
+          <p className="text-xs text-blue-700">{uploadProgress}</p>
+        </div>
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
@@ -162,18 +204,17 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
 
       {/* Content */}
       <div className="space-y-2">
-        {uploading && (
-          <div className="text-sm text-gray-500 text-center py-2 rounded-lg">
-            Uploading...
-          </div>
-        )}
-
         {files.length === 0 && !uploading ? (
           <div className="p-4">
             <p className="text-sm text-gray-400">No files uploaded yet</p>
           </div>
         ) : (
           <div className="space-y-2">
+            {uploading && (
+              <div className="text-sm text-gray-500 text-center py-2 rounded-lg bg-blue-50">
+                Uploading...
+              </div>
+            )}
             {files.slice(0, 4).map((file) => (
               <div
                 key={file.id}
@@ -181,7 +222,7 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <h4 className="text-sm font-medium text-gray-900 truncate flex-1">
-                    {file.name}
+                    {file.name}{file.extension ? `.${file.extension}` : ''}
                   </h4>
                   {file.fileType && (
                     <span className="inline-block px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-white border border-gray-200 rounded flex-shrink-0">

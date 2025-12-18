@@ -38,14 +38,14 @@ from server.instructions import (
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
 
 @mcp.tool
-def ingest_file_tool(file_path: str, user_id: str = None, workspace_id: str = None) -> str:
+def ingest_file_tool(file_path: str, user_id: str, workspace_id: str = None) -> str:
     """
     Ingest a file into the system
     
     Args:
         file_path: Path to the file to ingest
-        user_id: User ID for Supabase storage and database insert (required for multi-user)
-        workspace_id: Workspace ID to organize files (optional - auto-creates default if not provided)
+        user_id: Required user ID for Supabase storage and database insert
+        workspace_id: Optional workspace ID to organize files (null for global vault)
     """
     try:
         result = ingest_file(file_path, user_id=user_id, workspace_id=workspace_id)

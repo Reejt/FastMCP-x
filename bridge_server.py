@@ -64,7 +64,8 @@ class IngestRequest(BaseModel):
     file_content: str  # base64 encoded
     file_type: str
     file_size: int
-    user_id: str = None  # Optional user ID for Supabase storage
+    user_id: str  # Required user ID for Supabase storage
+    workspace_id: Optional[str] = None  # Optional workspace ID for file organization
 
 class ExcelQueryRequest(BaseModel):
     file_path: str
@@ -256,7 +257,11 @@ async def ingest_endpoint(request: IngestRequest):
         
         try:
             # Call fast_mcp_client function (handles MCP connection internally)
-            response = await mcp_ingest_file(temp_file_path, user_id=request.user_id)
+            response = await mcp_ingest_file(
+                temp_file_path, 
+                user_id=request.user_id,
+                workspace_id=request.workspace_id
+            )
                 
             return {
                 "success": True,

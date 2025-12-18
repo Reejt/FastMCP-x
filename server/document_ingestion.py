@@ -39,14 +39,14 @@ if SUPABASE_URL and SUPABASE_KEY:
 
 # Import will be done after query_handler is fully loaded to avoid circular import
 
-def ingest_file(file_path: str, user_id: str = None, workspace_id: str = None):
+def ingest_file(file_path: str, user_id: str, workspace_id: str = None):
     """
     Implementation function for file ingestion
     
     Args:
         file_path: Path to the file to ingest
-        user_id: User ID for Supabase storage (required when using Supabase)
-        workspace_id: Workspace ID to organize files (required for database insert)
+        user_id: Required user ID for Supabase storage and database insert
+        workspace_id: Optional workspace ID to organize files (null for global vault)
     """
     print(f"Starting ingestion of file: {file_path}")
     
@@ -98,33 +98,14 @@ def ingest_file(file_path: str, user_id: str = None, workspace_id: str = None):
                 # Insert metadata into file_upload table
                 file_id = str(uuid.uuid4())
                 
-                # Handle workspace_id - get or create default workspace if needed
-                final_workspace_id = workspace_id
-                if not final_workspace_id and supabase and user_id:
-                    # Try to get the user's default workspace
-                    try:
-                        workspace_response = supabase.table('workspaces').select('id').eq('user_id', user_id).order('created_at').limit(1).execute()
-                        if workspace_response.data and len(workspace_response.data) > 0:
-                            final_workspace_id = workspace_response.data[0]['id']
-                        else:
-                            # Create a default workspace for the user
-                            create_response = supabase.table('workspaces').insert({
-                                'name': 'Personal Workspace',
-                                'user_id': user_id
-                            }).select('id').execute()
-                            if create_response.data and len(create_response.data) > 0:
-                                final_workspace_id = create_response.data[0]['id']
-                                print(f"✅ Created default workspace: {final_workspace_id}")
-                    except Exception as e:
-                        print(f"⚠️  Warning: Could not get or create default workspace: {str(e)}")
-                        return f"Error: Could not get or create workspace for file ingestion: {str(e)}"
+                # Use provided workspace_id (can be null for global vault)
+                final_workspace_id = workspace_id  # Keep as None/null if not provided
                 
-                if not final_workspace_id:
-                    return "Error: workspace_id is required for file upload"
+                print(f"📊 Inserting file metadata - workspace_id: {final_workspace_id}")
                 
                 db_response = supabase.table('file_upload').insert({
                     'id': file_id,
-                    'workspace_id': final_workspace_id,
+                    'workspace_id': final_workspace_id,  # Will be null if not provided
                     'file_name': filename,
                     'file_path': storage_path,
                     'size_bytes': file_size,

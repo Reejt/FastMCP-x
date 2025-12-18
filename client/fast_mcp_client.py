@@ -38,18 +38,21 @@ async def answer_query(query: str, conversation_history: list = None):
         return response
 
         
-async def ingest_file(file_path: str, user_id: str = None):
+async def ingest_file(file_path: str, user_id: str, workspace_id: str = None):
     """
     Ingest a document into the system
     
     Args:
         file_path: Path to the file to ingest
-        user_id: Optional user ID for Supabase storage (if not provided, uses local storage)
+        user_id: Required user ID for Supabase storage
+        workspace_id: Optional workspace ID for file organization in Supabase
     """
     async with Client(FASTMCP_SERVER_URL) as client:
         tool_params = {"file_path": file_path}
         if user_id:
             tool_params["user_id"] = user_id
+        if workspace_id:
+            tool_params["workspace_id"] = workspace_id
             
         result = await client.call_tool("ingest_file_tool", tool_params)
                         

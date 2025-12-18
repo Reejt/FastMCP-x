@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getWorkspaceFiles } from '@/lib/supabase/documents';
 
 // Server-side env variable (no NEXT_PUBLIC_ prefix needed in API routes)
 const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001';
@@ -28,8 +29,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get or create workspace
-    let _finalWorkspaceId = workspaceId;
+    // Validate workspace_id if provided, allow null otherwise
+    let _finalWorkspaceId: string | null = workspaceId || null;
 
     if (workspaceId) {
       // Validate provided workspace_id exists and belongs to user
@@ -45,37 +46,9 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
-    } else {
-      // Get or create default workspace for the current user
-      const { data: existingWorkspaces } = await supabase
-        .from('file_upload')
-        .select('workspace_id')
-        .eq('user_id', user.id)
-        .order('uploaded_at', { ascending: false })
-        .limit(1);
-
-      if (existingWorkspaces && existingWorkspaces.length > 0) {
-        _finalWorkspaceId = existingWorkspaces[0].workspace_id;
-      } else {
-        // Create default workspace if user has none
-        const { data: newWorkspace, error: createError } = await supabase
-          .from('workspaces')
-          .insert({
-            name: 'Personal Workspace',
-            user_id: user.id
-          })
-          .select('id')
-          .single();
-
-        if (createError || !newWorkspace) {
-          return NextResponse.json(
-            { error: 'Failed to create default workspace' },
-            { status: 500 }
-          );
-        }
-        _finalWorkspaceId = newWorkspace.id;
-      }
     }
+    // If no workspaceId provided, _finalWorkspaceId remains null
+    // Files will be stored without workspace association (for global vault)
 
     // Validate file type (you can expand this list)
     const allowedTypes = [
@@ -111,7 +84,8 @@ export async function POST(request: NextRequest) {
       file_content: base64Content,
       file_type: file.type,
       file_size: file.size,
-      user_id: user.id  // Pass user ID for Supabase storage
+      user_id: user.id,  // Pass user ID for Supabase storage
+      workspace_id: _finalWorkspaceId  // Pass workspace ID to backend
     };
 
     // Call the bridge server ingest endpoint
@@ -170,6 +144,7 @@ export async function POST(request: NextRequest) {
 // GET method to list uploaded files from Supabase
 export async function GET(request: NextRequest) {
   try {
+    // Authenticate user first
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -180,40 +155,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get workspace_id from query params (optional)
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
 
-    // Build query - always filter by current user
-    let query = supabase
-      .from('file_upload')
-      .select('id, workspace_id, file_name, file_path, size_bytes, status, uploaded_at')
-      .eq('user_id', user.id)  // Only get files uploaded by current user
-      .is('deleted_at', null)
-      .order('uploaded_at', { ascending: false });
-
-    // Filter by workspace if provided
-    if (workspaceId) {
-      query = query.eq('workspace_id', workspaceId)
-    }
-
-    const { data: files, error: dbError } = await query;
-
-    if (dbError) {
-      console.error('Database query error:', dbError);
+    if (!workspaceId) {
       return NextResponse.json(
-        { error: 'Failed to fetch documents', details: dbError.message },
-        { status: 500 }
+        { error: 'Workspace ID is required' },
+        { status: 400 }
       );
     }
+
+    // Verify workspace exists and belongs to user
+    const { data: workspace, error: workspaceError } = await supabase
+      .from('workspaces')
+      .select('id')
+      .eq('id', workspaceId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (workspaceError || !workspace) {
+      return NextResponse.json(
+        { error: 'Workspace not found or access denied' },
+        { status: 403 }
+      );
+    }
+
+    // Use documents service layer to fetch workspace files
+    const files = await getWorkspaceFiles(workspaceId);
 
     return NextResponse.json({
       success: true,
       files: files || [],
       count: files?.length || 0,
-      workspaceId: workspaceId || null
+      workspaceId: workspaceId
     });
   } catch (error) {
+    console.error('Error fetching workspace files:', error);
     return NextResponse.json(
       {
         error: 'Failed to fetch uploaded files',
