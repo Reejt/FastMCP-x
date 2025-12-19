@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter, usePathname } from 'next/navigation'
 import { User, Workspace } from '@/app/types'
 import SidebarItem from './SidebarItem'
+import { CodeChat } from '../CodeChat/CodeChat'
 
 interface SidebarProps {
   user: User
@@ -17,11 +18,12 @@ export default function Sidebar({
 }: SidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const [activeSection, setActiveSection] = useState<'chat' | 'vault' | 'workspaces' | 'instructions'>('chat')
+  const [activeSection, setActiveSection] = useState<'chat' | 'vault' | 'workspaces' | 'instructions' | 'codechat'>('chat')
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
   const [isWorkspacesDropdownOpen, setIsWorkspacesDropdownOpen] = useState(true)
+  const [showCodeChatModal, setShowCodeChatModal] = useState(false)
 
   // Update active section based on current pathname and extract workspace ID
   useEffect(() => {
@@ -294,8 +296,67 @@ export default function Sidebar({
                 router.push('/instructions')
               }}
             />
+
+            {/* Code Chat Section */}
+            <SidebarItem
+              icon={
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+              }
+              label="Code Chat"
+              isActive={activeSection === 'codechat'}
+              isCollapsed={isCollapsed}
+              onClick={(e) => {
+                e.stopPropagation() // Prevent triggering sidebar click
+                setActiveSection('codechat')
+                setShowCodeChatModal(true)
+              }}
+            />
           </div>
         </div>
+
+        {/* Code Chat Modal */}
+        <AnimatePresence>
+          {showCodeChatModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
+              onClick={() => setShowCodeChatModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="bg-white rounded-lg shadow-xl max-w-6xl w-[90vw] h-[90vh] overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Modal Header */}
+                <div className="flex items-center justify-between p-4 border-b">
+                  <h2 className="text-lg font-bold">Code Chat & Completions</h2>
+                  <button
+                    onClick={() => setShowCodeChatModal(false)}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    aria-label="Close modal"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Modal Content */}
+                <div className="h-full overflow-auto">
+                  <CodeChat />
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* User Profile Section */}
         <div className="p-3">
