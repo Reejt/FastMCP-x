@@ -1,0 +1,22 @@
+# FastMCP Frontend Development Dockerfile - with hot reload
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies first for better caching
+COPY frontend/package.json frontend/package-lock.json* ./
+
+RUN npm ci
+
+# Copy application code
+COPY frontend/ .
+
+# Expose port
+EXPOSE 3000
+
+# Set environment variables
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Run Next.js dev server with turbopack
+CMD ["npm", "run", "dev"]

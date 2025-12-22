@@ -209,11 +209,6 @@ export function CodeChat() {
                 setCursorPos(e.position.column);
               });
             }}
-            onSelection={(selection: any) => {
-              if (selection && !selection.isEmpty) {
-                setSelectedText(code.substring(selection.startLineNumber - 1, selection.endLineNumber));
-              }
-            }}
             options={{
               minimap: { enabled: true },
               fontSize: 14,

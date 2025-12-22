@@ -278,7 +278,9 @@ export default function WorkspacesPage() {
           {/* Edit Workspace Modal */}
           {editingWorkspace && (
             <EditWorkspaceModal
-              workspace={editingWorkspace}
+              workspaceId={editingWorkspace.id}
+              workspaceName={editingWorkspace.name}
+              workspaceDescription={editingWorkspace.description ?? null}
               onCloseAction={() => setEditingWorkspace(null)}
               onUpdateAction={handleUpdateWorkspace}
             />

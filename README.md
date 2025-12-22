@@ -34,8 +34,43 @@ FastMCP Server (8000) + PostgreSQL/pgvector
 - Node.js 18+
 - Ollama (local LLM inference)
 - Supabase account (auth + database)
+- **Docker & Docker Compose** (for containerized deployment)
 
 ## ⚡ Quick Start
+
+### Option 1: Docker (Recommended)
+
+**Easiest way to run the entire stack!**
+
+```bash
+# 1. Configure environment
+cp .env.docker .env
+# Edit .env with your Supabase credentials
+
+# 2. Start all services (Windows)
+docker-deploy.bat up
+
+# Or (macOS/Linux)
+./docker-deploy.sh up
+
+# 3. Access applications
+# Frontend:  http://localhost:3000
+# API Docs:  http://localhost:8000/docs
+# Ollama:    http://localhost:11434
+```
+
+**Development with hot reload:**
+```bash
+# Windows
+docker-deploy.bat up-dev
+
+# macOS/Linux
+./docker-deploy.sh up-dev
+```
+
+See [DOCKER_SETUP.md](./DOCKER_SETUP.md) for full Docker documentation.
+
+### Option 2: Local Development
 
 ### 1. Backend Setup
 ```bash
@@ -64,7 +99,7 @@ NEXT_PUBLIC_BRIDGE_SERVER_URL=http://localhost:3001
 .\start_servers.ps1
 ```
 
-**Manual** (3 terminals):
+**Manual** (4 terminals):
 ```bash
 # Terminal 1: Ollama
 ollama serve
