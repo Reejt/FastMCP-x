@@ -181,7 +181,7 @@ def query_with_instructions(
         
         # Query Ollama
         response = requests.post(
-            'http://localhost:11434/api/generate',
+            'http://host.docker.internal:11434/api/generate',
             json={
                 'model': model_name,
                 'prompt': full_prompt,
@@ -241,7 +241,7 @@ def query_with_instructions_stream(
         
         # Query Ollama with streaming
         response = requests.post(
-            'http://localhost:11434/api/generate',
+            'http://host.docker.internal:11434/api/generate',
             json={
                 'model': model_name,
                 'prompt': full_prompt,

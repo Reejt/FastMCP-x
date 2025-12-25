@@ -14,6 +14,7 @@ from server.document_ingestion import ingest_file
 from server.query_handler import answer_query, query_model
 from server.web_search_file import tavily_web_search
 from server.query_handler import answer_link_query
+from server.presentation_generator import generate_presentation
 
 # pgvector Enterprise Mode Active
 # - Embeddings stored in Supabase document_embeddings table (chunk_text, embedding[vector], metadata[jsonb])
@@ -27,28 +28,24 @@ print("✅ Database-side similarity search enabled")
 print("✅ Multi-workspace support enabled")
 print("✅ Workspace instructions enabled")
 print("✅ Chat history enabled")
-from server.instructions import (
-    query_with_instructions,
-    query_with_instructions_stream,
-    get_active_instruction,
-    get_instruction_preview,
-    clear_instruction_cache
-) 
+ 
 
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
 
 @mcp.tool
-def ingest_file_tool(file_path: str, user_id: str, workspace_id: str = None) -> str:
+def ingest_file_tool(file_path: str, user_id: str, workspace_id: str = None, base64_content: str = None, file_name: str = None) -> str:
     """
     Ingest a file into the system
     
     Args:
-        file_path: Path to the file to ingest
+        file_path: Path to the file to ingest (used if base64_content not provided)
         user_id: Required user ID for Supabase storage and database insert
         workspace_id: Optional workspace ID to organize files (null for global vault)
+        base64_content: Optional base64 encoded file content (takes precedence over file_path)
+        file_name: Optional file name when using base64_content
     """
     try:
-        result = ingest_file(file_path, user_id=user_id, workspace_id=workspace_id)
+        result = ingest_file(file_path, user_id=user_id, workspace_id=workspace_id, base64_content=base64_content, file_name=file_name)
         print(f"Ingest result: {result}")
         return result
     except Exception as e:
@@ -161,9 +158,43 @@ def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]
         return error_msg
 
 
+@mcp.tool
+def generate_presentation_tool(topic: str, num_slides: int = 10, style: str = "professional") -> str:
+    """
+    Generate a professional presentation on any topic
+    
+    Args:
+        topic: The topic for the presentation
+        num_slides: Number of slides to generate (default: 10, max: 50)
+        style: Presentation style - 'professional', 'educational', or 'creative'
+    
+    Returns:
+        JSON string containing the file path and presentation metadata
+    """
+    try:
+        # Validate num_slides
+        num_slides = max(5, min(num_slides, 50))
+        
+        result = generate_presentation(
+            topic=topic,
+            num_slides=num_slides,
+            style=style
+        )
+        print(f"Presentation generation result: {result}")
+        return json.dumps(result)
+    except Exception as e:
+        error_msg = f"Error in generate_presentation_tool: {str(e)}"
+        print(error_msg)
+        return json.dumps({
+            "success": False,
+            "error": error_msg
+        })
+
+
 if __name__ == "__main__":
     print("Starting FastMCP server in HTTP mode on port 8000...")
     # Run FastMCP server using SSE transport
-    mcp.run(transport="sse")
+    # Bind to 0.0.0.0 so it's accessible from other Docker containers
+    mcp.run(transport="sse", host="0.0.0.0", port=8000)
 
 

@@ -57,15 +57,7 @@ export default function VaultPage() {
         const transformedDocs = result.files.map((file: { id: string; file_name: string; size_bytes: number; uploaded_at: string; file_path: string; status: string }) => {
           // Remove temporary file prefix (tmpXXXX_XXXX_) if present
           let displayName = file.file_name
-          if (displayName.startsWith('tmp')) {
-            // Remove everything up to and including the last underscore before the actual filename
-            const parts = displayName.split('_')
-            if (parts.length > 2) {
-              displayName = parts.slice(2).join('_')
-            } else if (parts.length === 2) {
-              displayName = parts[1]
-            }
-          }
+        
           
           // Extract file extension
           const lastDotIndex = displayName.lastIndexOf('.')

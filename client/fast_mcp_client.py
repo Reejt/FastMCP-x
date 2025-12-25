@@ -1,9 +1,13 @@
 # client/fast_mcp_client.py
 import asyncio
+import os
 from fastmcp import Client
 
-# MCP Server URL
-FASTMCP_SERVER_URL = "http://localhost:8000/sse"
+# MCP Server URL - uses Docker service name
+MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://backend:8000/sse")
+
+FASTMCP_SERVER_URL = MCP_SERVER_URL
+print(f"MCP Server URL: {FASTMCP_SERVER_URL}")
 
 async def answer_query(query: str, conversation_history: list = None):
     """
@@ -38,21 +42,25 @@ async def answer_query(query: str, conversation_history: list = None):
         return response
 
         
-async def ingest_file(file_path: str, user_id: str, workspace_id: str = None):
+async def ingest_file(file_path: str, user_id: str, workspace_id: str = None, base64_content: str = None, file_name: str = None):
     """
     Ingest a document into the system
     
     Args:
-        file_path: Path to the file to ingest
+        file_path: Path to the file to ingest (used if base64_content not provided)
         user_id: Required user ID for Supabase storage
         workspace_id: Optional workspace ID for file organization in Supabase
+        base64_content: Optional base64 encoded file content (takes precedence over file_path)
+        file_name: Optional file name when using base64_content
     """
     async with Client(FASTMCP_SERVER_URL) as client:
-        tool_params = {"file_path": file_path}
-        if user_id:
-            tool_params["user_id"] = user_id
-        if workspace_id:
-            tool_params["workspace_id"] = workspace_id
+        tool_params = {
+            "file_path": file_path,
+            "user_id": user_id,
+            "workspace_id": workspace_id,
+            "base64_content": base64_content,
+            "file_name": file_name
+        }
             
         result = await client.call_tool("ingest_file_tool", tool_params)
                         
@@ -231,4 +239,40 @@ async def clear_instruction_cache(workspace_id: str = None):
         
         return response
 
-               
+
+async def generate_presentation(topic: str, num_slides: int = 10, style: str = "professional"):
+    """
+    Generate a professional presentation on any topic
+    
+    Args:
+        topic: The topic for the presentation
+        num_slides: Number of slides to generate (5-50, default: 10)
+        style: Presentation style - 'professional', 'educational', or 'creative'
+    
+    Returns:
+        JSON response with file path and presentation metadata
+    """
+    import json
+    
+    async with Client(FASTMCP_SERVER_URL) as client:
+        result = await client.call_tool("generate_presentation_tool", {
+            "topic": topic,
+            "num_slides": num_slides,
+            "style": style
+        })
+        
+        # Extract response from MCP result
+        if hasattr(result, 'content') and result.content:
+            response = result.content[0].text
+        elif hasattr(result, 'data') and result.data:
+            response = result.data
+        else:
+            response = str(result)
+        
+        # Parse JSON string response if needed
+        try:
+            if isinstance(response, str):
+                return json.loads(response)
+            return response
+        except json.JSONDecodeError:
+            return {"success": False, "error": str(response)}

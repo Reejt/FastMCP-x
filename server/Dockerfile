@@ -25,6 +25,7 @@ EXPOSE 8000
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app:$PYTHONPATH
 
 # Run the FastMCP server directly
 CMD ["python", "server/main.py"]

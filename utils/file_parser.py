@@ -52,10 +52,17 @@ def store_extracted_content(file_id: str, user_id: str, content: str, file_name:
             'extracted_at': datetime.utcnow().isoformat()
         }, on_conflict='file_id').execute()
         
-        print(f"Successfully stored extracted content for file: {file_name}")
-        return True
+        # Check if upsert was successful
+        if result and result.data:
+            print(f"✅ Successfully stored extracted content for file: {file_name}")
+            print(f"   Upserted record: {result.data}")
+            return True
+        else:
+            print(f"⚠️  Warning: Upsert returned no data. Response: {result}")
+            return False
+            
     except Exception as e:
-        print(f"Error storing extracted content: {str(e)}")
+        print(f"❌ Error storing extracted content: {str(e)}")
         return False
 
 def extract_text_from_shape(shape):

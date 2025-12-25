@@ -39,25 +39,40 @@ if SUPABASE_URL and SUPABASE_KEY:
 
 # Import will be done after query_handler is fully loaded to avoid circular import
 
-def ingest_file(file_path: str, user_id: str, workspace_id: str = None):
+def ingest_file(file_path: str, user_id: str, workspace_id: str = None, base64_content: str = None, file_name: str = None):
     """
     Implementation function for file ingestion
     
     Args:
-        file_path: Path to the file to ingest
+        file_path: Path to the file to ingest (used if base64_content not provided)
         user_id: Required user ID for Supabase storage and database insert
         workspace_id: Optional workspace ID to organize files (null for global vault)
+        base64_content: Optional base64 encoded file content (takes precedence over file_path)
+        file_name: Optional file name when using base64_content
     """
     print(f"Starting ingestion of file: {file_path}")
     
     try:
-        # Check if file exists
-        if not os.path.exists(file_path):
-            return f"Error: File not found at path '{file_path}'"
+        # Store original filename FIRST (before any temp files are created)
+        # This ensures the correct name is used in the database
+        original_filename = file_name or os.path.basename(file_path)
         
-        # Get filename and file stats
-        filename = os.path.basename(file_path)
-        file_size = os.path.getsize(file_path)
+        # Handle base64 content if provided (for Docker cross-container compatibility)
+        if base64_content:
+            import base64
+            print(f"📦 Using base64-encoded file content")
+            file_content_bytes = base64.b64decode(base64_content)
+            filename = original_filename
+            file_size = len(file_content_bytes)
+        else:
+            # Check if file exists
+            if not os.path.exists(file_path):
+                return f"Error: File not found at path '{file_path}'"
+            
+            # Get filename and file stats
+            filename = original_filename
+            file_size = os.path.getsize(file_path)
+            file_content_bytes = None
         
         # Determine file type
         file_extension = os.path.splitext(filename)[1].lower()
@@ -78,9 +93,12 @@ def ingest_file(file_path: str, user_id: str, workspace_id: str = None):
         if supabase and user_id:
             print(f"☁️  Uploading file to Supabase Storage...")
             try:
-                # Read file content
-                with open(file_path, 'rb') as f:
-                    file_content = f.read()
+                # Read file content if not already provided as base64
+                if file_content_bytes is None:
+                    with open(file_path, 'rb') as f:
+                        file_content = f.read()
+                else:
+                    file_content = file_content_bytes
                     
                 # Generate unique file path in Supabase Storage
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -103,27 +121,55 @@ def ingest_file(file_path: str, user_id: str, workspace_id: str = None):
                 
                 print(f"📊 Inserting file metadata - workspace_id: {final_workspace_id}")
                 
-                db_response = supabase.table('file_upload').insert({
-                    'id': file_id,
-                    'workspace_id': final_workspace_id,  # Will be null if not provided
-                    'file_name': filename,
-                    'file_path': storage_path,
-                    'size_bytes': file_size,
-                    'file_type': file_type,
-                    'status': 'uploaded',
-                    'user_id': user_id
-                }).execute()
+                try:
+                    db_response = supabase.table('file_upload').insert({
+                        'id': file_id,
+                        'workspace_id': final_workspace_id,  # Will be null if not provided
+                        'file_name': filename,
+                        'file_path': storage_path,
+                        'size_bytes': file_size,
+                        'file_type': file_type,
+                        'status': 'uploaded',
+                        'user_id': user_id
+                    }).execute()
                     
-                print(f"✅ File metadata saved to Supabase database")
+                    # Check if insert was successful
+                    if db_response and db_response.data:
+                        print(f"✅ File metadata saved to Supabase database")
+                        print(f"   Inserted record: {db_response.data}")
+                    else:
+                        print(f"⚠️  Warning: Insert returned no data. Response: {db_response}")
+                        
+                except Exception as db_error:
+                    error_msg = f"❌ Database insert error: {str(db_error)}"
+                    print(f"{error_msg}")
+                    return error_msg
                     
                 # Extract text and store in document_content table
                 print(f"📄 Extracting and storing text content...")
-                content, stored = extract_and_store_file_content(
-                    file_path=file_path,
-                    file_id=file_id,
-                    user_id=user_id,
-                    file_name=filename
-                )
+                
+                # If we have base64_content, we need a temporary file for text extraction
+                extraction_file_path = file_path
+                temp_extraction_file = None
+                if base64_content and not os.path.exists(file_path):
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{filename}") as temp_file:
+                        temp_file.write(file_content)
+                        temp_extraction_file = temp_file.name
+                        extraction_file_path = temp_extraction_file
+                    print(f"📦 Using temporary file for text extraction: {temp_extraction_file}")
+                
+                try:
+                    content, stored = extract_and_store_file_content(
+                        file_path=extraction_file_path,
+                        file_id=file_id,
+                        user_id=user_id,
+                        file_name=filename
+                    )
+                finally:
+                    # Clean up temporary extraction file if created
+                    if temp_extraction_file and os.path.exists(temp_extraction_file):
+                        os.unlink(temp_extraction_file)
                 
                 if not content or not content.strip():
                     print(f"⚠️  Warning: No text content extracted from file '{filename}'")

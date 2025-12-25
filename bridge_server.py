@@ -30,6 +30,7 @@ from client.fast_mcp_client import (
     query_excel_with_llm as mcp_query_excel,
     web_search as mcp_web_search,
     answer_link_query as mcp_answer_link_query,
+    generate_presentation as mcp_generate_presentation,
 )
 
 # Initialize FastAPI app
@@ -43,8 +44,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
+        "http://frontend:3000",  # Docker service name (container-to-container)
+        "http://localhost:3000",  # Browser access (for development)
+        "http://127.0.0.1:3000"   # Localhost IP fallback
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -107,6 +109,78 @@ async def query_endpoint(request: QueryRequest):
         print(f"📥 Received query: {request.query}")
         if request.conversation_history:
             print(f"📜 With conversation history: {len(request.conversation_history)} messages")
+        
+        # Detect if query is a presentation generation request
+        import re
+        presentation_pattern = r'\b(create|generate|make|build)\s+(a\s+)?(presentation|powerpoint|slide|deck)\b'
+        is_presentation_request = re.search(presentation_pattern, request.query, re.IGNORECASE)
+        
+        if is_presentation_request:
+            print(f"🎨 Presentation generation detected: {request.query}")
+            
+            # Extract topic (everything except the presentation request keywords)
+            topic = re.sub(presentation_pattern, '', request.query, flags=re.IGNORECASE).strip()
+            if not topic:
+                topic = "General Topic"
+            
+            # Extract number of slides if mentioned (e.g., "10 slides", "with 10 slides")
+            slides_pattern = r'(\d+)\s*(slides?)?'
+            slides_match = re.search(slides_pattern, request.query, re.IGNORECASE)
+            num_slides = int(slides_match.group(1)) if slides_match else 10
+            num_slides = max(5, min(num_slides, 50))  # Clamp between 5-50
+            
+            # Extract style if mentioned (professional, educational, creative)
+            style = "professional"
+            if re.search(r'\beducational\b', request.query, re.IGNORECASE):
+                style = "educational"
+            elif re.search(r'\bcreative\b', request.query, re.IGNORECASE):
+                style = "creative"
+            
+            print(f"   Topic: {topic}, Slides: {num_slides}, Style: {style}")
+            
+            try:
+                response = await mcp_generate_presentation(
+                    topic=topic,
+                    num_slides=num_slides,
+                    style=style
+                )
+                
+                # Parse response if it's a string
+                if isinstance(response, str):
+                    try:
+                        response = json.loads(response)
+                    except json.JSONDecodeError:
+                        response = {"success": False, "error": response}
+                
+                def event_generator():
+                    yield f"data: {json.dumps(response)}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                
+                return StreamingResponse(
+                    event_generator(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no"
+                    }
+                )
+            except Exception as e:
+                print(f"❌ Presentation generation error: {str(e)}")
+                
+                def event_generator():
+                    yield f"data: {json.dumps({'success': False, 'error': str(e)})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                
+                return StreamingResponse(
+                    event_generator(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no"
+                    }
+                )
         
         # Detect if query contains a URL - route to link query handler
         import re
@@ -247,30 +321,21 @@ async def ingest_endpoint(request: IngestRequest):
         if request.file_size > max_size:
             raise HTTPException(status_code=400, detail="File size too large (max 50MB)")
         
-        # Decode base64 content
-        file_content = base64.b64decode(request.file_content)
-        
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{request.file_name}") as temp_file:
-            temp_file.write(file_content)
-            temp_file_path = temp_file.name
-        
-        try:
-            # Call fast_mcp_client function (handles MCP connection internally)
-            response = await mcp_ingest_file(
-                temp_file_path, 
-                user_id=request.user_id,
-                workspace_id=request.workspace_id
-            )
+        # Call fast_mcp_client function with base64_content directly
+        # This avoids cross-container filesystem issues
+        response = await mcp_ingest_file(
+            file_path=request.file_name,  # Pass filename as fallback
+            user_id=request.user_id,
+            workspace_id=request.workspace_id,
+            base64_content=request.file_content,  # Pass base64 content directly
+            file_name=request.file_name
+        )
                 
-            return {
-                "success": True,
-                "message": response,
-                "file_name": request.file_name
-            }
-        finally:
-            # Clean up temporary file
-            os.unlink(temp_file_path)
+        return {
+            "success": True,
+            "message": response,
+            "file_name": request.file_name
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
 
@@ -386,7 +451,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("FastMCP Bridge Server")
     print("=" * 60)
-    print("Bridge Server URL: http://localhost:3001")
+    print("Bridge Server URL: http://bridge:3001 (Docker) / http://localhost:3001 (Local)")
     print("Routes requests to: client/fast_mcp_client.py")
     print("=" * 60)
     print("ℹ️  PREREQUISITE: FastMCP server must be running")

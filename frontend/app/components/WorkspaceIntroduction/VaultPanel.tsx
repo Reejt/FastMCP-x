@@ -33,15 +33,7 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
 
   const transformFileData = (file: any) => {
     let displayName = file.file_name
-    if (displayName.startsWith('tmp')) {
-      const parts = displayName.split('_')
-      if (parts.length > 2) {
-        displayName = parts.slice(2).join('_')
-      } else if (parts.length === 2) {
-        displayName = parts[1]
-      }
-    }
-
+    
     // Extract file extension
     const lastDotIndex = displayName.lastIndexOf('.')
     const extension = lastDotIndex > -1 ? displayName.substring(lastDotIndex + 1).toLowerCase() : ''

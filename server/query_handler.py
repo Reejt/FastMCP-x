@@ -227,7 +227,7 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = Fals
         
         # Query logic without workspace instructions
         response = requests.post(
-            'http://localhost:11434/api/generate',
+            'http://host.docker.internal:11434/api/generate',
             json={
                 'model': model_name,
                 'prompt': query,

@@ -21,7 +21,7 @@ import {
  */
 async function clearBackendInstructionCache(workspaceId: string) {
   try {
-    const bridgeServerUrl = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001'
+    const bridgeServerUrl = process.env.BRIDGE_SERVER_URL || 'http://bridge:3001'
     await fetch(`${bridgeServerUrl}/api/clear-instruction-cache?workspace_id=${workspaceId}`, {
       method: 'POST'
     })
