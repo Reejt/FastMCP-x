@@ -311,8 +311,11 @@ export default function WorkspacePage() {
 
             for (const line of lines) {
               if (line.startsWith('data: ')) {
+                const jsonStr = line.slice(6)
+                if (!jsonStr.trim()) continue // Skip empty lines
+                
                 try {
-                  const data = JSON.parse(line.slice(6))
+                  const data = JSON.parse(jsonStr)
 
                   if (data.chunk) {
                     // Append chunk to accumulated content
@@ -339,7 +342,14 @@ export default function WorkspacePage() {
                     throw new Error(data.error)
                   }
                 } catch (parseError) {
-                  console.error('Error parsing SSE data:', parseError)
+                  // Log invalid SSE data for debugging
+                  if (jsonStr.startsWith('<')) {
+                    // HTML response (likely an error page)
+                    console.error('Received HTML instead of JSON. This indicates a server error.')
+                    throw new Error('Server returned HTML error page. Check server logs.')
+                  } else {
+                    console.error('Error parsing SSE data:', parseError, 'Raw data:', jsonStr)
+                  }
                 }
               }
             }

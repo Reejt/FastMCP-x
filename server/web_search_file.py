@@ -12,7 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 import os
 from dotenv import load_dotenv
-from server.query_handler import semantic_similarity_to_last_message, query_model 
+from server.query_handler import query_model 
 
 # Load environment variables from server/.env.local
 env_path = os.path.join(os.path.dirname(__file__), '.env.local')
@@ -63,21 +63,11 @@ def tavily_web_search(query,conversation_history: list = None, **kwargs):
         if top_content in ["No URL found in top result", "No search results found", "No results in response"]:
             return f"No search results found for query: '{query}'"
     
-        similarity_to_last = semantic_similarity_to_last_message(query,conversation_history)
 
-         # Build enhanced prompt with conversation continuity
-        conversation_context = ""
-        if similarity_to_last >= 0.6:
-            conversation_context = f"\n\nNote: This question is semantically similar (similarity: {similarity_to_last:.2f}) to the previous message, suggesting it's a continuation of the conversation. Maintain context and reference previous discussion when relevant."
-        
         # Build prompt for LLM
-        prompt = f"Answer this question using the content below:\nQuestion: {query}\n\nContent:\n{top_content[:4000]}{conversation_context}"
+        prompt = f"Answer this question using the content below:\nQuestion: {query}\n\nContent:\n{top_content[:4000]}"
         
-        llm_response = query_model(prompt)
-        
-        # Append semantic similarity metadata to response if available
-        if similarity_to_last > 0.0:
-            llm_response += f"\n\n---\n**Semantic Similarity to Last Message:** {similarity_to_last:.3f}"
+        llm_response = query_model(prompt,conversation_history=conversation_history)
         
         return llm_response
     

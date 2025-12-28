@@ -44,9 +44,23 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      let errorMessage = 'Bridge server error';
+      const contentType = response.headers.get('content-type');
+      
+      try {
+        if (contentType?.includes('application/json')) {
+          const error = await response.json();
+          errorMessage = error.detail || error.error || 'Bridge server error';
+        } else {
+          // If not JSON (e.g., HTML error page), use status text
+          errorMessage = `Bridge server error: ${response.statusText}`;
+        }
+      } catch {
+        errorMessage = `Bridge server error: ${response.statusText}`;
+      }
+      
       return NextResponse.json(
-        { error: error.detail || 'Bridge server error' },
+        { error: errorMessage },
         { status: response.status }
       );
     }

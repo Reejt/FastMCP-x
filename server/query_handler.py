@@ -87,7 +87,7 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
         query: The search query text
         top_k: Number of top results to return (default: 5)
         min_similarity: Minimum similarity threshold (0.0-1.0, default: 0.2)
-        workspace_id: Optional workspace filter
+        workspace_id: Optional workspace filter for search results (default: None)
     
     Returns:
         List of (content, similarity_score, filename) tuples
@@ -163,74 +163,29 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50):
     return chunks
 
 
-def semantic_similarity_to_last_message(current_query: str, conversation_history: list = None) -> float:
-    """
-    Calculate semantic similarity between current query and last message in conversation history
-    Uses embedding-based cosine similarity instead of keyword matching
-    
-    Args:
-        current_query: The current user query
-        conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
-    
-    Returns:
-        Similarity score (0.0-1.0), or 0.0 if no history or embedding unavailable
-    """
-    if not conversation_history or len(conversation_history) == 0:
-        return 0.0
-    
-    model = get_semantic_model()
-    if not model:
-        return 0.0
-    
-    try:
-        # Get the last message content
-        last_message = conversation_history[-1].get('content', '')
-        if not last_message:
-            return 0.0
-        
-        # Encode both texts
-        embeddings = model.encode([current_query, last_message])
-        current_embedding = embeddings[0]
-        last_embedding = embeddings[1]
-        
-        # Calculate cosine similarity
-        from sklearn.metrics.pairwise import cosine_similarity
-        similarity = cosine_similarity([current_embedding], [last_embedding])[0][0]
-        
-        print(f"📊 Semantic similarity to last message: {similarity:.3f}")
-        return float(similarity)
-    except Exception as e:
-        print(f"⚠️  Error calculating semantic similarity: {e}")
-        return 0.0
-
-
-
-
-def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, workspace_id: str = None, conversation_history: list = None):
+def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, conversation_history: list = None):
     """
     Query the Ollama model via HTTP API with optional conversation history
-    
-    NOTE: workspace_id parameter is deprecated - workspace_instructions table does not exist
-    Database schema: files, workspaces, chats, document_content
     
     Args:
         query: The current user query
         model_name: Name of the Ollama model to use
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
-        workspace_id: DEPRECATED - has no effect (workspace_instructions table doesn't exist)
     """
     try:
-        # workspace_id parameter is ignored - instructions feature disabled
-        if workspace_id:
-            print(f"Warning: workspace_id parameter ignored - workspace_instructions table does not exist")
+        # Build full prompt with conversation history if provided
+        full_prompt = query
+        if conversation_history and len(conversation_history) > 0:
+            history_text = "\n\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in conversation_history[-5:]])  # Last 5 messages for context
+            full_prompt = f"Conversation History:\n{history_text}\n\nCurrent Query: {query}"
         
-        # Query logic without workspace instructions
+        # Query the LLM
         response = requests.post(
             'http://host.docker.internal:11434/api/generate',
             json={
                 'model': model_name,
-                'prompt': query,
+                'prompt': full_prompt,
                 'stream': False
             },
             timeout=120,  # Increased timeout for large content summarization
@@ -289,19 +244,16 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
     """
     Query the LLM with relevant document chunks as context
     Uses pgvector database-side similarity search
-    Uses semantic similarity to last message for conversation continuity
+    Conversation history is handled by query_model()
     
     Args:
         query: The question to ask
-        max_chunks: Maximum number of document chunks to include (default: 2)
+        max_chunks: Maximum number of document chunks to include (default: 5)
         include_context_preview: Whether to show source documents (default: True)
         conversation_history: List of previous messages for conversation context
         stream: Whether to stream the response (default: False)
         workspace_id: Optional workspace filter for search results
     """
-    # Calculate semantic similarity to last message for conversation continuity
-    similarity_to_last = semantic_similarity_to_last_message(query, conversation_history)
-    
     # Get relevant chunks using pgvector database-side search
     semantic_results = semantic_search_pgvector(query, top_k=max_chunks, min_similarity=0.2, workspace_id=workspace_id)
     
@@ -312,34 +264,29 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
     best_score = semantic_results[0][1]
     
     # If similarity is too low, treat as general query without document context
-    if best_score < 0.4:
+    if best_score < 0.3:
         return query_model(query, conversation_history=conversation_history, stream=stream)
     
     # Build context from search results (max 2000 chars per chunk)
     context_parts = [
-        f"Document: {filename}\nContent: {content[:2000]}{'...' if len(content) > 2000 else ''}"
+        f"Document: {filename}\nScore:{score:.2f}\nContent: {content[:2000]}{'...' if len(content) > 2000 else ''}"
         for content, score, filename in semantic_results
     ]
     
     context = "\n\n---\n\n".join(context_parts)
     
-    # Build enhanced query with conversation continuity indicator
-    conversation_context = ""
-    if similarity_to_last >= 0.6:
-        conversation_context = f"\n\nNote: This question is semantically similar (similarity: {similarity_to_last:.2f}) to the previous message, suggesting it's a continuation of the conversation. Maintain context and reference previous discussion when relevant."
-    
-    enhanced_query = f"""Answer this question using the document content provided below: {query}{conversation_context}
+    enhanced_query = f"""Answer this question using the document content provided below: {query}
 
 DOCUMENT CONTENT:
 {context}
 """
     
-    # Query the LLM with context
-    llm_response = query_model(enhanced_query, stream=stream)
+    # Query the LLM with context and conversation history
+    llm_response = query_model(enhanced_query, conversation_history=conversation_history, stream=stream)
     
     # Handle streaming response
     if stream:
-        sources = list(set(filename for _, _, filename in semantic_results)) if (include_context_preview and semantic_results and best_score >= 0.4) else None
+        sources = list(set(filename for _, _, filename in semantic_results)) if (include_context_preview and semantic_results and best_score >= 0.3) else None
         
         def stream_with_sources():
             # Stream the main response
@@ -354,7 +301,7 @@ DOCUMENT CONTENT:
         return stream_with_sources()
     
     # Format the response with source attribution
-    if include_context_preview and semantic_results and best_score >= 0.4:
+    if include_context_preview and semantic_results and best_score >= 0.3:
         sources = list(set(filename for _, _, filename in semantic_results))
         source_text = ", ".join(sources)
         return f"{llm_response}\n\n---\n**Sources:** {source_text}"
@@ -367,12 +314,11 @@ def answer_link_query(link, question, conversation_history: list = None):
     """
     Answer a question based on the content of a given link (web or social media)
     Works with any URL by extracting available content through multiple strategies
-    Includes semantic similarity to last message in conversation history
     
     Args:
         link: The URL to fetch and analyze
         question: The question to answer based on the link content
-        conversation_history: List of previous messages for semantic similarity calculation
+        conversation_history: List of previous messages for conversation context
     """
     try:
         import requests
@@ -431,24 +377,10 @@ def answer_link_query(link, question, conversation_history: list = None):
         # Clean up excessive whitespace
         content = "\n".join(line.strip() for line in content.split("\n") if line.strip())
         
-        # Calculate semantic similarity to last message
-        similarity_to_last = semantic_similarity_to_last_message(question, conversation_history)
-        
-        # Build enhanced prompt with conversation continuity
-        conversation_context = ""
-        if similarity_to_last >= 0.6:
-            conversation_context = f"\n\nNote: This question is semantically similar (similarity: {similarity_to_last:.2f}) to the previous message, suggesting it's a continuation of the conversation. Maintain context and reference previous discussion when relevant."
-        
         # Build prompt for LLM
-        prompt = f"Answer this question using the content below:\nQuestion: {question}\n\nContent:\n{content[:4000]}{conversation_context}"
+        prompt = f"Answer this question using the content below:\nQuestion: {question}\n\nContent:\n{content[:4000]}"
         
-        llm_response = query_model(prompt)
-        
-        # Append semantic similarity metadata to response if available
-        if similarity_to_last > 0.0:
-            llm_response += f"\n\n---\n**Semantic Similarity to Last Message:** {similarity_to_last:.3f}"
-        
-        return llm_response
+        return query_model(prompt, conversation_history=conversation_history)
     except Exception as e:
         return f"Error: {str(e)}"
        
