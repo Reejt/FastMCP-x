@@ -11,9 +11,11 @@ interface WorkspaceIntroductionProps {
   messages: Message[]
   isProcessing: boolean
   onSendMessage: (message: string) => void
+  isWorkspaceSidebarCollapsed?: boolean
+  onExpandWorkspaceSidebar?: () => void
 }
 
-export default function WorkspaceIntroduction({ workspace, messages, isProcessing, onSendMessage }: WorkspaceIntroductionProps) {
+export default function WorkspaceIntroduction({ workspace, messages, isProcessing, onSendMessage, isWorkspaceSidebarCollapsed, onExpandWorkspaceSidebar }: WorkspaceIntroductionProps) {
   const router = useRouter()
   const [message, setMessage] = useState('')
   const chatHistoryRef = useRef<HTMLDivElement>(null)
@@ -43,9 +45,21 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   return (
     <div className="flex h-full w-full" style={{ backgroundColor: '#f5f3ef' }}>
       {/* Left Side - Chat Area (50% width) */}
-      <div className="flex-1 flex flex-col px-6 py-8 overflow-auto" style={{ flexBasis: '50%' }}>
-        {/* Breadcrumb Navigation */}
-        <nav className="flex items-center gap-2 text-sm text-gray-500 mb-8" aria-label="Breadcrumb">
+      <div className="flex-1 flex flex-col px-6 pt-4 pb-8 overflow-auto" style={{ flexBasis: '50%' }}>
+        {/* Breadcrumb Navigation with Expand Button */}
+        <nav className="flex items-center gap-3 text-sm text-gray-500 mb-6" aria-label="Breadcrumb">
+          {/* Expand Button - Shows when workspace sidebar is collapsed */}
+          {isWorkspaceSidebarCollapsed && onExpandWorkspaceSidebar && (
+            <button
+              onClick={onExpandWorkspaceSidebar}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 shadow-sm rounded-lg hover:bg-gray-50 transition-all"
+              aria-label="Expand workspace sidebar"
+            >
+              <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
           <button
             onClick={() => router.push('/workspaces')}
             className="hover:text-gray-700 transition-colors"

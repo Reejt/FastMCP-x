@@ -441,6 +441,8 @@ export default function WorkspacePage() {
           messages={messages}
           isProcessing={isProcessing}
           onSendMessage={handleSendMessage}
+          isWorkspaceSidebarCollapsed={isWorkspaceSidebarCollapsed}
+          onExpandWorkspaceSidebar={handleExpandWorkspaceSidebar}
         />
       </div>
     </div>
