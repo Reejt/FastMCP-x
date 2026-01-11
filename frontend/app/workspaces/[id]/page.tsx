@@ -425,12 +425,16 @@ export default function WorkspacePage() {
       />
 
       {/* Main Content Area - Workspace Introduction Page takes full remaining width */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
         <WorkspaceIntroduction
           workspace={currentWorkspace}
           messages={messages}
           isProcessing={isProcessing}
           onSendMessage={handleSendMessage}
+          isWorkspaceSidebarCollapsed={isWorkspaceSidebarCollapsed}
+          onExpandWorkspaceSidebar={handleExpandWorkspaceSidebar}
+          chatSessions={workspaceChatSessions}
+          onChatSelect={handleChatSelect}
         />
       </div>
     </div>
