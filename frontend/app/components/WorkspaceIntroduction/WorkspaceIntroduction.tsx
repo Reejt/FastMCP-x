@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Workspace, Message } from '@/app/types'
+import { Workspace, Message, ChatSession } from '@/app/types'
 import InstructionsPanel from '@/app/components/WorkspaceIntroduction/InstructionsPanel'
 import VaultPanel from '@/app/components/WorkspaceIntroduction/VaultPanel'
 
@@ -13,12 +13,44 @@ interface WorkspaceIntroductionProps {
   onSendMessage: (message: string) => void
   isWorkspaceSidebarCollapsed?: boolean
   onExpandWorkspaceSidebar?: () => void
+  chatSessions?: ChatSession[]
+  onChatSelect?: (chatId: string) => void
 }
 
-export default function WorkspaceIntroduction({ workspace, messages, isProcessing, onSendMessage, isWorkspaceSidebarCollapsed, onExpandWorkspaceSidebar }: WorkspaceIntroductionProps) {
+export default function WorkspaceIntroduction({ workspace, messages, isProcessing, onSendMessage, isWorkspaceSidebarCollapsed, onExpandWorkspaceSidebar, chatSessions = [], onChatSelect }: WorkspaceIntroductionProps) {
   const router = useRouter()
   const [message, setMessage] = useState('')
   const chatHistoryRef = useRef<HTMLDivElement>(null)
+
+  // Helper function to get relative time string
+  const getRelativeTimeString = (date: Date): string => {
+    const now = new Date()
+    const diffMs = now.getTime() - new Date(date).getTime()
+    const diffSeconds = Math.floor(diffMs / 1000)
+    const diffMinutes = Math.floor(diffSeconds / 60)
+    const diffHours = Math.floor(diffMinutes / 60)
+    const diffDays = Math.floor(diffHours / 24)
+
+    if (diffSeconds < 60) {
+      return `${diffSeconds} second${diffSeconds !== 1 ? 's' : ''} ago`
+    } else if (diffMinutes < 60) {
+      return `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`
+    } else if (diffHours < 24) {
+      return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`
+    } else {
+      return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`
+    }
+  }
+
+  // Get chat title from session (first user message or default)
+  const getChatTitle = (session: ChatSession): string => {
+    const firstUserMessage = session.messages.find(m => m.role === 'user')
+    if (firstUserMessage) {
+      const title = firstUserMessage.content.slice(0, 50)
+      return title.length < firstUserMessage.content.length ? `${title}...` : title
+    }
+    return 'New conversation'
+  }
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -158,6 +190,31 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                 </div>
               </form>
             </div>
+
+            {/* Chat Sessions List - Shows when no messages and there are previous chat sessions */}
+            {messages.length === 0 && chatSessions.length > 0 && (
+              <div className="mt-8">
+                <div className="space-y-1">
+                  {chatSessions
+                    .filter(session => session.messages.length > 0)
+                    .map((session) => (
+                      <button
+                        key={session.id}
+                        onClick={() => onChatSelect?.(session.id)}
+                        className="w-full text-left py-4 border-b border-gray-200 hover:bg-black/[0.02] transition-colors group"
+                      >
+                        <div className="font-medium text-gray-900 text-[15px]">
+                          {getChatTitle(session)}
+                        </div>
+                        <div className="text-sm text-gray-400 mt-1">
+                          Last message {getRelativeTimeString(session.updatedAt)}
+                        </div>
+                      </button>
+                    ))
+                  }
+                </div>
+              </div>
+            )}
 
             {/* Chat History - Shows when messages exist */}
             {messages.length > 0 && (
