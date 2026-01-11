@@ -39,3 +39,7 @@ dist/
 # Other
 *.swp
 *.bak
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
