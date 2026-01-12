@@ -216,6 +216,7 @@ export default function WorkspaceChatPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
+      formData.append('workspaceId', workspaceId)
 
       const response = await fetch('/api/vault/upload', {
         method: 'POST',

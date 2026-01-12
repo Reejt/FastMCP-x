@@ -284,7 +284,8 @@ export default function WorkspacePage() {
         },
         body: JSON.stringify({
           query: content,
-          conversation_history
+          conversation_history,
+          workspace_id: workspaceId
         }),
       })
 
