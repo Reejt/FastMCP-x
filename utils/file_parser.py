@@ -6,7 +6,7 @@
 # - .docx (Word documents)
 # - .pptx (PowerPoint presentations, modern format)
 # - .ppt (PowerPoint presentations, legacy format - requires pywin32 on Windows)
-# - .pdf (Portable Document Format)
+# - .pdf (Portable Document Format with OCR support for images)
 
 import os
 import pandas as pd
@@ -17,6 +17,8 @@ import io
 from supabase import create_client
 import base64
 from datetime import datetime
+from PIL import Image
+import io as io_module
 
 # Supabase configuration
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "https://fmlanqjduftxlktygpwe.supabase.co")
@@ -35,9 +37,156 @@ except ImportError:
         PDF_LIBRARY = None
         print("Warning: No PDF library available. Install pypdf: pip install pypdf")
 
-def store_extracted_content(file_id: str, user_id: str, content: str, file_name: str) -> bool:
+# OCR support for image extraction
+try:
+    from pdf2image import convert_from_path
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
+    print("Warning: pdf2image not available. Install it for better PDF image extraction: pip install pdf2image")
+
+try:
+    import pytesseract
+    PYTESSERACT_AVAILABLE = True
+except ImportError:
+    PYTESSERACT_AVAILABLE = False
+    print("Warning: pytesseract not available. Install it for OCR support: pip install pytesseract")
+
+def extract_text_from_image(image_path: str):
+    """
+    Extract text from an image using OCR (Tesseract)
+    Args:
+        image_path: Path to the image file
+    Returns:
+        Extracted text from the image
+    """
+    if not PYTESSERACT_AVAILABLE:
+        return ""
+    
+    try:
+        image = Image.open(image_path)
+        text = pytesseract.image_to_string(image)
+        return text.strip()
+    except Exception as e:
+        print(f"Warning: Failed to extract text from image {image_path}: {e}")
+        return ""
+
+def extract_text_from_pdf_with_ocr(file_path: str):
+    """
+    Extract text from PDF, including text from images using OCR
+    Args:
+        file_path: Path to the PDF file
+    Returns:
+        Combined extracted text from all pages
+    """
+    text_parts = []
+    
+    # First, try to extract text using pypdf (faster for text-based PDFs)
+    try:
+        if PDF_LIBRARY == "pypdf":
+            with open(file_path, "rb") as f:
+                reader = PdfReader(f)
+                for page_num, page in enumerate(reader.pages, 1):
+                    extracted_text = page.extract_text()
+                    if extracted_text and extracted_text.strip():
+                        text_parts.append(f"--- Page {page_num} (Text) ---")
+                        text_parts.append(extracted_text)
+        elif PDF_LIBRARY == "PyPDF2":
+            with open(file_path, "rb") as f:
+                reader = PyPDF2.PdfReader(f)
+                for page_num, page in enumerate(reader.pages, 1):
+                    extracted_text = page.extract_text()
+                    if extracted_text and extracted_text.strip():
+                        text_parts.append(f"--- Page {page_num} (Text) ---")
+                        text_parts.append(extracted_text)
+    except Exception as e:
+        print(f"Warning: Failed to extract text from PDF with pypdf: {e}")
+    
+    # Then, use OCR on images for pages with little/no text or to capture image content
+    if PDF2IMAGE_AVAILABLE and PYTESSERACT_AVAILABLE:
+        try:
+            print("🔍 Attempting OCR extraction from PDF images...")
+            images = convert_from_path(file_path)
+            
+            for page_num, image in enumerate(images, 1):
+                # Check if we already extracted good text from this page
+                existing_text = ""
+                for part in text_parts:
+                    if f"Page {page_num}" in part:
+                        existing_text = part
+                        break
+                
+                # Only do OCR if we didn't get much text already
+                if not existing_text or len(existing_text) < 100:
+                    try:
+                        ocr_text = pytesseract.image_to_string(image)
+                        if ocr_text and ocr_text.strip():
+                            text_parts.append(f"--- Page {page_num} (OCR) ---")
+                            text_parts.append(ocr_text)
+                            print(f"✅ Extracted {len(ocr_text)} characters from page {page_num} via OCR")
+                    except Exception as e:
+                        print(f"Warning: OCR failed for page {page_num}: {e}")
+        except Exception as e:
+            print(f"Warning: PDF to image conversion failed: {e}")
+    
+    return "\n".join(text_parts) if text_parts else ""
+
+def extract_text_from_docx_with_images(file_path: str):
+    """
+    Extract text from DOCX including text from embedded images
+    Args:
+        file_path: Path to the DOCX file
+    Returns:
+        Combined extracted text and OCR text from images
+    """
+    text_parts = []
+    
+    try:
+        doc = docx.Document(file_path)
+        
+        # Extract text from paragraphs
+        for para in doc.paragraphs:
+            if para.text.strip():
+                text_parts.append(para.text)
+        
+        # Extract images and perform OCR
+        if PYTESSERACT_AVAILABLE:
+            # Extract images from the document
+            for rel in doc.part.rels.values():
+                if "image" in rel.target_ref:
+                    try:
+                        image_part = rel.target_part
+                        image_bytes = image_part.blob
+                        
+                        # Create temporary image file
+                        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
+                            tmp_img.write(image_bytes)
+                            tmp_img_path = tmp_img.name
+                        
+                        # Extract text from image
+                        ocr_text = extract_text_from_image(tmp_img_path)
+                        if ocr_text:
+                            text_parts.append(f"\n[Image Content]\n{ocr_text}")
+                        
+                        # Clean up
+                        os.remove(tmp_img_path)
+                    except Exception as e:
+                        print(f"Warning: Failed to process image in DOCX: {e}")
+        
+        return "\n".join(text_parts)
+    except Exception as e:
+        print(f"Error extracting text from DOCX: {str(e)}")
+        raise
+
+def store_extracted_content(file_id: str, user_id: str, content: str, file_name: str, file_path: str = None):
     """
     Store extracted text content in the document_content table
+    Args:
+        file_id: ID of the file in file_upload table
+        user_id: User ID who uploaded the file
+        content: Extracted text content
+        file_name: Original file name
+        file_path: Path to the original file in Supabase storage or local filesystem
     Returns True on success, False on failure
     """
     try:
@@ -49,6 +198,7 @@ def store_extracted_content(file_id: str, user_id: str, content: str, file_name:
             'user_id': user_id,
             'content': content.strip(),
             'file_name': file_name,
+            'file_path': file_path,  # Store reference to original file
             'extracted_at': datetime.utcnow().isoformat()
         }, on_conflict='file_id').execute()
         
@@ -65,51 +215,6 @@ def store_extracted_content(file_id: str, user_id: str, content: str, file_name:
         print(f"❌ Error storing extracted content: {str(e)}")
         return False
 
-def extract_text_from_shape(shape):
-    """Recursively extract text from a shape and its sub-shapes (for PPTX files)"""
-    shape_texts = []
-    
-    try:
-        # Method 1: Direct text access
-        if hasattr(shape, 'text') and shape.text and shape.text.strip():
-            shape_texts.append(shape.text.strip())
-        
-        # Method 2: Text frame access with paragraphs and runs
-        if hasattr(shape, 'text_frame') and shape.text_frame:
-            if hasattr(shape.text_frame, 'paragraphs'):
-                for para in shape.text_frame.paragraphs:
-                    if hasattr(para, 'text') and para.text and para.text.strip():
-                        para_text = para.text.strip()
-                        if para_text not in shape_texts:
-                            shape_texts.append(para_text)
-                    
-                    # Extract from runs within paragraphs
-                    if hasattr(para, 'runs'):
-                        for run in para.runs:
-                            if hasattr(run, 'text') and run.text and run.text.strip():
-                                run_text = run.text.strip()
-                                if run_text not in shape_texts:
-                                    shape_texts.append(run_text)
-        
-        # Method 3: Handle GROUP shapes recursively
-        if hasattr(shape, 'shapes'):  # This is a group
-            for sub_shape in shape.shapes:
-                sub_texts = extract_text_from_shape(sub_shape)
-                shape_texts.extend(sub_texts)
-        
-        # Method 4: Handle tables
-        if hasattr(shape, 'has_table') and shape.has_table:
-            for row in shape.table.rows:
-                for cell in row.cells:
-                    if cell.text and cell.text.strip():
-                        cell_text = cell.text.strip()
-                        if cell_text not in shape_texts:
-                            shape_texts.append(cell_text)
-    
-    except Exception as e:
-        print(f"Warning: Error extracting text from shape: {e}")
-    
-    return shape_texts
 
 def extract_and_store_file_content(file_path: str, file_id: str, user_id: str, file_name: str) -> tuple[str, bool]:
     """
@@ -118,13 +223,14 @@ def extract_and_store_file_content(file_path: str, file_id: str, user_id: str, f
     """
     try:
         extracted_text = extract_text_from_file(file_path)
-        storage_success = store_extracted_content(file_id, user_id, extracted_text, file_name)
+        # Pass file_path as reference for later structured data access
+        storage_success = store_extracted_content(file_id, user_id, extracted_text, file_name, file_path=file_path)
         return extracted_text, storage_success
     except Exception as e:
         print(f"Error in extract_and_store_file_content: {str(e)}")
         return "", False
 
-def extract_text_from_file(file_path: str) -> str:
+def extract_text_from_file(file_path: str):
     """Extract text from various file formats"""
     print(f"Attempting to parse file: {file_path}")
     downloaded_temp_path = None
@@ -161,6 +267,9 @@ def extract_text_from_file(file_path: str) -> str:
         else:
             print("Supabase credentials (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) not set; cannot download missing file")
     
+    # Get file basename for dotfile checking
+    base_name = os.path.basename(file_path).lower()
+    
     # Get file extension (handle cases like .pptx.pptx)
     ext = os.path.splitext(file_path)[1].lower()
     
@@ -174,35 +283,127 @@ def extract_text_from_file(file_path: str) -> str:
     
     try:
         if ext == ".csv":
-            df = pd.read_csv(file_path)
-            return df.to_string()
+            # Load CSV and extract meaningful metadata for semantic search
+            try:
+                df = pd.read_csv(file_path)
+            except UnicodeDecodeError:
+                df = pd.read_csv(file_path, encoding='latin-1')
+            except Exception as e:
+                print(f"Error reading CSV with pandas: {str(e)}")
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    return f.read()
+            
+            # Build meaningful content for semantic search
+            text_parts = []
+            
+            # Add file metadata and column information
+            text_parts.append(f"CSV File: {os.path.basename(file_path)}")
+            text_parts.append(f"Rows: {len(df)}, Columns: {len(df.columns)}")
+            text_parts.append(f"Column Names: {', '.join(df.columns)}")
+            text_parts.append("-" * 80)
+            
+            # Add column data types
+            text_parts.append("Column Types:")
+            for col in df.columns:
+                text_parts.append(f"  {col}: {df[col].dtype}")
+            text_parts.append("-" * 80)
+            
+            # Add first 5 rows as sample (helps semantic search identify content)
+            text_parts.append("Data Sample (first 5 rows):")
+            text_parts.append(df.head(5).to_string())
+            
+            return "\n".join(text_parts)
+        
         elif ext in [".xls", ".xlsx"]:
-            df = pd.read_excel(file_path)
-            return df.to_string()
+            # Load Excel and extract meaningful metadata for semantic search
+            try:
+                xls = pd.ExcelFile(file_path)
+                sheet_names = xls.sheet_names
+                text_parts = []
+                
+                text_parts.append(f"Excel File: {os.path.basename(file_path)}")
+                text_parts.append(f"Total Sheets: {len(sheet_names)}")
+                text_parts.append(f"Sheet Names: {', '.join(sheet_names)}")
+                text_parts.append("=" * 80)
+                
+                # Process first sheet only for metadata (to keep embedding size reasonable)
+                if sheet_names:
+                    try:
+                        df = pd.read_excel(file_path, sheet_name=sheet_names[0])
+                        
+                        text_parts.append(f"\nPrimary Sheet: {sheet_names[0]}")
+                        text_parts.append(f"Rows: {len(df)}, Columns: {len(df.columns)}")
+                        text_parts.append(f"Column Names: {', '.join(df.columns)}")
+                        text_parts.append("-" * 80)
+                        
+                        text_parts.append("Column Types:")
+                        for col in df.columns:
+                            text_parts.append(f"  {col}: {df[col].dtype}")
+                        text_parts.append("-" * 80)
+                        
+                        # Add first 5 rows as sample
+                        text_parts.append("Data Sample (first 5 rows):")
+                        text_parts.append(df.head(5).to_string())
+                    except Exception as e:
+                        text_parts.append(f"Error reading primary sheet: {str(e)}")
+                
+                return "\n".join(text_parts)
+            
+            except Exception as e:
+                print(f"Error reading Excel file: {str(e)}")
+                try:
+                    df = pd.read_excel(file_path, sheet_name=0)
+                    return df.to_string()
+                except Exception as fallback_error:
+                    raise ValueError(f"Unable to parse Excel file: {str(fallback_error)}")
         elif ext == ".docx":
-            doc = docx.Document(file_path)
-            return "\n".join([para.text for para in doc.paragraphs])
+            print("📄 Extracting text from DOCX with image OCR support...")
+            return extract_text_from_docx_with_images(file_path)
         elif ext == ".pptx":
+            print("🖼️  Extracting text from PPTX with image OCR support...")
             prs = pptx.Presentation(file_path)
             text = []
             
-            for slide in prs.slides:
+            for slide_num, slide in enumerate(prs.slides, 1):
+                text.append(f"\n--- Slide {slide_num} ---")
+                
                 # Extract text from all shapes using improved method
                 for shape in slide.shapes:
                     shape_texts = extract_text_from_shape(shape)
                     text.extend(shape_texts)
+                    
+                    # Extract images from shapes and perform OCR
+                    if PYTESSERACT_AVAILABLE and hasattr(shape, "image"):
+                        try:
+                            image = shape.image
+                            image_bytes = image.blob
+                            
+                            # Create temporary image file
+                            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
+                                tmp_img.write(image_bytes)
+                                tmp_img_path = tmp_img.name
+                            
+                            # Extract text from image
+                            ocr_text = extract_text_from_image(tmp_img_path)
+                            if ocr_text:
+                                text.append(f"[Image OCR] {ocr_text}")
+                            
+                            # Clean up
+                            os.remove(tmp_img_path)
+                        except Exception as e:
+                            print(f"Warning: Failed to extract image from slide {slide_num}: {e}")
                 
                 # Extract notes
                 try:
                     if slide.has_notes_slide:
                         notes_text = slide.notes_slide.notes_text_frame.text
                         if notes_text and notes_text.strip():
-                            text.append(notes_text.strip())
+                            text.append(f"[Notes] {notes_text.strip()}")
                 except Exception as e:
                     print(f"Warning: Error extracting notes from slide: {e}")
             
             content = "\n".join(text)
-            print(f"Extracted {len(content)} characters from PowerPoint")
+            print(f"✅ Extracted {len(content)} characters from PowerPoint")
             return content
         elif ext == ".ppt":
             # Handle older .ppt format (binary PowerPoint files)
@@ -337,25 +538,23 @@ def extract_text_from_file(file_path: str) -> str:
                     "3. Ensure PowerPoint is properly installed (for Windows COM approach)"
                 )
         elif ext == ".pdf":
-            if PDF_LIBRARY == "pypdf":
-                with open(file_path, "rb") as f:
-                    reader = PdfReader(f)
-                    text = []
-                    for page in reader.pages:
-                        text.append(page.extract_text())
-                return "\n".join(text)
-            elif PDF_LIBRARY == "PyPDF2":
-                with open(file_path, "rb") as f:
-                    reader = PyPDF2.PdfReader(f)
-                    text = []
-                    for page in reader.pages:
-                        text.append(page.extract_text())
-                return "\n".join(text)
-            else:
-                raise ValueError("No PDF library available. Install pypdf: pip install pypdf")
+            print("📄 Extracting text from PDF with OCR support for images...")
+            return extract_text_from_pdf_with_ocr(file_path)
         elif ext == ".txt":
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
+        elif ext in [".py", ".js", ".ts", ".java", ".cpp", ".c", ".h", ".cs", ".go", ".rs", 
+                     ".html", ".css", ".scss", ".jsx", ".tsx", ".json", ".yaml", ".yml", 
+                     ".toml", ".ini", ".env", ".md", ".sh", ".bat", ".ps1", ".sql", ".prisma", ".graphql"] or \
+             base_name in [".dockerignore", ".gitignore"]:
+            # Source code, configuration files, and dotfiles - read as text
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except UnicodeDecodeError:
+                # Fallback to latin-1 for files with encoding issues
+                with open(file_path, "r", encoding="latin-1") as f:
+                    return f.read()
         else:
             raise ValueError(f"Unsupported file type: {ext}")
     except Exception as e:
@@ -369,3 +568,49 @@ def extract_text_from_file(file_path: str) -> str:
                 print(f"Cleaned up temporary file: {downloaded_temp_path}")
         except Exception:
             pass
+
+def extract_text_from_shape(shape):
+    """Recursively extract text from a shape and its sub-shapes (for PPTX files)"""
+    shape_texts = []
+    
+    try:
+        # Method 1: Direct text access
+        if hasattr(shape, 'text') and shape.text and shape.text.strip():
+            shape_texts.append(shape.text.strip())
+        
+        # Method 2: Text frame access with paragraphs and runs
+        if hasattr(shape, 'text_frame') and shape.text_frame:
+            if hasattr(shape.text_frame, 'paragraphs'):
+                for para in shape.text_frame.paragraphs:
+                    if hasattr(para, 'text') and para.text and para.text.strip():
+                        para_text = para.text.strip()
+                        if para_text not in shape_texts:
+                            shape_texts.append(para_text)
+                    
+                    # Extract from runs within paragraphs
+                    if hasattr(para, 'runs'):
+                        for run in para.runs:
+                            if hasattr(run, 'text') and run.text and run.text.strip():
+                                run_text = run.text.strip()
+                                if run_text not in shape_texts:
+                                    shape_texts.append(run_text)
+        
+        # Method 3: Handle GROUP shapes recursively
+        if hasattr(shape, 'shapes'):  # This is a group
+            for sub_shape in shape.shapes:
+                sub_texts = extract_text_from_shape(sub_shape)
+                shape_texts.extend(sub_texts)
+        
+        # Method 4: Handle tables
+        if hasattr(shape, 'has_table') and shape.has_table:
+            for row in shape.table.rows:
+                for cell in row.cells:
+                    if cell.text and cell.text.strip():
+                        cell_text = cell.text.strip()
+                        if cell_text not in shape_texts:
+                            shape_texts.append(cell_text)
+    
+    except Exception as e:
+        print(f"Warning: Error extracting text from shape: {e}")
+    
+    return shape_texts

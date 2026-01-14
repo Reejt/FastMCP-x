@@ -9,13 +9,14 @@ MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://backend:8000/sse")
 FASTMCP_SERVER_URL = MCP_SERVER_URL
 print(f"MCP Server URL: {FASTMCP_SERVER_URL}")
 
-async def answer_query(query: str, conversation_history: list = None):
+async def answer_query(query: str, conversation_history: list = None, workspace_id: str = None):
     """
     Answer a query using semantic search and LLM with document context
     
     Args:
         query: The current user query
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
+        workspace_id: Optional workspace ID for workspace-specific context
     """
     import json
     
@@ -28,6 +29,10 @@ async def answer_query(query: str, conversation_history: list = None):
             tool_params["conversation_history"] = json.dumps(conversation_history)
         else:
             tool_params["conversation_history"] = "[]"
+        
+        # Add workspace_id if provided
+        if workspace_id:
+            tool_params["workspace_id"] = workspace_id
         
         result = await client.call_tool("answer_query_tool", tool_params)
         
@@ -75,52 +80,25 @@ async def ingest_file(file_path: str, user_id: str, workspace_id: str = None, ba
         return response
                
                     
-
-async def query_excel_with_llm(file_path: str, query: str, sheet_name: str = None):
-    """Query Excel or CSV document using LLM-based tool"""
-    async with Client(FASTMCP_SERVER_URL) as client:
-        # Determine file type from file_path
-        if file_path.lower().endswith(('.xlsx', '.xls')):
-            # Use LLM-based Excel query tool
-            tool_params = {
-                "file_path": file_path,
-                "query": query
-            }
-            if sheet_name:
-                tool_params["sheet_name"] = sheet_name
-            
-            result = await client.call_tool("query_excel_with_llm_tool", tool_params)
-                            
-        elif file_path.lower().endswith('.csv'):
-            # Use LLM-based CSV query tool
-            tool_params = {
-                "file_path": file_path,
-                "query": query
-            }
-            
-            result = await client.call_tool("query_csv_with_llm_tool", tool_params)
-        else:
-            error_msg = f"Error: Unsupported file type. File must be .xlsx, .xls, or .csv"
-            return error_msg
-        
-        # Extract response from MCP result
-        if hasattr(result, 'content') and result.content:
-            response = result.content[0].text
-        elif hasattr(result, 'data') and result.data:
-            response = result.data
-        else:
-            response = str(result)
-                        
-        return response
-                
-                
-                    
-async def web_search(search_query: str):
+async def web_search(search_query: str, conversation_history: list = None, workspace_id: str = None):
     """Perform web search using integrated web search tool"""
+    import json
     async with Client(FASTMCP_SERVER_URL) as client:
-        result = await client.call_tool("web_search_tool", {
+        tool_params = {
             "query": search_query
-        })
+        }
+        
+        # Add conversation history if provided
+        if conversation_history:
+            tool_params["conversation_history"] = json.dumps(conversation_history)
+        else:
+            tool_params["conversation_history"] = "[]"
+        
+        # Add workspace_id if provided
+        if workspace_id:
+            tool_params["workspace_id"] = workspace_id
+        
+        result = await client.call_tool("web_search_tool", tool_params)
                         
         # Extract response from MCP result
         if hasattr(result, 'content') and result.content:
@@ -133,19 +111,32 @@ async def web_search(search_query: str):
         return response
     
 
-async def answer_link_query(url: str, question: str):
+async def answer_link_query(url: str, question: str, conversation_history: list = None, workspace_id: str = None):
     """
     Answer a question based on the content of a provided link URL.
     
     Args:
         url: The URL of the link to analyze
         question: The question to answer based on the link content
+        conversation_history: List of previous messages for context (optional)
+        workspace_id: Workspace identifier (optional)
     """
+    import json
     async with Client(FASTMCP_SERVER_URL) as client:
         tool_params = {
             "url": url,
             "query": question
         }
+        
+        # Add conversation history if provided
+        if conversation_history:
+            tool_params["conversation_history"] = json.dumps(conversation_history)
+        else:
+            tool_params["conversation_history"] = "[]"
+        
+        # Add workspace_id if provided
+        if workspace_id:
+            tool_params["workspace_id"] = workspace_id
         
         result = await client.call_tool("answer_link_query_tool", tool_params)
                         
@@ -240,26 +231,42 @@ async def clear_instruction_cache(workspace_id: str = None):
         return response
 
 
-async def generate_presentation(topic: str, num_slides: int = 10, style: str = "professional"):
+async def query_csv_with_context(query: str, file_name: str, file_path: str = None, conversation_history: list = None, workspace_id: str = None):
     """
-    Generate a professional presentation on any topic
+    Query CSV data using keyword filtering and LLM reasoning with conversation context
     
     Args:
-        topic: The topic for the presentation
-        num_slides: Number of slides to generate (5-50, default: 10)
-        style: Presentation style - 'professional', 'educational', or 'creative'
+        query: The natural language query about the CSV data
+        file_name: Name of the CSV file
+        file_path: Path to the CSV file (local or Supabase storage reference)
+        conversation_history: List of previous messages for context (optional)
+        workspace_id: Optional workspace ID filter
     
     Returns:
-        JSON response with file path and presentation metadata
+        LLM-generated answer based on the CSV data with relevant rows
     """
     import json
-    
     async with Client(FASTMCP_SERVER_URL) as client:
-        result = await client.call_tool("generate_presentation_tool", {
-            "topic": topic,
-            "num_slides": num_slides,
-            "style": style
-        })
+        tool_params = {
+            "query": query,
+            "file_name": file_name
+        }
+        
+        # Add file_path if provided
+        if file_path:
+            tool_params["file_path"] = file_path
+        
+        # Add conversation history if provided
+        if conversation_history:
+            tool_params["conversation_history"] = json.dumps(conversation_history)
+        else:
+            tool_params["conversation_history"] = "[]"
+        
+        # Add workspace_id if provided
+        if workspace_id:
+            tool_params["workspace_id"] = workspace_id
+        
+        result = await client.call_tool("query_csv_with_context_tool", tool_params)
         
         # Extract response from MCP result
         if hasattr(result, 'content') and result.content:
@@ -269,10 +276,98 @@ async def generate_presentation(topic: str, num_slides: int = 10, style: str = "
         else:
             response = str(result)
         
-        # Parse JSON string response if needed
-        try:
-            if isinstance(response, str):
-                return json.loads(response)
-            return response
-        except json.JSONDecodeError:
-            return {"success": False, "error": str(response)}
+        return response
+
+
+async def query_excel_with_context(query: str, file_name: str, file_path: str = None, conversation_history: list = None, workspace_id: str = None):
+    """
+    Query Excel data using keyword filtering and LLM reasoning with conversation context
+    
+    Args:
+        query: The natural language query about the Excel data
+        file_name: Name of the Excel file
+        file_path: Path to the Excel file (local or Supabase storage reference)
+        conversation_history: List of previous messages for context (optional)
+        workspace_id: Optional workspace ID filter
+    
+    Returns:
+        LLM-generated answer based on the Excel data with relevant rows
+    """
+    import json
+    async with Client(FASTMCP_SERVER_URL) as client:
+        tool_params = {
+            "query": query,
+            "file_name": file_name
+        }
+        
+        # Add file_path if provided
+        if file_path:
+            tool_params["file_path"] = file_path
+        
+        # Add conversation history if provided
+        if conversation_history:
+            tool_params["conversation_history"] = json.dumps(conversation_history)
+        else:
+            tool_params["conversation_history"] = "[]"
+        
+        # Add workspace_id if provided
+        if workspace_id:
+            tool_params["workspace_id"] = workspace_id
+        
+        result = await client.call_tool("query_excel_with_context_tool", tool_params)
+        
+        # Extract response from MCP result
+        if hasattr(result, 'content') and result.content:
+            response = result.content[0].text
+        elif hasattr(result, 'data') and result.data:
+            response = result.data
+        else:
+            response = str(result)
+        
+        return response
+
+
+async def agentic_task(goal: str, context: str = "", max_iterations: int = 10):
+    """
+    Execute a complex task using autonomous agentic reasoning
+    
+    The agent will:
+    1. Analyze the goal and plan a sequence of tool calls
+    2. Execute tools autonomously based on reasoning
+    3. Evaluate results and iterate if needed
+    4. Return final outcome and execution history
+    
+    Args:
+        goal: The objective or task to accomplish (e.g., "Find Q3 sales by region from our data and compare with Q2")
+        context: Optional background information or constraints (default: "")
+        max_iterations: Maximum number of tool calls (default: 10, prevents infinite loops)
+    
+    Returns:
+        JSON string containing:
+        - success: Whether the goal was achieved
+        - final_result: The final output
+        - iterations: Number of tool calls made
+        - history: Detailed execution log of all actions taken
+    """
+    import json
+    async with Client(FASTMCP_SERVER_URL) as client:
+        tool_params = {
+            "goal": goal,
+            "context": context,
+            "max_iterations": max_iterations
+        }
+        
+        result = await client.call_tool("agentic_task_tool", tool_params)
+        
+        # Extract response from MCP result
+        if hasattr(result, 'content') and result.content:
+            response = result.content[0].text
+        elif hasattr(result, 'data') and result.data:
+            response = result.data
+        else:
+            response = str(result)
+        
+        return response
+
+
+

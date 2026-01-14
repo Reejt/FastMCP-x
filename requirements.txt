@@ -14,6 +14,9 @@ pandasql
 python-docx
 python-pptx
 pypdf
+pdf2image
+pytesseract
+Pillow
 
 # Semantic Search and ML
 sentence-transformers
@@ -23,6 +26,9 @@ chromadb
 # Web Scraping and HTTP
 requests
 beautifulsoup4
+
+# Data Visualization
+plotly
 
 # Supabase Client
 supabase

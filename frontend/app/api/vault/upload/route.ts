@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
     const allowedTypes = [
       'text/plain',
       'text/markdown',
+      'text/csv',
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -84,8 +85,8 @@ export async function POST(request: NextRequest) {
       file_content: base64Content,
       file_type: file.type,
       file_size: file.size,
-      user_id: user.id,  // Pass user ID for Supabase storage
-      workspace_id: _finalWorkspaceId  // Pass workspace ID to backend
+      user_id: user.id,
+      workspace_id: _finalWorkspaceId
     };
 
     // Call the bridge server ingest endpoint
@@ -108,14 +109,12 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
 
-    // Note: Backend (bridge_server -> document_ingestion) now handles all storage operations
-    // No need for duplicate upload here - file is already stored in Supabase via the backend
-
     return NextResponse.json({
       success: true,
       message: 'File uploaded and processed successfully',
       file_name: file.name,
       file_size: file.size,
+      file_type: file.type,
       ...data
     });
   } catch (error) {

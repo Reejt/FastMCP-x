@@ -16,6 +16,7 @@ import os
 import requests
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+from server.query_handler import answer_query
 
 # Load environment variables from server/.env.local
 env_path = os.path.join(os.path.dirname(__file__), '.env.local')
@@ -146,12 +147,12 @@ def query_with_instructions(
     conversation_history: list = None
 ) -> str:
     """
-    Query Ollama with workspace-specific instructions applied
+    Query LLM with workspace-specific instructions applied
     
     Args:
         query: The user's query
         workspace_id: The workspace ID to fetch instructions for
-        model_name: Ollama model to use
+        model_name: Ollama model to use (passed to answer_query)
         base_system_prompt: Optional base system prompt
         conversation_history: Optional conversation history
     
@@ -162,41 +163,24 @@ def query_with_instructions(
         # Build system prompt with instructions
         system_prompt = build_system_prompt(workspace_id, base_system_prompt)
         
-        # Construct full prompt
+        # Construct full query with system prompt
         if system_prompt:
-            full_prompt = f"{system_prompt}\n\nUser Query: {query}"
+            full_query = f"{system_prompt}\n\nUser Query: {query}"
         else:
-            full_prompt = query
+            full_query = query
         
-        # Add conversation history if provided
-        if conversation_history:
-            # Format conversation history
-            history_text = "\n\nPrevious Conversation:\n"
-            for msg in conversation_history[-5:]:  # Include last 5 messages for context
-                role = msg.get("role", "unknown")
-                content = msg.get("content", "")
-                history_text += f"{role.capitalize()}: {content}\n"
-            
-            full_prompt = f"{system_prompt}\n{history_text}\n\nCurrent Query: {query}"
-        
-        # Query Ollama
-        response = requests.post(
-            'http://host.docker.internal:11434/api/generate',
-            json={
-                'model': model_name,
-                'prompt': full_prompt,
-                'stream': False
-            },
-            timeout=120
+        # Use answer_query from query_handler (handles semantic search + LLM)
+        response = answer_query(
+            full_query,
+            conversation_history=conversation_history,
+            stream=False,
+            workspace_id=workspace_id
         )
-        response.raise_for_status()
         
-        return response.json().get('response', '')
+        return response
         
-    except requests.RequestException as e:
-        return f"Error querying Ollama with instructions: {str(e)}"
     except Exception as e:
-        return f"Unexpected error: {str(e)}"
+        return f"Error querying with instructions: {str(e)}"
 
 
 def query_with_instructions_stream(
@@ -207,12 +191,12 @@ def query_with_instructions_stream(
     conversation_history: list = None
 ):
     """
-    Query Ollama with workspace-specific instructions (streaming version)
+    Query LLM with workspace-specific instructions (streaming version)
     
     Args:
         query: The user's query
         workspace_id: The workspace ID to fetch instructions for
-        model_name: Ollama model to use
+        model_name: Ollama model to use (passed to answer_query)
         base_system_prompt: Optional base system prompt
         conversation_history: Optional conversation history
     
@@ -223,50 +207,30 @@ def query_with_instructions_stream(
         # Build system prompt with instructions
         system_prompt = build_system_prompt(workspace_id, base_system_prompt)
         
-        # Construct full prompt
+        # Construct full query with system prompt
         if system_prompt:
-            full_prompt = f"{system_prompt}\n\nUser Query: {query}"
+            full_query = f"{system_prompt}\n\nUser Query: {query}"
         else:
-            full_prompt = query
+            full_query = query
         
-        # Add conversation history if provided
-        if conversation_history:
-            history_text = "\n\nPrevious Conversation:\n"
-            for msg in conversation_history[-5:]:
-                role = msg.get("role", "unknown")
-                content = msg.get("content", "")
-                history_text += f"{role.capitalize()}: {content}\n"
-            
-            full_prompt = f"{system_prompt}\n{history_text}\n\nCurrent Query: {query}"
-        
-        # Query Ollama with streaming
-        response = requests.post(
-            'http://host.docker.internal:11434/api/generate',
-            json={
-                'model': model_name,
-                'prompt': full_prompt,
-                'stream': True
-            },
-            timeout=120,
-            stream=True
+        # Use answer_query from query_handler with streaming enabled
+        response = answer_query(
+            full_query,
+            conversation_history=conversation_history,
+            stream=True,
+            workspace_id=workspace_id
         )
-        response.raise_for_status()
         
-        # Stream response chunks
-        import json
-        for line in response.iter_lines():
-            if line:
-                try:
-                    chunk = json.loads(line)
-                    if 'response' in chunk:
-                        yield chunk
-                except json.JSONDecodeError:
-                    continue
-                    
-    except requests.RequestException as e:
-        yield {"response": f"Error querying Ollama: {str(e)}"}
+        # If response is a generator, yield from it
+        if hasattr(response, '__iter__') and not isinstance(response, str):
+            for chunk in response:
+                yield chunk
+        else:
+            # If not streaming, yield as single response
+            yield {"response": response}
+        
     except Exception as e:
-        yield {"response": f"Unexpected error: {str(e)}"}
+        yield {"response": f"Error querying with instructions: {str(e)}"}
 
 
 def get_instruction_preview(workspace_id: str) -> str:

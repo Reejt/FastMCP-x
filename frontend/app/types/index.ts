@@ -105,6 +105,21 @@ export interface WorkspaceInstruction {
   updated_at: string            // ISO timestamp (auto-updated, NOT nullable)
 }
 
+/**
+ * Structured Data from `structured_data` table
+ * Stores CSV/Excel file data as JSONB rows
+ */
+export interface StructuredData {
+  id: string                    // UUID primary key
+  file_id: string               // Foreign key to file_upload(id) (NOT nullable)
+  workspace_id: string          // Foreign key to workspaces(id) (NOT nullable)
+  file_name: string             // Original file name (NOT nullable)
+  file_type: "csv" | "excel"    // File type indicator (NOT nullable)
+  data: Record<string, unknown> // JSONB column storing the actual data row (NOT nullable)
+  created_at: string            // ISO timestamp with time zone (NOT nullable)
+  updated_at: string            // ISO timestamp with time zone (NOT nullable)
+}
+
 // ============================================
 // UI/Application Types
 // ============================================

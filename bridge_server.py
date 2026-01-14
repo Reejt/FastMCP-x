@@ -27,11 +27,25 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from client.fast_mcp_client import (
     answer_query as mcp_answer_query,
     ingest_file as mcp_ingest_file,
-    query_excel_with_llm as mcp_query_excel,
     web_search as mcp_web_search,
     answer_link_query as mcp_answer_link_query,
-    generate_presentation as mcp_generate_presentation,
+    query_csv_with_context as mcp_query_csv_with_context,
+    query_excel_with_context as mcp_query_excel_with_context,
+    agentic_task as mcp_agentic_task,
 )
+
+# Import Supabase client for file metadata lookup
+try:
+    from supabase import create_client, Client
+    SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
+    SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    supabase_client = None
+    if SUPABASE_URL and SUPABASE_KEY:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase client initialized for file lookup")
+except ImportError:
+    print("⚠️  Supabase client not available")
+    supabase_client = None
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -69,11 +83,6 @@ class IngestRequest(BaseModel):
     user_id: str  # Required user ID for Supabase storage
     workspace_id: Optional[str] = None  # Optional workspace ID for file organization
 
-class ExcelQueryRequest(BaseModel):
-    file_path: str
-    query: str
-    sheet_name: Optional[str] = None
-
 class WebSearchRequest(BaseModel):
     query: str
 
@@ -109,83 +118,120 @@ async def query_endpoint(request: QueryRequest):
         print(f"📥 Received query: {request.query}")
         if request.conversation_history:
             print(f"📜 With conversation history: {len(request.conversation_history)} messages")
+        if request.workspace_id:
+            print(f"🏢 Workspace ID: {request.workspace_id}")
         
-        # Detect if query is a presentation generation request
         import re
-        presentation_pattern = r'\b(create|generate|make|build)\s+(a\s+)?(presentation|powerpoint|slide|deck)\b'
-        is_presentation_request = re.search(presentation_pattern, request.query, re.IGNORECASE)
         
-        if is_presentation_request:
-            print(f"🎨 Presentation generation detected: {request.query}")
+        # Check if query is for agentic task execution
+        if "agent" in request.query.lower():
+            print(f"🤖 Agentic task detected in query")
             
-            # Extract topic (everything except the presentation request keywords)
-            topic = re.sub(presentation_pattern, '', request.query, flags=re.IGNORECASE).strip()
-            if not topic:
-                topic = "General Topic"
-            
-            # Extract number of slides if mentioned (e.g., "10 slides", "with 10 slides")
-            slides_pattern = r'(\d+)\s*(slides?)?'
-            slides_match = re.search(slides_pattern, request.query, re.IGNORECASE)
-            num_slides = int(slides_match.group(1)) if slides_match else 10
-            num_slides = max(5, min(num_slides, 50))  # Clamp between 5-50
-            
-            # Extract style if mentioned (professional, educational, creative)
-            style = "professional"
-            if re.search(r'\beducational\b', request.query, re.IGNORECASE):
-                style = "educational"
-            elif re.search(r'\bcreative\b', request.query, re.IGNORECASE):
-                style = "creative"
-            
-            print(f"   Topic: {topic}, Slides: {num_slides}, Style: {style}")
-            
-            try:
-                response = await mcp_generate_presentation(
-                    topic=topic,
-                    num_slides=num_slides,
-                    style=style
-                )
-                
-                # Parse response if it's a string
-                if isinstance(response, str):
+            async def agent_event_generator():
+                try:
+                    # Call agentic task tool
+                    response = await mcp_agentic_task(
+                        goal=request.query,
+                        context=f"Workspace: {request.workspace_id}" if request.workspace_id else "",
+                        max_iterations=10
+                    )
+                    
+                    # Parse response and extract final result
                     try:
-                        response = json.loads(response)
+                        response_data = json.loads(response) if isinstance(response, str) else response
+                        # Only display the final result
+                        final_result = response_data.get('final_result', 'No result')
+                        yield f"data: {json.dumps({'chunk': final_result})}\n\n"
                     except json.JSONDecodeError:
-                        response = {"success": False, "error": response}
-                
-                def event_generator():
-                    yield f"data: {json.dumps(response)}\n\n"
+                        yield f"data: {json.dumps({'chunk': response})}\n\n"
+                    
                     yield f"data: {json.dumps({'done': True})}\n\n"
+                    print(f"✅ Agent task completed")
+                    
+                except Exception as e:
+                    print(f"❌ Agent task error: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            
+            return StreamingResponse(
+                agent_event_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"
+                }
+            )
+        
+        # Detect file references in query (e.g., "in sales.csv", "from data.xlsx", "query data.csv")
+        file_pattern = r'\b(in|from|using|with|file:?|query|analyze|show|what|how|find|tell|get)\s+([a-zA-Z0-9_\-\.]+\.(csv|xlsx|xls))\b'
+        file_match = re.search(file_pattern, request.query, re.IGNORECASE)
+        
+        if file_match and request.workspace_id and supabase_client:
+            detected_file_name = file_match.group(2)
+            file_type = file_match.group(3).lower()
+            print(f"📊 File reference detected in query: {detected_file_name}")
+            
+            # Look up file in database using workspace_id
+            try:
+                file_record = supabase_client.table('file_upload').select('*').eq(
+                    'file_name', detected_file_name
+                ).eq('workspace_id', request.workspace_id).execute()
                 
-                return StreamingResponse(
-                    event_generator(),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                        "X-Accel-Buffering": "no"
-                    }
-                )
-            except Exception as e:
-                print(f"❌ Presentation generation error: {str(e)}")
-                
-                def event_generator():
-                    yield f"data: {json.dumps({'success': False, 'error': str(e)})}\n\n"
-                    yield f"data: {json.dumps({'done': True})}\n\n"
-                
-                return StreamingResponse(
-                    event_generator(),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                        "X-Accel-Buffering": "no"
-                    }
-                )
+                if file_record.data and len(file_record.data) > 0:
+                    file_path = file_record.data[0]['file_path']
+                    print(f"📂 Found file in database: {file_path}")
+                    
+                    # Route to appropriate handler based on file type
+                    async def file_event_generator():
+                        try:
+                            if file_type == 'csv':
+                                print(f"📄 Querying CSV: {detected_file_name}")
+                                response = await mcp_query_csv_with_context(
+                                    query=request.query,
+                                    file_name=detected_file_name,
+                                    file_path=file_path,
+                                    conversation_history=request.conversation_history,
+                                    workspace_id=request.workspace_id
+                                )
+                            else:  # xlsx or xls
+                                print(f"📊 Querying Excel: {detected_file_name}")
+                                response = await mcp_query_excel_with_context(
+                                    query=request.query,
+                                    file_name=detected_file_name,
+                                    file_path=file_path,
+                                    conversation_history=request.conversation_history,
+                                    workspace_id=request.workspace_id
+                                )
+                            
+                            yield f"data: {json.dumps({'chunk': response})}\n\n"
+                            yield f"data: {json.dumps({'done': True})}\n\n"
+                            print(f"✅ File query completed")
+                            
+                        except Exception as e:
+                            print(f"❌ File query error: {str(e)}")
+                            import traceback
+                            traceback.print_exc()
+                            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                    
+                    return StreamingResponse(
+                        file_event_generator(),
+                        media_type="text/event-stream",
+                        headers={
+                            "Cache-Control": "no-cache",
+                            "Connection": "keep-alive",
+                            "X-Accel-Buffering": "no"
+                        }
+                    )
+                else:
+                    print(f"⚠️  File not found in database for workspace: {detected_file_name}")
+                    print(f"   Will proceed with regular query")
+            except Exception as db_error:
+                print(f"⚠️  Database lookup failed: {str(db_error)}")
+                print(f"   Will proceed with regular query")
         
         # Detect if query contains a URL - route to link query handler
-        import re
-        
-        # Check if query contains a URL (http/https)
         url_pattern = r'https?://[^\s]+'
         url_match = re.search(url_pattern, request.query)
         
@@ -205,7 +251,7 @@ async def query_endpoint(request: QueryRequest):
                 print(f"❓ Question: {question}")
                 
                 # Call link query handler
-                response = await mcp_answer_link_query(detected_url, question)
+                response = await mcp_answer_link_query(detected_url, question, conversation_history=request.conversation_history, workspace_id=request.workspace_id)
                 
                 def event_generator():
                     yield f"data: {json.dumps({'chunk': response})}\n\n"
@@ -230,6 +276,8 @@ async def query_endpoint(request: QueryRequest):
             r"\b(don't know|don't have|no information|no data)\b.*\b(about|on|regarding)\b",
             r"\b(unable to|can't|cannot)\b.*\b(access|find|provide)\b",
             r"\b(beyond.*knowledge|outside.*knowledge)\b",
+            r"\b(couldn't find|could not find|i couldn't find)\b.*\b(information)\b",
+            r"\b(there is some confusion|some confusion)\b",
         ]
         
         # Call the streaming query handler first
@@ -271,7 +319,7 @@ async def query_endpoint(request: QueryRequest):
                 )
                 
                 # If response is empty, very short (< 20 chars), or indicates cutoff, try web search
-                if not full_response.strip() or len(full_response.strip()) < 20 or is_cutoff_response:
+                if is_cutoff_response:
                     print(f"⚠️ Inadequate response detected, routing to web_search for better results")
                     print(f"   Response length: {len(full_response.strip())} chars, Cutoff indicator: {is_cutoff_response}")
                     
@@ -279,7 +327,7 @@ async def query_endpoint(request: QueryRequest):
                     web_search_message = "\n\n🔍 Searching the web for more current information...\n\n"
                     yield f"data: {json.dumps({'chunk': web_search_message})}\n\n"
                     
-                    web_response = await mcp_web_search(request.query)
+                    web_response = await mcp_web_search(request.query, conversation_history=request.conversation_history, workspace_id=request.workspace_id)
                     yield f"data: {json.dumps({'chunk': web_response})}\n\n"
                 
                 # Send completion signal
@@ -339,51 +387,7 @@ async def ingest_endpoint(request: IngestRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
 
-@app.post("/api/query-excel")
-async def query_excel_endpoint(request: ExcelQueryRequest):
-    """
-    Query Excel/CSV files using natural language via MCP
-    """
-    try:
-        # Call fast_mcp_client function (handles MCP connection internally)
-        # This function handles both Excel and CSV files
-        response = await mcp_query_excel(
-            request.file_path, 
-            request.query, 
-            request.sheet_name
-        )
-        
-        return {
-            "success": True,
-            "response": response,
-            "query": request.query,
-            "file_path": request.file_path
-        }
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Excel query failed: {str(e)}")
 
-@app.post("/api/web-search")
-async def web_search_endpoint(request: WebSearchRequest):
-    """
-    Perform web search and get summarized results via MCP
-    """
-    try:
-        # Call fast_mcp_client function (handles MCP connection internally)
-        response = await mcp_web_search(request.query)
-        
-        # Check if the search was successful
-        if response.startswith("Error") or response.startswith("No search results"):
-            return {"success": False, "response": response, "query": request.query}
-        
-        return {
-            "success": True,
-            "response": response,
-            "query": request.query
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Web search failed: {str(e)}")
 
 @app.get("/api/health")
 async def health_check():
@@ -446,6 +450,8 @@ async def clear_instruction_cache_endpoint(workspace_id: Optional[str] = None):
     except Exception as e:
         print(f"❌ Cache clearing error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Cache clearing failed: {str(e)}")
+
+
 
 if __name__ == "__main__":
     print("=" * 60)

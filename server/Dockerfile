@@ -3,17 +3,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including Tesseract OCR and poppler for PDF processing
 RUN apt-get update && apt-get install -y \
     gcc \
     git \
+    tesseract-ocr \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with increased timeout and retries for network resilience
+RUN pip install --no-cache-dir --default-timeout=1000 --retries 5 -r requirements.txt
 
 # Copy application code
 COPY server/ ./server/

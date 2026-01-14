@@ -3,6 +3,8 @@ from fastmcp import FastMCP
 import sys
 import os
 from dotenv import load_dotenv
+import requests
+import time
 
 # Load environment variables from server/.env.local
 env_path = os.path.join(os.path.dirname(__file__), '.env.local')
@@ -11,10 +13,17 @@ load_dotenv(dotenv_path=env_path)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.document_ingestion import ingest_file
-from server.query_handler import answer_query, query_model
+from server.query_handler import (
+    answer_query, 
+    query_model, 
+    get_semantic_model,
+    answer_link_query,
+    query_csv_with_context,
+    query_excel_with_context
+)
 from server.web_search_file import tavily_web_search
-from server.query_handler import answer_link_query
-from server.presentation_generator import generate_presentation
+from server.agent import FastMCPAgent
+
 
 # pgvector Enterprise Mode Active
 # - Embeddings stored in Supabase document_embeddings table (chunk_text, embedding[vector], metadata[jsonb])
@@ -31,6 +40,16 @@ print("✅ Chat history enabled")
  
 
 mcp = FastMCP("FastMCP Document-Aware Query Assistant")
+
+# Eagerly load embedding model at startup to avoid delay on first query
+print("⏳ Preloading embedding model...")
+get_semantic_model()
+
+# Skip Ollama warmup - lets queries start immediately
+# First query will load the model naturally
+print("✅ FastMCP Server initialized")
+
+
 
 @mcp.tool
 def ingest_file_tool(file_path: str, user_id: str, workspace_id: str = None, base64_content: str = None, file_name: str = None) -> str:
@@ -54,7 +73,7 @@ def ingest_file_tool(file_path: str, user_id: str, workspace_id: str = None, bas
         return error_msg
 
 @mcp.tool
-def answer_query_tool(query: str, conversation_history: str = "[]") -> str:
+def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id: str = None) -> str:
     """
     Answer queries with conversation history support
     
@@ -65,7 +84,7 @@ def answer_query_tool(query: str, conversation_history: str = "[]") -> str:
     try:
         # Parse conversation history from JSON string
         history = json.loads(conversation_history) if conversation_history else []
-        result = answer_query(query, conversation_history=history)
+        result = answer_query(query, conversation_history=history, workspace_id=workspace_id)
         print(f"Query result: {result}")
         return result
     except Exception as e:
@@ -75,46 +94,7 @@ def answer_query_tool(query: str, conversation_history: str = "[]") -> str:
 
 
 @mcp.tool
-def query_excel_with_llm_tool(file_path: str, query: str, sheet_name: str = None, user_id: str = None, conversation_history: str = "[]") -> str:
-    """Query Excel file using natural language - retrieves data from Supabase and lets LLM answer the question
-    
-    Args:
-        file_path: Supabase storage path (e.g., 'user_id/timestamp_filename.xlsx') or file_id
-        query: The natural language query
-        sheet_name: Optional sheet name in Excel file
-        user_id: User ID for Supabase access
-    """
-    try:
-        history = json.loads(conversation_history) if conversation_history else []
-        result = query_excel_with_llm(file_path, query, sheet_name=sheet_name, user_id=user_id, conversation_history=history)
-        print(f"Excel query result: {result}")
-        return result
-    except Exception as e:
-        error_msg = f"Error in query_excel_with_llm_tool: {str(e)}"
-        print(error_msg)
-        return error_msg
-
-@mcp.tool
-def query_csv_with_llm_tool(file_path: str, query: str, user_id: str = None, conversation_history: str = "[]") -> str:
-    """Query CSV file using natural language - retrieves data from Supabase and lets LLM answer the question
-    
-    Args:
-        file_path: Supabase storage path (e.g., 'user_id/timestamp_filename.csv') or file_id
-        query: The natural language query
-        user_id: User ID for Supabase access
-    """
-    try:
-        history = json.loads(conversation_history) if conversation_history else []
-        result = query_csv_with_llm(file_path, query, user_id=user_id, conversation_history=history)
-        print(f"CSV query result: {result}")
-        return result
-    except Exception as e:
-        error_msg = f"Error in query_csv_with_llm_tool: {str(e)}"
-        print(error_msg)
-        return error_msg
-
-@mcp.tool
-def web_search_tool(query: str, conversation_history: str = "[]") -> str:
+def web_search_tool(query: str, conversation_history: str = "[]", workspace_id: str = None) -> str:
     """
     Perform a web search using Tavily API and get LLM-generated answer based on top result content
     
@@ -127,7 +107,7 @@ def web_search_tool(query: str, conversation_history: str = "[]") -> str:
     try:
         history = json.loads(conversation_history) if conversation_history else []
         # Perform web search and get extracted content from top result
-        top_result_content = tavily_web_search(query=query, conversation_history=history)
+        top_result_content = tavily_web_search(query=query, conversation_history=history, workspace_id=workspace_id)
         print(f"Query result: {top_result_content}")
         return top_result_content
     except Exception as e:
@@ -136,7 +116,7 @@ def web_search_tool(query: str, conversation_history: str = "[]") -> str:
         return error_msg
     
 @mcp.tool
-def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]") -> str:
+def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]", workspace_id: str = None) -> str:
     """
     Answer a query based on the content of a specific URL
     
@@ -149,7 +129,7 @@ def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]
     """
     try:
         history = json.loads(conversation_history) if conversation_history else []
-        result = answer_link_query(url, query, conversation_history=history)
+        result = answer_link_query(url, query, conversation_history=history, workspace_id=workspace_id)
         print(f"Link query result: {result}")
         return result
     except Exception as e:
@@ -159,35 +139,104 @@ def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]
 
 
 @mcp.tool
-def generate_presentation_tool(topic: str, num_slides: int = 10, style: str = "professional") -> str:
+def query_csv_with_context_tool(query: str, file_name: str, file_path: str = None, conversation_history: str = "[]", workspace_id: str = None) -> str:
     """
-    Generate a professional presentation on any topic
+    Query CSV data using keyword filtering and LLM reasoning with conversation context
     
     Args:
-        topic: The topic for the presentation
-        num_slides: Number of slides to generate (default: 10, max: 50)
-        style: Presentation style - 'professional', 'educational', or 'creative'
+        query: The natural language query about the CSV data
+        file_name: Name of the CSV file
+        file_path: Path to the CSV file (local or Supabase storage reference)
+        conversation_history: JSON string of previous messages for context (default: "[]")
+        workspace_id: Optional workspace ID filter
     
     Returns:
-        JSON string containing the file path and presentation metadata
+        LLM-generated answer based on the CSV data with relevant rows
     """
     try:
-        # Validate num_slides
-        num_slides = max(5, min(num_slides, 50))
-        
-        result = generate_presentation(
-            topic=topic,
-            num_slides=num_slides,
-            style=style
+        history = json.loads(conversation_history) if conversation_history else []
+        result = query_csv_with_context(
+            query=query,
+            file_name=file_name,
+            file_path=file_path,
+            conversation_history=history
         )
-        print(f"Presentation generation result: {result}")
-        return json.dumps(result)
+        print(f"CSV query result: {result}")
+        return result
     except Exception as e:
-        error_msg = f"Error in generate_presentation_tool: {str(e)}"
+        error_msg = f"Error in query_csv_with_context_tool: {str(e)}"
+        print(error_msg)
+        return error_msg
+
+
+@mcp.tool
+def query_excel_with_context_tool(query: str, file_name: str, file_path: str = None, conversation_history: str = "[]", workspace_id: str = None) -> str:
+    """
+    Query Excel data using keyword filtering and LLM reasoning with conversation context
+    
+    Args:
+        query: The natural language query about the Excel data
+        file_name: Name of the Excel file
+        file_path: Path to the Excel file (local or Supabase storage reference)
+        conversation_history: JSON string of previous messages for context (default: "[]")
+        workspace_id: Optional workspace ID filter
+    
+    Returns:
+        LLM-generated answer based on the Excel data with relevant rows
+    """
+    try:
+        history = json.loads(conversation_history) if conversation_history else []
+        result = query_excel_with_context(
+            query=query,
+            file_name=file_name,
+            file_path=file_path,
+            conversation_history=history
+        )
+        print(f"Excel query result: {result}")
+        return result
+    except Exception as e:
+        error_msg = f"Error in query_excel_with_context_tool: {str(e)}"
+        print(error_msg)
+        return error_msg
+
+
+@mcp.tool
+def agentic_task_tool(goal: str, context: str = "", max_iterations: int = 10) -> str:
+    """
+    Execute a complex task using autonomous agentic reasoning
+    
+    The agent will:
+    1. Analyze the goal and plan a sequence of tool calls
+    2. Execute tools autonomously based on reasoning
+    3. Evaluate results and iterate if needed
+    4. Return final outcome and execution history
+    
+    Args:
+        goal: The objective or task to accomplish (e.g., "Find Q3 sales by region from our data and compare with Q2")
+        context: Optional background information or constraints
+        max_iterations: Maximum number of tool calls (default: 10, prevents infinite loops)
+    
+    Returns:
+        JSON string containing:
+        - success: Whether the goal was achieved
+        - final_result: The final output
+        - iterations: Number of tool calls made
+        - history: Detailed execution log of all actions taken
+    """
+    try:
+        print(f"🤖 Agentic Task Execution: {goal}")
+        agent = FastMCPAgent()
+        result = agent.run(goal=goal, context=context, max_iterations=max_iterations)
+        
+        # Return as JSON string for compatibility
+        return json.dumps(result, indent=2, default=str)
+    except Exception as e:
+        error_msg = f"Error in agentic_task_tool: {str(e)}"
         print(error_msg)
         return json.dumps({
             "success": False,
-            "error": error_msg
+            "error": error_msg,
+            "history": []
         })
 
 

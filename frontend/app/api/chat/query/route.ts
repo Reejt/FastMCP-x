@@ -15,24 +15,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Determine which endpoint to call based on action
-    let endpoint = '/api/query';
-    let requestBody: { query: string; conversation_history?: unknown[]; workspace_id?: string; file_path?: string; sheet_name?: string } = { query, conversation_history, workspace_id };
+    // Build request body
+    let requestBody: { query: string; conversation_history?: unknown[]; workspace_id?: string } = { 
+      query, 
+      conversation_history, 
+      workspace_id 
+    };
 
-    switch (action) {
-      case 'query_excel':
-        endpoint = '/api/query-excel';
-        requestBody = {
-          file_path: body.file_path,
-          query,
-          sheet_name: body.sheet_name,
-          workspace_id
-        };
-        break;
-      default:
-        endpoint = '/api/query';
-        requestBody = { query, conversation_history, workspace_id };
-    }
+    // All requests use the same /api/query endpoint
+    const endpoint = '/api/query';
 
     // Call the bridge server - streaming response
     const response = await fetch(`${BRIDGE_SERVER_URL}${endpoint}`, {
