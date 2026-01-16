@@ -50,8 +50,8 @@ export async function POST(request: NextRequest) {
     // If no workspaceId provided, _finalWorkspaceId remains null
     // Files will be stored without workspace association (for global vault)
 
-    // Validate file type (you can expand this list)
-    const allowedTypes = [
+    // Validate file type (MIME type and extension-based)
+    const allowedMimeTypes = [
       'text/plain',
       'text/markdown',
       'text/csv',
@@ -65,10 +65,35 @@ export async function POST(request: NextRequest) {
       'image/jpeg',
       'image/png',
       'image/gif',
-      'image/webp'
+      'image/webp',
+      'application/json',
+      'application/x-yaml',
+      'application/x-sh',
+      'application/x-sql',
+      'application/graphql',
+      'application/octet-stream' // Fallback for source code files
     ];
 
-    if (!allowedTypes.includes(file.type)) {
+    // Allowed file extensions for source code and configuration files
+    const allowedExtensions = [
+      '.py', '.js', '.ts', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs',
+      '.html', '.css', '.scss', '.jsx', '.tsx', '.json', '.yaml', '.yml',
+      '.toml', '.ini', '.env', '.md', '.sh', '.bat', '.ps1', '.sql', '.prisma', '.graphql',
+      '.dockerignore', '.gitignore'
+    ];
+
+    // Get file extension
+    const fileName = file.name.toLowerCase();
+    const fileExtension = fileName.substring(fileName.lastIndexOf('.')) || '';
+    
+    // Check if extension is in allowed list (handles dotfiles like .gitignore)
+    const isAllowedExtension = allowedExtensions.includes(fileExtension) || 
+                               allowedExtensions.includes('.' + fileName.split('/').pop());
+    
+    // Validate: either MIME type is allowed OR file extension is allowed
+    const isValidFileType = allowedMimeTypes.includes(file.type) || isAllowedExtension;
+
+    if (!isValidFileType) {
       return NextResponse.json(
         { error: 'File type not supported' },
         { status: 400 }

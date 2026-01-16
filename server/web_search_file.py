@@ -25,16 +25,25 @@ load_dotenv()
 TAVILY_API_BASE_URL = "https://api.tavily.com/search"
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "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")  # Store API key in environment variable
 
-def tavily_web_search(query,conversation_history: list = None, **kwargs):
+def tavily_web_search(query: str, conversation_history: list = None, **kwargs):
     """
-    Perform a web search using Tavily API and return extracted content from top result
+    Perform a web search using Tavily API and return extracted content from top result.
+    
+    Fetches search results from Tavily API, extracts content from the top result,
+    and passes it to an LLM for summarization based on the query.
     
     Args:
         query (str): The search query (required)
-        **kwargs: Additional Tavily API parameters
+        conversation_history (list, optional): Previous conversation messages for context.
+            Each item should be a dict with 'role' and 'content' keys. Defaults to None.
+        **kwargs: Additional Tavily API parameters (e.g., search_depth, max_results)
     
     Returns:
-        str: Extracted full text content from the top search result URL
+        str: LLM-generated response based on the top search result content,
+            or an error message if the search fails
+    
+    Raises:
+        No exceptions raised - all errors are returned as error message strings
     """
     # Prepare request body
     body = {

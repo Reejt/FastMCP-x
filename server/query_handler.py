@@ -79,18 +79,142 @@ def get_semantic_model():
     return _semantic_model if _semantic_model is not False else None
 
 
-def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None):
+def extract_document_name(query: str, workspace_id: str = None):
+    """
+    Extract document name from query if user mentions a specific file.
+    
+    Patterns detected:
+    - "in document_name" / "in file document_name"
+    - "from document_name"
+    - "search document_name"
+    - Exact filename mentions (case-insensitive matching)
+    
+    Args:
+        query: The user's query
+        workspace_id: Optional workspace to search for matching files
+    
+    Returns:
+        Tuple of (cleaned_query, detected_filename) where filename is None if not found
+    """
+    import re
+    
+    if not supabase_client:
+        return query, None
+    
+    try:
+        # Get list of available files in workspace
+        files_query = supabase_client.table('file_upload').select('file_name')
+        
+        if workspace_id:
+            files_query = files_query.eq('workspace_id', workspace_id)
+        
+        files_result = files_query.execute()
+        available_files = [f['file_name'] for f in files_result.data] if files_result.data else []
+        
+        if not available_files:
+            return query, None
+        
+        # Check for explicit document references
+        query_lower = query.lower()
+        detected_file = None
+        
+        # Pattern 1: "in [document_name]" or "in file [document_name]"
+        match = re.search(r'(?:in\s+(?:file|document)?\s*)([a-zA-Z0-9\-_.]+(?:\.\w+)?)', query_lower)
+        if match:
+            potential_file = match.group(1)
+            # Fuzzy match against available files
+            detected_file = _fuzzy_match_filename(potential_file, available_files)
+        
+        # Pattern 2: "from [document_name]"
+        if not detected_file:
+            match = re.search(r'(?:from\s+)([a-zA-Z0-9\-_.]+(?:\.\w+)?)', query_lower)
+            if match:
+                potential_file = match.group(1)
+                detected_file = _fuzzy_match_filename(potential_file, available_files)
+        
+        # Pattern 3: Fuzzy match on direct filename mentions (fallback with strict threshold)
+        if not detected_file:
+            # Extract potential filenames from query (word by word)
+            query_words = query_lower.split()
+            for word in query_words:
+                # Fuzzy match each word against available files with strict 85% threshold
+                # Avoids false positives from casual word mentions
+                match = _fuzzy_match_filename(word, available_files, threshold=0.85)
+                if match:
+                    detected_file = match
+                    break
+        
+        if detected_file:
+            # Remove the detected file reference from query for cleaner semantic search
+            cleaned_query = re.sub(
+                rf'(?:in\s+(?:file|document)?\s*)?{re.escape(detected_file)}',
+                '',
+                query,
+                flags=re.IGNORECASE
+            ).strip()
+            cleaned_query = re.sub(r'from\s+', '', cleaned_query, flags=re.IGNORECASE).strip()
+            
+            print(f"📄 Document detected in query: {detected_file}")
+            print(f"   Cleaned query: {cleaned_query}")
+            
+            return cleaned_query, detected_file
+        
+        return query, None
+        
+    except Exception as e:
+        print(f"⚠️  Error extracting document name: {e}")
+        return query, None
+
+
+def _fuzzy_match_filename(potential: str, available_files: list, threshold: float = 0.7) -> str:
+    """
+    Fuzzy match a potential filename against available files using similarity.
+    
+    Args:
+        potential: The potential filename to match
+        available_files: List of actual filenames in the system
+        threshold: Similarity threshold (0.0-1.0)
+    
+    Returns:
+        Best matching filename or None if no match found
+    """
+    from difflib import SequenceMatcher
+    
+    if not available_files:
+        return None
+    
+    best_match = None
+    best_ratio = 0
+    
+    for file_name in available_files:
+        # Compare filenames (case-insensitive)
+        ratio = SequenceMatcher(None, potential.lower(), file_name.lower()).ratio()
+        
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_match = file_name
+    
+    return best_match if best_ratio >= threshold else None
+
+
+def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, file_name: str = None):
     """
     Perform semantic search using pgvector database-side similarity search
     
     Uses PostgreSQL pgvector extension with cosine distance operator (<=>)
     Similarity calculated at DATABASE LEVEL - no application-level computation
     
+    Features:
+    - Detects and filters by document name if mentioned in query
+    - Searches document embeddings using semantic similarity
+    - Returns results sorted by similarity score
+    
     Args:
         query: The search query text
         top_k: Number of top results to return (default: 5)
         min_similarity: Minimum similarity threshold (0.0-1.0, default: 0.2)
         workspace_id: Optional workspace filter for search results (default: None)
+        file_name: Optional specific document to search in (extracted if not provided)
     
     Returns:
         List of (content, similarity_score, filename, file_path) tuples
@@ -104,33 +228,49 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
         print("⚠️  Embedding model not available")
         return []
     
+    # Extract document name from query if not explicitly provided
+    if not file_name:
+        cleaned_query, extracted_file = extract_document_name(query, workspace_id)
+        file_name = extracted_file
+        query = cleaned_query  # Use cleaned query for embedding
     
     # Generate embedding for the query using same model as stored embeddings
     query_embedding = model.encode([query])[0]
     query_embedding_list = query_embedding.tolist()
-        
-    print(f"🔍 Searching with pgvector (top_k={top_k}, min_similarity={min_similarity})")
+    
+    search_context = f"top_k={top_k}, min_similarity={min_similarity}"
+    if file_name:
+        search_context += f", document={file_name}"
+    
+    print(f"🔍 Searching with pgvector ({search_context})")
         
     # Use RPC function for database-side similarity search
     # This is the proper way to do pgvector queries without SQL injection
     try:
-        response = supabase_client.rpc('search_embeddings', {
+        # Always pass all parameters to avoid PostgreSQL function overloading ambiguity
+        # Use None for optional parameters that aren't needed
+        rpc_params = {
             'query_embedding': query_embedding_list,
             'match_threshold': min_similarity,
-            'match_count': top_k
-        }).execute()
+            'match_count': top_k,
+            'file_filter': file_name  # None if not filtering, string if filtering by filename
+        }
+        
+        response = supabase_client.rpc('search_embeddings', rpc_params).execute()
             
         if hasattr(response, 'data') and response.data:
             results = []
             for row in response.data:
                 results.append((
-                    row['content'],
+                    row['chunk_text'],
                     float(row['similarity_score']),
                     row['file_name'],
-                    row.get('file_path')  # Include file path reference
+                    row.get('file_path')
                 ))
-                
-            print(f"✅ Found {len(results)} similar chunks via pgvector RPC")
+            
+            result_count = len(results)
+            doc_context = f" in {file_name}" if file_name else ""
+            print(f"✅ Found {result_count} similar chunks{doc_context} via pgvector RPC")
             return results
         else:
             print("⚠️  RPC returned no data - may not be configured correctly")

@@ -186,7 +186,7 @@ def store_extracted_content(file_id: str, user_id: str, content: str, file_name:
         user_id: User ID who uploaded the file
         content: Extracted text content
         file_name: Original file name
-        file_path: Path to the original file in Supabase storage or local filesystem
+        file_path: Path to the original file (not stored, kept for compatibility)
     Returns True on success, False on failure
     """
     try:
@@ -198,7 +198,6 @@ def store_extracted_content(file_id: str, user_id: str, content: str, file_name:
             'user_id': user_id,
             'content': content.strip(),
             'file_name': file_name,
-            'file_path': file_path,  # Store reference to original file
             'extracted_at': datetime.utcnow().isoformat()
         }, on_conflict='file_id').execute()
         

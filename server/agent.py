@@ -34,6 +34,36 @@ class FastMCPAgent:
         self.max_iterations = 10  # Prevent infinite loops
         self.current_iteration = 0
         self.action_history = []
+    
+    def classify_query(self, goal: str) -> str:
+        """
+        Classify the query type to determine which tools are relevant
+        
+        Args:
+            goal: The user's goal/query
+        
+        Returns:
+            Query type: 'document_search', 'web_search', 'file_query', 'general'
+        """
+        
+        goal_lower = goal.lower()
+        
+        # Web search indicators
+        web_keywords = ['latest', 'current', 'news', 'today', 'recent', 'trending', 'search web', 'find on web', 'online']
+        if any(keyword in goal_lower for keyword in web_keywords):
+            return 'web_search'
+        
+        # CSV/Excel query indicators
+        csv_keywords = ['csv', 'excel', 'spreadsheet', 'data', 'analyze', 'column', 'row']
+        if any(keyword in goal_lower for keyword in csv_keywords):
+            return 'file_query'
+        
+        # Link/URL indicators
+        if 'http' in goal_lower or 'url' in goal_lower or 'link' in goal_lower or 'website' in goal_lower:
+            return 'link_query'
+        
+        # Default to document search
+        return 'document_search'
         
     def plan_actions(self, goal: str, context: Optional[str] = None):
         """
@@ -47,23 +77,35 @@ class FastMCPAgent:
             List of planned tool calls with parameters
         """
         
-        planning_prompt = f"""You are an intelligent agent that plans tool usage sequences to accomplish goals.
+        # Classify query to determine relevant tools
+        query_type = self.classify_query(goal)
+        print(f"📋 Query classified as: {query_type}")
+        
+        # Build available tools based on query type
+        relevant_tools = self._get_relevant_tools(query_type)
+        
+        planning_prompt = f"""You are an intelligent agent that makes SELECTIVE tool calls. Use ONLY the minimum necessary tools.
 
-Available tools:
-{json.dumps(AVAILABLE_TOOLS, indent=2)}
+Query Type: {query_type}
+Available Tools for this query:
+{json.dumps(relevant_tools, indent=2)}
 
 Goal: {goal}
 {f"Context: {context}" if context else ""}
 
-Analyze the goal and plan a sequence of tool calls needed to accomplish it.
-Return a JSON array of tool calls in this format:
+IMPORTANT RULES:
+1. Use ONLY the most relevant tool(s) for this query
+2. Do NOT chain multiple tools unless absolutely necessary
+3. Only return tools that directly address the goal
+4. Return an empty array [] if no tools are needed
+
+Return a JSON array of tool calls (minimal sequence):
 [
   {{
     "tool": "tool_name",
     "params": {{"param1": "value1", "param2": "value2"}},
-    "reason": "Why this tool is needed"
-  }},
-  ...
+    "reason": "Why this specific tool is needed"
+  }}
 ]
 
 Only return valid JSON, no other text."""
@@ -77,7 +119,7 @@ Only return valid JSON, no other text."""
             if json_match:
                 try:
                     plan = json.loads(json_match.group())
-                    print(f"🤖 Agent planned {len(plan)} actions:")
+                    print(f"🤖 Agent planned {len(plan)} selective action(s):")
                     for i, action in enumerate(plan, 1):
                         print(f"  {i}. {action.get('tool')} - {action.get('reason')}")
                     return plan
@@ -88,6 +130,49 @@ Only return valid JSON, no other text."""
             print(f"Error planning actions: {e}")
         
         return []
+    
+    def _get_relevant_tools(self, query_type: str) -> Dict[str, str]:
+        """
+        Return only relevant tools based on query type
+        
+        Args:
+            query_type: Type of query (document_search, web_search, file_query, etc)
+        
+        Returns:
+            Dictionary of relevant tools
+        """
+        
+        all_tools = {
+            "answer_query": "Search documents and answer questions",
+            "web_search": "Search the web for current information",
+            "answer_link_query": "Extract and analyze content from a specific URL",
+            "query_csv_data": "Query and analyze CSV files with natural language",
+            "query_excel_data": "Query and analyze Excel files with natural language",
+            "ingest_file": "Upload and process files into the system",
+            "list_documents": "List available documents/files in the system"
+        }
+        
+        # Filter tools based on query type
+        if query_type == 'web_search':
+            return {
+                "web_search": all_tools["web_search"],
+                "answer_link_query": all_tools["answer_link_query"]
+            }
+        elif query_type == 'file_query':
+            return {
+                "query_csv_data": all_tools["query_csv_data"],
+                "query_excel_data": all_tools["query_excel_data"]
+            }
+        elif query_type == 'link_query':
+            return {
+                "answer_link_query": all_tools["answer_link_query"],
+                "answer_query": all_tools["answer_query"]
+            }
+        else:  # document_search
+            return {
+                "answer_query": all_tools["answer_query"],
+                "list_documents": all_tools["list_documents"]
+            }
     
     def execute_tool(self, tool_name: str, params: Dict[str, Any]):
         """
