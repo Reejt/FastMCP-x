@@ -159,21 +159,34 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
     router.push(`/workspaces/${workspace.id}/vault`)
   }
 
+  // Light theme colors
+  const theme = {
+    text: '#1a1a1a',
+    textSecondary: '#666666',
+    textMuted: '#999999',
+    cardBg: '#f5f5f5',
+    border: '#e5e5e5',
+    borderHover: '#d5d5d5',
+    hoverBg: 'rgba(0,0,0,0.03)',
+    accent: '#22c55e',
+  }
+
   return (
     <div className="w-full">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm text-gray-900" style={{ fontFamily: 'var(--font-chirp)' }}>Files</h3>
+        <h3 className="text-sm" style={{ fontFamily: 'var(--font-chirp)', color: theme.text }}>Files</h3>
         <button
           onClick={(e) => {
             e.stopPropagation()
             fileInputRef.current?.click()
           }}
           disabled={uploading}
-          className="p-1 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+          className="p-1 rounded transition-colors disabled:opacity-50 hover:opacity-70"
+          style={{ color: theme.textMuted }}
           aria-label="Add file"
         >
-          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
         </button>
@@ -181,8 +194,8 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
 
       {/* Upload Progress */}
       {uploadProgress && (
-        <div className="mb-3 p-2 rounded-lg bg-blue-50 border border-blue-200">
-          <p className="text-xs text-blue-700">{uploadProgress}</p>
+        <div className="mb-3 p-2 rounded-lg bg-green-900/30 border border-green-800/50">
+          <p className="text-xs text-green-400">{uploadProgress}</p>
         </div>
       )}
 
@@ -198,31 +211,35 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
       <div className="space-y-2">
         {files.length === 0 && !uploading ? (
           <div className="p-4">
-            <p className="text-sm text-gray-400">No files uploaded yet</p>
+            <p className="text-sm" style={{ color: theme.textMuted }}>No files uploaded yet</p>
           </div>
         ) : (
           <div className="space-y-2">
             {uploading && (
-              <div className="text-sm text-gray-500 text-center py-2 rounded-lg bg-blue-50">
+              <div className="text-sm text-center py-2 rounded-lg" style={{ color: theme.textSecondary, backgroundColor: theme.cardBg }}>
                 Uploading...
               </div>
             )}
             {files.slice(0, 4).map((file) => (
               <div
                 key={file.id}
-                className="p-3 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer border border-gray-200"
+                className="p-3 rounded-lg transition-colors cursor-pointer border"
+                style={{ borderColor: theme.border }}
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <h4 className="text-sm font-medium text-gray-900 truncate flex-1">
+                  <h4 className="text-sm font-medium truncate flex-1" style={{ color: theme.text }}>
                     {file.name}{file.extension ? `.${file.extension}` : ''}
                   </h4>
                   {file.fileType && (
-                    <span className="inline-block px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-white border border-gray-200 rounded flex-shrink-0">
+                    <span 
+                      className="inline-block px-1.5 py-0.5 text-xs font-medium border rounded flex-shrink-0"
+                      style={{ color: theme.textSecondary, backgroundColor: theme.cardBg, borderColor: theme.borderHover }}
+                    >
                       {file.fileType}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs" style={{ color: theme.textMuted }}>
                   {formatLineCount(file.size)}
                 </p>
               </div>
@@ -231,7 +248,8 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
             {files.length > 4 && (
               <button
                 onClick={handleViewAllFiles}
-                className="w-full py-2 text-sm text-[#d4a574] hover:text-[#c99a6a] font-medium transition-colors"
+                className="w-full py-2 text-sm font-medium transition-colors hover:opacity-80"
+                style={{ color: theme.accent }}
               >
                 View all {files.length} files →
               </button>
