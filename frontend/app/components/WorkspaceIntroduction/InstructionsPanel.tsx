@@ -90,20 +90,33 @@ export default function InstructionsPanel({ workspace, onInstructionAdded }: Ins
     }
   }
 
+  // Light theme colors
+  const theme = {
+    text: '#1a1a1a',
+    textSecondary: '#666666',
+    textMuted: '#999999',
+    cardBg: '#ffffff',
+    inputBg: '#f5f5f5',
+    border: '#e5e5e5',
+    borderHover: '#d5d5d5',
+    hoverBg: 'rgba(0,0,0,0.05)',
+  }
+
   return (
     <div className="w-full">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm text-gray-900" style={{ fontFamily: 'var(--font-chirp)' }}>Instructions</h3>
+        <h3 className="text-sm" style={{ fontFamily: 'var(--font-chirp)', color: theme.text }}>Instructions</h3>
         <button
           onClick={(e) => {
             e.stopPropagation()
             setShowAddModal(true)
           }}
-          className="p-1 hover:bg-gray-100 rounded transition-colors"
+          className="p-1 rounded transition-colors hover:opacity-70"
+          style={{ color: theme.textMuted }}
           aria-label="Edit instruction"
         >
-          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
         </button>
@@ -112,27 +125,36 @@ export default function InstructionsPanel({ workspace, onInstructionAdded }: Ins
       {/* Content */}
       <div className="mt-2">
         {existingInstructions ? (
-          <p className="text-sm text-gray-600 leading-relaxed">{existingInstructions}</p>
+          <p className="text-sm leading-relaxed" style={{ color: theme.textSecondary }}>{existingInstructions}</p>
         ) : (
-          <p className="text-sm text-gray-400">No instructions added yet</p>
+          <p className="text-sm" style={{ color: theme.textMuted }}>No instructions added yet</p>
         )}
       </div>
 
       {/* Add Instruction Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAddModal(false)}>
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Instruction</h3>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowAddModal(false)}>
+          <div 
+            className="rounded-xl p-6 w-full max-w-md shadow-xl border"
+            style={{ backgroundColor: theme.cardBg, borderColor: theme.border }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text }}>Add Instruction</h3>
             <textarea
               value={newInstruction}
               onChange={(e) => setNewInstruction(e.target.value)}
               placeholder="Enter your instruction..."
               disabled={isLoading}
-              className="w-full px-4 py-3 border border-gray-200 rounded-lg resize-none focus:border-[#d4a574] focus:ring-1 focus:ring-[#d4a574] focus:outline-none disabled:bg-gray-50"
+              className="w-full px-4 py-3 border rounded-lg resize-none focus:outline-none disabled:cursor-not-allowed"
+              style={{ 
+                backgroundColor: theme.inputBg, 
+                borderColor: theme.border, 
+                color: theme.text 
+              }}
               rows={4}
             />
             {error && (
-              <p className="text-sm text-red-600 mt-2">❌ {error}</p>
+              <p className="text-sm text-red-400 mt-2">❌ {error}</p>
             )}
             <div className="flex justify-end gap-3 mt-4">
               <button
@@ -141,14 +163,19 @@ export default function InstructionsPanel({ workspace, onInstructionAdded }: Ins
                   setError(null)
                 }}
                 disabled={isLoading}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm disabled:opacity-50"
+                className="px-4 py-2 rounded-lg transition-colors text-sm disabled:opacity-50"
+                style={{ color: theme.textSecondary }}
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddInstruction}
                 disabled={!newInstruction.trim() || isLoading}
-                className="px-4 py-2 bg-[#d4a574] text-white hover:bg-[#c99a6a] disabled:bg-gray-200 disabled:cursor-not-allowed rounded-lg transition-colors text-sm"
+                className="px-4 py-2 rounded-lg transition-colors text-sm disabled:cursor-not-allowed"
+                style={{ 
+                  backgroundColor: 'rgba(0,0,0,0.1)',
+                  color: newInstruction.trim() && !isLoading ? theme.text : theme.textMuted
+                }}
               >
                 {isLoading ? 'Adding...' : 'Add'}
               </button>

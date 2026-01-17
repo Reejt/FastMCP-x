@@ -36,13 +36,22 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* ChatGPT-style markdown colors */
+  --markdown-text: #0d0d0d;
+  --markdown-heading: #0d0d0d;
+  --markdown-code-bg: #f7f7f8;
+  --markdown-code-header-bg: #e5e5e5;
+  --markdown-inline-code-bg: #f0f0f0;
+  --markdown-border: #e5e5e5;
+  --markdown-link: #2563eb;
+  --markdown-link-hover: #1d4ed8;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: 'Chirp', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: var(--font-geist-mono);
+  --font-sans: 'Chirp', Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Menlo', 'SFMono-Regular', 'Fira Code', 'Monaco', 'Consolas', monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -55,7 +64,39 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Chirp', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Chirp', Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Markdown body styling - ChatGPT inspired */
+.markdown-body {
+  font-family: 'Chirp', Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--markdown-text);
+  max-width: none;
+}
+
+.markdown-body > *:first-child {
+  margin-top: 0 !important;
+}
+
+.markdown-body > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Code block styling */
+.markdown-body pre {
+  font-family: 'Menlo', 'SFMono-Regular', 'Fira Code', 'Monaco', 'Consolas', monospace;
+}
+
+.markdown-body code {
+  font-family: 'Menlo', 'SFMono-Regular', 'Fira Code', 'Monaco', 'Consolas', monospace;
+}
+
+/* Syntax highlighter overrides for ChatGPT style */
+.markdown-body .react-syntax-highlighter-line-number {
+  color: #9ca3af !important;
+  padding-right: 1rem !important;
 }
 
 /* Custom scrollbar for light theme */

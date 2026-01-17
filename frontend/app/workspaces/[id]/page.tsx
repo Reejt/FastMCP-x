@@ -9,19 +9,19 @@ import Sidebar from '@/app/components/Sidebar/Sidebar'
 
 // Dynamic imports for heavy components
 const WorkspaceSidebar = dynamic(() => import('@/app/components/WorkspaceSidebar'), {
-  loading: () => <div className="w-64 h-screen bg-gray-50 animate-pulse" />,
+  loading: () => <div className="w-64 h-screen bg-[#0d0d0d] animate-pulse" />,
   ssr: false
 })
 const ChatContainer = dynamic(() => import('@/app/components/Chat/ChatContainer'), {
-  loading: () => <div className="flex-1 bg-white" />,
+  loading: () => <div className="flex-1 bg-[#1a1a1a]" />,
   ssr: false
 })
 const ChatInput = dynamic(() => import('@/app/components/Chat/ChatInput'), {
-  loading: () => <div className="h-16 bg-white border-t" />,
+  loading: () => <div className="h-16 bg-[#1a1a1a] border-t border-[#2a2a2a]" />,
   ssr: false
 })
 const WorkspaceIntroduction = dynamic(() => import('@/app/components/WorkspaceIntroduction/WorkspaceIntroduction'), {
-  loading: () => <div className="flex-1 bg-white" />,
+  loading: () => <div className="flex-1 bg-[#1a1a1a]" />,
   ssr: false
 })
 
@@ -433,8 +433,8 @@ export default function WorkspacePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+      <div className="min-h-screen bg-[#0d0d0d] flex items-center justify-center">
+        <div className="text-[#888]">Loading...</div>
       </div>
     )
   }
@@ -446,13 +446,13 @@ export default function WorkspacePage() {
   // Show loading state while workspace is being fetched
   if (!currentWorkspace) {
     return (
-      <div className="flex h-screen bg-white overflow-hidden">
+      <div className="flex h-screen bg-[#0d0d0d] overflow-hidden">
         <Sidebar
           user={user}
           onSignOutAction={handleSignOut}
         />
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-gray-600">Loading workspace...</div>
+          <div className="text-[#888]">Loading workspace...</div>
         </div>
       </div>
     )
@@ -461,7 +461,7 @@ export default function WorkspacePage() {
   // Always render the main layout with WorkspaceIntroduction component
   // It will handle showing introduction or chat history based on messages
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="flex h-screen bg-[#1a1a1a] overflow-hidden">
       {/* Main Sidebar */}
       <Sidebar
         user={user}
