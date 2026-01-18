@@ -79,7 +79,7 @@ describe('ChatInput', () => {
       const sendButton = screen.getByRole('button', { name: /send/i })
       await user.click(sendButton)
       
-      expect(mockOnSendMessage).toHaveBeenCalledWith('Hello world')
+      expect(mockOnSendMessage).toHaveBeenCalledWith('Hello world', undefined)
     })
 
     it('clears input after submission', async () => {
@@ -128,7 +128,7 @@ describe('ChatInput', () => {
       await user.type(input, 'Enter key test')
       await user.keyboard('{Enter}')
       
-      expect(mockOnSendMessage).toHaveBeenCalledWith('Enter key test')
+      expect(mockOnSendMessage).toHaveBeenCalledWith('Enter key test', undefined)
     })
 
     it('does not submit on Shift+Enter (allows newline)', async () => {

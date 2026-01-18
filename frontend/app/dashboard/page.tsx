@@ -266,7 +266,7 @@ export default function DashboardPage() {
     router.refresh()
   }
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, selected_file_ids?: string[]) => {
     if (!content.trim() || isProcessing) return
 
     // Add user message to state
@@ -325,7 +325,8 @@ export default function DashboardPage() {
         body: JSON.stringify({
           query: content,
           conversation_history,
-          workspace_id: workspaceId  // Pass workspace ID for instruction application
+            workspace_id: workspaceId,  // Pass workspace ID for instruction application
+            selected_file_ids
         }),
       })
 
@@ -556,6 +557,7 @@ export default function DashboardPage() {
           disabled={isProcessing}
           hasMessages={messages.length > 0}
           workspaceName={currentWorkspaceName}
+          workspaceId={workspaceId || undefined}
         />
       </div>
     </div>

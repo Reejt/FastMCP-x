@@ -197,7 +197,7 @@ def _fuzzy_match_filename(potential: str, available_files: list, threshold: floa
     return best_match if best_ratio >= threshold else None
 
 
-def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, file_name: str = None):
+def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, file_name: str = None, selected_file_ids: list = None):
     """
     Perform semantic search using pgvector database-side similarity search
     
@@ -233,6 +233,26 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
         cleaned_query, extracted_file = extract_document_name(query, workspace_id)
         file_name = extracted_file
         query = cleaned_query  # Use cleaned query for embedding
+
+    # If a selected set is provided, resolve it to filenames (and enforce restrictions)
+    selected_file_names = None
+    if selected_file_ids:
+        try:
+            file_query = supabase_client.table('file_upload').select('id,file_name').in_('id', selected_file_ids).is_('deleted_at', None)
+            if workspace_id:
+                file_query = file_query.eq('workspace_id', workspace_id)
+
+            selected_rows = file_query.execute()
+            rows = selected_rows.data if hasattr(selected_rows, 'data') and selected_rows.data else []
+            selected_file_names = [r.get('file_name') for r in rows if r.get('file_name')]
+        except Exception as e:
+            print(f"⚠️  Failed to resolve selected_file_ids to file names: {e}")
+            selected_file_names = []
+
+        # If query explicitly targets a file, require it to be in selected set
+        if file_name and selected_file_names is not None and file_name not in selected_file_names:
+            print(f"⚠️  Query targets '{file_name}', but it is not in selected_file_ids; skipping document context")
+            return []
     
     # Generate embedding for the query using same model as stored embeddings
     query_embedding = model.encode([query])[0]
@@ -244,36 +264,65 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
     
     print(f"🔍 Searching with pgvector ({search_context})")
         
-    # Use RPC function for database-side similarity search
-    # This is the proper way to do pgvector queries without SQL injection
     try:
-        # Always pass all parameters to avoid PostgreSQL function overloading ambiguity
-        # Use None for optional parameters that aren't needed
-        rpc_params = {
-            'query_embedding': query_embedding_list,
-            'match_threshold': min_similarity,
-            'match_count': top_k,
-            'file_filter': file_name  # None if not filtering, string if filtering by filename
-        }
-        
-        response = supabase_client.rpc('search_embeddings', rpc_params).execute()
-            
-        if hasattr(response, 'data') and response.data:
-            results = []
-            for row in response.data:
-                results.append((
+        def parse_rpc_rows(rpc_response):
+            if not (hasattr(rpc_response, 'data') and rpc_response.data):
+                return []
+
+            parsed = []
+            for row in rpc_response.data:
+                parsed.append((
                     row['chunk_text'],
                     float(row['similarity_score']),
                     row['file_name'],
                     row.get('file_path')
                 ))
-            
+            return parsed
+
+        # If we have a selected set and no explicit file filter, search within each selected file and merge
+        if selected_file_names is not None and not file_name:
+            if len(selected_file_names) == 0:
+                print("⚠️  selected_file_ids provided but resolved to no files")
+                return []
+
+            merged_results = []
+            for fname in selected_file_names:
+                rpc_params = {
+                    'query_embedding': query_embedding_list,
+                    'match_threshold': min_similarity,
+                    'match_count': top_k,
+                    'file_filter': fname
+                }
+                rpc_response = supabase_client.rpc('search_embeddings', rpc_params).execute()
+                merged_results.extend(parse_rpc_rows(rpc_response))
+
+            if merged_results:
+                merged_results.sort(key=lambda x: x[1], reverse=True)
+                trimmed = merged_results[:top_k]
+                print(f"✅ Found {len(trimmed)} similar chunks via pgvector RPC (selected files)")
+                return trimmed
+
+            print("⚠️  RPC returned no data for selected files")
+            return []
+
+        # Default: single RPC call (optionally filtered by filename)
+        rpc_params = {
+            'query_embedding': query_embedding_list,
+            'match_threshold': min_similarity,
+            'match_count': top_k,
+            'file_filter': file_name
+        }
+
+        response = supabase_client.rpc('search_embeddings', rpc_params).execute()
+        results = parse_rpc_rows(response)
+
+        if results:
             result_count = len(results)
             doc_context = f" in {file_name}" if file_name else ""
             print(f"✅ Found {result_count} similar chunks{doc_context} via pgvector RPC")
             return results
-        else:
-            print("⚠️  RPC returned no data - may not be configured correctly")
+
+        print("⚠️  RPC returned no data - may not be configured correctly")
             
     except Exception as rpc_error:
         print(f"⚠️  RPC call failed: {rpc_error}")
@@ -524,7 +573,7 @@ Provide a clear, direct answer with the specific information requested."""
         return query_model(error_msg, conversation_history=conversation_history)
 
 
-def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, conversation_history: list = None):
+def query_model(query: str, model_name: str = None, stream: bool = False, conversation_history: list = None):
     """
     Query the Ollama model via HTTP API with optional conversation history
     
@@ -535,19 +584,26 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = Fals
         stream: Whether to stream the response (default: False)
     """
     try:
+        ollama_base_url = (
+            os.environ.get("OLLAMA_BASE_URL")
+            or os.environ.get("OLLAMA_HOST")
+            or "http://localhost:11434"
+        ).rstrip("/")
+        model_name = model_name or os.environ.get("OLLAMA_MODEL") or 'llama3.2:1b'
+
         # Build full prompt with conversation history if provided
         full_prompt = query
         if conversation_history and len(conversation_history) > 0:
             history_text = "\n\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in conversation_history[-5:]])  # Last 5 messages for context
-            full_prompt = f"Conversation History:\n{history_text}\n\nCurrent Query: {query}"
+            full_prompt = f"Previous conversation:\n{history_text}\n\nRespond directly to this query without repeating the conversation format: {query}"
         
         # Query the LLM
         response = requests.post(
-            'http://host.docker.internal:11434/api/generate',
+            f"{ollama_base_url}/api/generate",
             json={
                 'model': model_name,
                 'prompt': full_prompt,
-                'stream': False
+                'stream': stream
             },
             timeout=120,  # Increased timeout for large content summarization
             stream=stream  # Enable streaming at requests level
@@ -575,7 +631,7 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = Fals
             
    
 
-def answer_query(query: str, conversation_history: list = None, stream: bool = False, workspace_id: str = None):
+def answer_query(query: str, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None):
     """
     Answer queries using pgvector database-side semantic search
     Database performs similarity matching - no application-level computation
@@ -588,7 +644,14 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
     """
     try:
         # Use document context for enhanced response
-        return query_with_context(query, max_chunks=2, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id)
+        return query_with_context(
+            query,
+            max_chunks=2,
+            conversation_history=conversation_history,
+            stream=stream,
+            workspace_id=workspace_id,
+            selected_file_ids=selected_file_ids,
+        )
         
     except Exception as e:
         error_message = f"Error processing query: {str(e)}"
@@ -601,7 +664,7 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
 
 
 
-def query_with_context(query: str, max_chunks: int = 5, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None):
+def query_with_context(query: str, max_chunks: int = 5, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None):
     """
     Query the LLM with relevant document chunks as context using pgvector semantic search
     Text documents only - CSV/Excel files are handled separately via their dedicated functions
@@ -615,7 +678,13 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
         workspace_id: Optional workspace filter for search results
     """
     # Get relevant chunks using pgvector database-side search
-    semantic_results = semantic_search_pgvector(query, top_k=max_chunks, min_similarity=0.18, workspace_id=workspace_id)
+    semantic_results = semantic_search_pgvector(
+        query,
+        top_k=max_chunks,
+        min_similarity=0.18,
+        workspace_id=workspace_id,
+        selected_file_ids=selected_file_ids,
+    )
     
     if not semantic_results:
         return query_model(query, conversation_history=conversation_history, stream=stream)

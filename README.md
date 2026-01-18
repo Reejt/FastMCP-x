@@ -43,29 +43,28 @@ FastMCP Server (8000) + PostgreSQL/pgvector
 **Easiest way to run the entire stack!**
 
 ```bash
-# 1. Configure environment
-cp .env.docker .env
-# Edit .env with your Supabase credentials
+# 1. Configure environment (root .env)
+# Required:
+#   SUPABASE_URL=...
+#   SUPABASE_ANON_KEY=...
+#   SUPABASE_SERVICE_ROLE_KEY=...
+# Optional:
+#   TAVILY_API_KEY=...
+#   OLLAMA_MODEL=llama3.2:3b
 
-# 2. Start all services (Windows)
-docker-deploy.bat up
-
-# Or (macOS/Linux)
-./docker-deploy.sh up
+# 2. Start all services
+docker compose up --build -d
 
 # 3. Access applications
 # Frontend:  http://localhost:3000
-# API Docs:  http://localhost:8000/docs
+# Bridge Docs: http://localhost:3001/docs
+# Backend SSE: http://localhost:8000/sse
 # Ollama:    http://localhost:11434
 ```
 
 **Development with hot reload:**
 ```bash
-# Windows
-docker-deploy.bat up-dev
-
-# macOS/Linux
-./docker-deploy.sh up-dev
+docker compose -f docker-compose.dev.yml up --build
 ```
 
 See [DOCKER_SETUP.md](./DOCKER_SETUP.md) for full Docker documentation.
