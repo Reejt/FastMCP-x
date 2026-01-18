@@ -7,6 +7,8 @@ from supabase import create_client, Client
 from datetime import datetime
 import uuid
 from dotenv import load_dotenv
+# NOTE: chunk_text imported lazily inside functions to avoid circular import
+# from server.query_handler import chunk_text
 
 # Load environment variables from server/.env.local
 # This ensures we pick up the service role key from the backend config

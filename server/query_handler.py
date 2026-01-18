@@ -22,6 +22,7 @@ import pandas as pd
 import tempfile
 from typing import List, Tuple, Dict, Any
 from server.document_ingestion import documents
+from server.csv_excel_processor import process_csv_excel_query
 
 
 # Try to import embedding model
@@ -310,71 +311,47 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50):
 
 def query_csv_with_context(query: str, file_name: str, file_path: str = None, df: pd.DataFrame = None, conversation_history: list = None, **filters):
     """
-    Query CSV data using keyword filtering and LLM reasoning
-    Uses chunked loading to avoid RAM overhead on large files
-    Calls query_model internally to generate LLM response
+    Query CSV data using sophisticated programmatic reasoning pipeline:
+    
+    1️⃣ Parse CSV into DataFrame
+    2️⃣ Convert question into structured intent (filter, aggregate, group, order)
+    3️⃣ Generate executable pandas code (silently)
+    4️⃣ Execute code safely on DataFrame (actual computation, no hallucination)
+    5️⃣ Format results in natural language
+    
+    This approach ensures accurate, non-hallucinated results by performing
+    actual computations instead of relying on LLM text generation alone.
     
     Args:
         query: The natural language query
         file_name: Name of the CSV file
         file_path: Path to the CSV file (local or Supabase storage reference)
-        df: DataFrame to query (if None, will load from file_path with chunking)
+        df: DataFrame to query (if None, will load from file_path)
         conversation_history: List of previous messages for conversation context
         **filters: Optional keyword arguments for column-based filtering
     
     Returns:
-        LLM response based on CSV data
+        Natural language answer with actual computed results
     """
     try:
         path_to_load = file_path or file_name
         
-        # Extract meaningful search terms from query (keyword-based filtering only)
-        stop_words = ['what', 'is', 'the', 'of', 'in', 'for', 'and', 'or', 'a', 'an', 'to', 'from', 'with', 'by', 'on', 'at', 'about', 'salary', 'wage', 'cost', 'price', 'find', 'get', 'show', 'tell', 'me', 'you', 'your', 'his', 'her', 'their', 'whose']
-        search_terms = [
-            word.lower() for word in query.split()
-            if word.lower() not in stop_words and len(word) > 1
-        ]
-        
-        # For pre-loaded DataFrames, use it directly
+        # If DataFrame provided, save to temporary file for processing
         if df is not None and not df.empty:
-            relevant_rows = _apply_keyword_filtering(df, search_terms)
-        else:
-            # For file loading, use chunked reading to avoid RAM overhead
-            relevant_rows = _load_and_filter_chunked(path_to_load, search_terms, file_type='csv')
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as tmp:
+                df.to_csv(tmp.name, index=False)
+                path_to_load = tmp.name
         
-        if relevant_rows is None or relevant_rows.empty:
-            error_msg = f"Could not load or find matches in CSV file: {file_name}"
-            return query_model(f"Error: {error_msg} Please try a different query.", conversation_history=conversation_history)
+        # Use new sophisticated pipeline
+        result = process_csv_excel_query(
+            query=query,
+            file_path=path_to_load,
+            is_excel=False,
+            conversation_history=conversation_history
+        )
         
-        # Build context about the data structure
-        context = f"CSV File: {file_name}\n"
-        context += f"Columns: {', '.join(relevant_rows.columns.tolist())}\n"
-        context += f"Matching rows: {len(relevant_rows)}\n\n"
-        
-        # Apply additional filters if provided
-        for column, value in filters.items():
-            if column in relevant_rows.columns:
-                if isinstance(value, list):
-                    relevant_rows = relevant_rows[relevant_rows[column].isin(value)]
-                else:
-                    relevant_rows = relevant_rows[relevant_rows[column] == value]
-        
-        # Limit results to reasonable size (up to 100 rows for LLM context)
-        result_text = relevant_rows.head(100).to_string()
-        metadata = f"\nTotal matching rows: {len(relevant_rows)} from {file_name}"
-        csv_data = context + "Matching Data:\n" + result_text + metadata
-        
-        # Query LLM with CSV data context
-        enhanced_query = f"""Answer this question based on the CSV data provided:
-
-Question: {query}
-
-CSV Data:
-{csv_data}
-
-Provide a clear, direct answer with the specific information requested."""
-        
-        return query_model(enhanced_query, conversation_history=conversation_history)
+        return result
         
     except Exception as e:
         print(f"Error querying CSV: {e}")
@@ -382,141 +359,51 @@ Provide a clear, direct answer with the specific information requested."""
         return query_model(error_msg, conversation_history=conversation_history)
 
 
-def _load_and_filter_chunked(file_path: str, search_terms: list, file_type: str = 'csv', chunk_size: int = 1000):
-    """
-    Unified function to load and filter CSV/Excel in chunks using keyword matching
-    Avoids RAM overhead on large files
-    
-    Args:
-        file_path: Path to file (CSV or Excel)
-        search_terms: List of search terms to match
-        file_type: 'csv' or 'excel' (default: 'csv')
-        chunk_size: Rows per chunk (default: 1000)
-    
-    Returns:
-        Filtered DataFrame with matching rows
-    """
-    try:
-        matching_chunks = []
-        
-        # Determine how to read based on file type
-        if file_type == 'excel' or file_path.lower().endswith(('.xlsx', '.xls')):
-            reader = pd.read_excel(file_path, sheet_name=0, chunksize=chunk_size)
-        else:
-            reader = pd.read_csv(file_path, chunksize=chunk_size)
-        
-        # Read in chunks to avoid loading entire file into RAM
-        for chunk in reader:
-            if chunk.empty:
-                continue
-            
-            # Apply keyword filtering only
-            if search_terms:
-                chunk = _apply_keyword_filtering(chunk, search_terms)
-            
-            if not chunk.empty:
-                matching_chunks.append(chunk)
-        
-        # Concatenate all matching chunks
-        if matching_chunks:
-            return pd.concat(matching_chunks, ignore_index=True)
-        else:
-            return pd.DataFrame()
-            
-    except Exception as e:
-        print(f"Error in chunked file loading ({file_type}): {e}")
-        return None
-
-
-def _apply_keyword_filtering(df: pd.DataFrame, search_terms: list):
-    """
-    Filter DataFrame rows using keyword matching (AND logic for all terms)
-    """
-    if not search_terms:
-        return df
-    
-    # Try to match ALL terms first (AND logic)
-    mask_all = pd.Series([True] * len(df), index=df.index)
-    for term in search_terms:
-        term_mask = pd.Series([False] * len(df), index=df.index)
-        for col in df.columns:
-            try:
-                col_mask = df[col].astype(str).str.contains(term, case=False, na=False, regex=False)
-                term_mask = term_mask | col_mask
-            except:
-                continue
-        mask_all = mask_all & term_mask
-    
-    if mask_all.any():
-        return df[mask_all]
 
 
 def query_excel_with_context(query: str, file_name: str, file_path: str = None, df: pd.DataFrame = None, conversation_history: list = None, **filters):
     """
-    Query Excel data using keyword filtering and LLM reasoning
-    Uses chunked loading to avoid RAM overhead on large files
-    Calls query_model internally to generate LLM response
+    Query Excel data using sophisticated programmatic reasoning pipeline:
+    
+    1️⃣ Parse Excel into DataFrame
+    2️⃣ Convert question into structured intent (filter, aggregate, group, order)
+    3️⃣ Generate executable pandas code (silently)
+    4️⃣ Execute code safely on DataFrame (actual computation, no hallucination)
+    5️⃣ Format results in natural language
+    
+    This approach ensures accurate, non-hallucinated results by performing
+    actual computations instead of relying on LLM text generation alone.
     
     Args:
         query: The natural language query
         file_name: Name of the Excel file
         file_path: Path to the Excel file (local or Supabase storage reference)
-        df: DataFrame to query (if None, will load from file_path with chunking)
+        df: DataFrame to query (if None, will load from file_path)
         conversation_history: List of previous messages for conversation context
         **filters: Optional keyword arguments for column-based filtering
     
     Returns:
-        LLM response based on Excel data
+        Natural language answer with actual computed results
     """
     try:
         path_to_load = file_path or file_name
         
-        # Extract meaningful search terms from query (keyword-based filtering only)
-        stop_words = ['what', 'is', 'the', 'of', 'in', 'for', 'and', 'or', 'a', 'an', 'to', 'from', 'with', 'by', 'on', 'at', 'about', 'salary', 'wage', 'cost', 'price', 'find', 'get', 'show', 'tell', 'me', 'you', 'your', 'his', 'her', 'their', 'whose']
-        search_terms = [
-            word.lower() for word in query.split()
-            if word.lower() not in stop_words and len(word) > 1
-        ]
-        
-        # For pre-loaded DataFrames, use it directly
+        # If DataFrame provided, save to temporary file for processing
         if df is not None and not df.empty:
-            relevant_rows = _apply_keyword_filtering(df, search_terms)
-        else:
-            # For file loading, use chunked reading to avoid RAM overhead
-            relevant_rows = _load_and_filter_chunked(path_to_load, search_terms, file_type='excel')
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.xlsx', delete=False) as tmp:
+                df.to_excel(tmp.name, index=False)
+                path_to_load = tmp.name
         
-        if relevant_rows is None or relevant_rows.empty:
-            error_msg = f"Could not load or find matches in Excel file: {file_name}"
-            return query_model(f"Error: {error_msg} Please try a different query.", conversation_history=conversation_history)
+        # Use new sophisticated pipeline
+        result = process_csv_excel_query(
+            query=query,
+            file_path=path_to_load,
+            is_excel=True,
+            conversation_history=conversation_history
+        )
         
-        # Build context about the data structure
-        context = f"Excel File: {file_name}\n"
-        context += f"Columns: {', '.join(relevant_rows.columns.tolist())}\n"
-        context += f"Matching rows: {len(relevant_rows)}\n\n"
-        
-        # Apply additional filters if provided
-        for column, value in filters.items():
-            if column in relevant_rows.columns:
-                if isinstance(value, list):
-                    relevant_rows = relevant_rows[relevant_rows[column].isin(value)]
-                else:
-                    relevant_rows = relevant_rows[relevant_rows[column] == value]
-        
-        result_text = relevant_rows.head(100).to_string()
-        metadata = f"\nTotal matching rows: {len(relevant_rows)} from {file_name}"
-        excel_data = context + "Matching Data:\n" + result_text + metadata
-        
-        # Query LLM with Excel data context
-        enhanced_query = f"""Answer this question based on the Excel data provided:
-
-Question: {query}
-
-Excel Data:
-{excel_data}
-
-Provide a clear, direct answer with the specific information requested."""
-        
-        return query_model(enhanced_query, conversation_history=conversation_history)
+        return result
         
     except Exception as e:
         print(f"Error querying Excel: {e}")
@@ -588,7 +475,7 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
     """
     try:
         # Use document context for enhanced response
-        return query_with_context(query, max_chunks=2, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id)
+        return query_with_context(query, max_chunks=5, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id)
         
     except Exception as e:
         error_message = f"Error processing query: {str(e)}"

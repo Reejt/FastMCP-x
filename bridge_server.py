@@ -164,72 +164,94 @@ async def query_endpoint(request: QueryRequest):
                 }
             )
         
-        # Detect file references in query (e.g., "in sales.csv", "from data.xlsx", "query data.csv")
-        file_pattern = r'\b(in|from|using|with|file:?|query|analyze|show|what|how|find|tell|get)\s+([a-zA-Z0-9_\-\.]+\.(csv|xlsx|xls))\b'
+        # Detect file references in query (e.g., "in sales.csv", "from data.xlsx", "query data.csv", "Sheet 1-apollo.csv")
+        # Pattern matches filenames with spaces, hyphens, underscores, and dots
+        # Excludes common English words that might appear before filenames
+        file_pattern = r'\b(in|from|using|with|file:?|query|analyze|show|what|how|find|tell|get)\s+(?!does|is|the|a|an|and|or|but|can)([a-zA-Z0-9_\-\.\s]+\.(csv|xlsx|xls))\b'
         file_match = re.search(file_pattern, request.query, re.IGNORECASE)
         
-        if file_match and request.workspace_id and supabase_client:
-            detected_file_name = file_match.group(2)
+        if file_match and request.workspace_id:
+            detected_file_name = file_match.group(2).strip()
             file_type = file_match.group(3).lower()
             print(f"📊 File reference detected in query: {detected_file_name}")
             
-            # Look up file in database using workspace_id
-            try:
-                file_record = supabase_client.table('file_upload').select('*').eq(
-                    'file_name', detected_file_name
-                ).eq('workspace_id', request.workspace_id).execute()
+            # Query Supabase for actual files in this workspace to find the match
+            file_path = None
+            if supabase_client:
+                try:
+                    print(f"🔍 Searching Supabase for files in workspace: {request.workspace_id}")
+                    # Get all files in this workspace
+                    file_records = supabase_client.table('file_upload').select('*').eq(
+                        'workspace_id', request.workspace_id
+                    ).execute()
+                    
+                    if file_records.data:
+                        print(f"📂 Found {len(file_records.data)} files in workspace")
+                        
+                        # Find the best matching file
+                        for record in file_records.data:
+                            actual_filename = record['file_name']
+                            # Check if the detected filename is contained in actual filename
+                            if detected_file_name.lower() in actual_filename.lower() or \
+                               actual_filename.lower() in detected_file_name.lower():
+                                file_path = record['file_path']
+                                print(f"✅ Matched file: {actual_filename} -> {file_path}")
+                                detected_file_name = actual_filename  # Use actual filename
+                                break
+                        
+                        if not file_path:
+                            print(f"⚠️  No matching file found for: {detected_file_name}")
+                            print(f"   Available files: {[r['file_name'] for r in file_records.data]}")
+                    else:
+                        print(f"⚠️  No files found in workspace")
+                        
+                except Exception as db_error:
+                    print(f"⚠️  Database lookup failed: {str(db_error)}")
+            
+            # If file_path found, route to CSV/Excel handler
+            if file_path:
+                async def file_event_generator():
+                    try:
+                        if file_type == 'csv':
+                            print(f"📄 Querying CSV: {detected_file_name}")
+                            response = await mcp_query_csv_with_context(
+                                query=request.query,
+                                file_name=detected_file_name,
+                                file_path=file_path,
+                                conversation_history=request.conversation_history,
+                                workspace_id=request.workspace_id
+                            )
+                        else:  # xlsx or xls
+                            print(f"📊 Querying Excel: {detected_file_name}")
+                            response = await mcp_query_excel_with_context(
+                                query=request.query,
+                                file_name=detected_file_name,
+                                file_path=file_path,
+                                conversation_history=request.conversation_history,
+                                workspace_id=request.workspace_id
+                            )
+                        
+                        yield f"data: {json.dumps({'chunk': response})}\n\n"
+                        yield f"data: {json.dumps({'done': True})}\n\n"
+                        print(f"✅ File query completed")
+                        
+                    except Exception as e:
+                        print(f"❌ File query error: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 
-                if file_record.data and len(file_record.data) > 0:
-                    file_path = file_record.data[0]['file_path']
-                    print(f"📂 Found file in database: {file_path}")
-                    
-                    # Route to appropriate handler based on file type
-                    async def file_event_generator():
-                        try:
-                            if file_type == 'csv':
-                                print(f"📄 Querying CSV: {detected_file_name}")
-                                response = await mcp_query_csv_with_context(
-                                    query=request.query,
-                                    file_name=detected_file_name,
-                                    file_path=file_path,
-                                    conversation_history=request.conversation_history,
-                                    workspace_id=request.workspace_id
-                                )
-                            else:  # xlsx or xls
-                                print(f"📊 Querying Excel: {detected_file_name}")
-                                response = await mcp_query_excel_with_context(
-                                    query=request.query,
-                                    file_name=detected_file_name,
-                                    file_path=file_path,
-                                    conversation_history=request.conversation_history,
-                                    workspace_id=request.workspace_id
-                                )
-                            
-                            yield f"data: {json.dumps({'chunk': response})}\n\n"
-                            yield f"data: {json.dumps({'done': True})}\n\n"
-                            print(f"✅ File query completed")
-                            
-                        except Exception as e:
-                            print(f"❌ File query error: {str(e)}")
-                            import traceback
-                            traceback.print_exc()
-                            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                    
-                    return StreamingResponse(
-                        file_event_generator(),
-                        media_type="text/event-stream",
-                        headers={
-                            "Cache-Control": "no-cache",
-                            "Connection": "keep-alive",
-                            "X-Accel-Buffering": "no"
-                        }
-                    )
-                else:
-                    print(f"⚠️  File not found in database for workspace: {detected_file_name}")
-                    print(f"   Will proceed with regular query")
-            except Exception as db_error:
-                print(f"⚠️  Database lookup failed: {str(db_error)}")
-                print(f"   Will proceed with regular query")
+                return StreamingResponse(
+                    file_event_generator(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no"
+                    }
+                )
+            else:
+                print(f"⚠️  File path not found in Supabase. Proceeding with regular query.")
         
         # Detect if query contains a URL - route to link query handler
         url_pattern = r'https?://[^\s]+'

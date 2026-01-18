@@ -36,5 +36,9 @@ supabase
 # Environment Variables
 python-dotenv
 
+# Evaluation Framework (optional)
+# ragas  # For full RAGAS evaluation: pip install ragas datasets
+# sacrebleu  # For production BLEU: pip install sacrebleu
+
 # Windows COM Automation (optional, for .ppt files on Windows)
 # pywin32
