@@ -529,6 +529,7 @@ export default function WorkspacePage() {
           onExpandWorkspaceSidebar={handleExpandWorkspaceSidebar}
           chatSessions={workspaceChatSessions}
           onChatSelect={handleChatSelect}
+          currentChatId={currentChatId}
         />
       </div>
     </div>
