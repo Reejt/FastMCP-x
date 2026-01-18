@@ -6,16 +6,22 @@ import { createClient } from '@/lib/supabase/client'
 import { Workspace, User } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
 import EditWorkspaceModal from './components/EditWorkspaceModal'
+import ConfirmationModal from '@/app/components/UI/ConfirmationModal'
+import { useWorkspacesStore } from '@/app/contexts/WorkspacesContext'
 
 export default function WorkspacesPage() {
   const router = useRouter()
   const supabase = createClient()
+  const workspaces = useWorkspacesStore((state) => state.workspaces)
+  const updateWorkspace = useWorkspacesStore((state) => state.updateWorkspace)
+  const removeWorkspace = useWorkspacesStore((state) => state.removeWorkspace)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null)
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [workspaceToDelete, setWorkspaceToDelete] = useState<Workspace | null>(null)
 
   useEffect(() => {
     const checkUser = async () => {
@@ -40,13 +46,6 @@ export default function WorkspacesPage() {
     checkUser()
   }, [router, supabase])
 
-  // Load workspaces from database
-  useEffect(() => {
-    if (!user) return
-
-    loadWorkspaces()
-  }, [user])
-
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = () => {
@@ -59,21 +58,6 @@ export default function WorkspacesPage() {
     return () => document.removeEventListener('click', handleClickOutside)
   }, [openMenuId])
 
-  const loadWorkspaces = async () => {
-    try {
-      const response = await fetch('/api/workspaces')
-      const data = await response.json()
-
-      if (data.success && data.workspaces) {
-        setWorkspaces(data.workspaces)
-      } else {
-        console.error('Failed to load workspaces:', data)
-      }
-    } catch (error) {
-      console.error('Error loading workspaces:', error)
-    }
-  }
-
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/login')
@@ -83,10 +67,6 @@ export default function WorkspacesPage() {
 
 
   const handleDeleteWorkspace = async (workspaceId: string) => {
-    if (!confirm('Are you sure you want to delete this workspace? This will also delete all documents and instructions.')) {
-      return
-    }
-
     try {
       const response = await fetch('/api/workspaces', {
         method: 'DELETE',
@@ -97,7 +77,8 @@ export default function WorkspacesPage() {
       const data = await response.json()
 
       if (data.success) {
-        await loadWorkspaces()
+        // Update context state - this will update all components
+        removeWorkspace(workspaceId)
       } else {
         console.error('Failed to delete workspace:', data.error)
         alert('Failed to delete workspace: ' + data.error)
@@ -124,7 +105,8 @@ export default function WorkspacesPage() {
 
       if (data.success) {
         setEditingWorkspace(null)
-        await loadWorkspaces()
+        // Update context state - this will update all components
+        updateWorkspace(workspaceId, { name, description: description ?? undefined })
       } else {
         console.error('Failed to update workspace:', data.error)
         alert('Failed to update workspace: ' + data.error)
@@ -273,7 +255,8 @@ export default function WorkspacesPage() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleDeleteWorkspace(workspace.id)
+                              setWorkspaceToDelete(workspace)
+                              setDeleteModalOpen(true)
                               setOpenMenuId(null)
                             }}
                             className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
@@ -303,6 +286,25 @@ export default function WorkspacesPage() {
               onUpdateAction={handleUpdateWorkspace}
             />
           )}
+
+          {/* Delete Confirmation Modal */}
+          <ConfirmationModal
+            isOpen={deleteModalOpen}
+            onClose={() => {
+              setDeleteModalOpen(false)
+              setWorkspaceToDelete(null)
+            }}
+            onConfirm={() => {
+              if (workspaceToDelete) {
+                handleDeleteWorkspace(workspaceToDelete.id)
+              }
+            }}
+            title="Delete Workspace"
+            message={`Are you sure you want to delete "${workspaceToDelete?.name}"? This action cannot be undone and will permanently delete all documents and data in this workspace.`}
+            confirmText="Delete"
+            cancelText="Cancel"
+            isDestructive={true}
+          />
         </div>
       </div>
     </div>

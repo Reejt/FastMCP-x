@@ -42,6 +42,15 @@ export default function WorkspaceChatPage() {
   const [currentChatId, setCurrentChatId] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const getCurrentChatLabel = () => {
+    if (!currentChatId) return undefined
+    const session = workspaceChatSessions.find(s => s.id === currentChatId)
+    const label = session?.messages.find(m => m.role === 'user')?.content || session?.messages[0]?.content
+    if (!label) return 'New Chat'
+    const trimmed = label.slice(0, 30)
+    return trimmed.length < label.length ? `${trimmed}...` : trimmed
+  }
+
   useEffect(() => {
     // Load workspace sidebar collapse state from localStorage
     const saved = localStorage.getItem('workspace-sidebar-collapsed')
@@ -283,6 +292,8 @@ export default function WorkspaceChatPage() {
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
+  const currentChatLabel = getCurrentChatLabel()
+
   if (loading) {
     return (
       <div className="flex h-screen bg-gray-50 items-center justify-center">
@@ -354,6 +365,14 @@ export default function WorkspaceChatPage() {
             >
               {currentWorkspace?.name || 'Workspace'}
             </button>
+            {currentChatLabel && (
+              <>
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="text-gray-900 font-medium">{currentChatLabel}</span>
+              </>
+            )}
             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>

@@ -16,9 +16,10 @@ interface WorkspaceIntroductionProps {
   onExpandWorkspaceSidebar?: () => void
   chatSessions?: ChatSession[]
   onChatSelect?: (chatId: string) => void
+  currentChatId?: string
 }
 
-export default function WorkspaceIntroduction({ workspace, messages, isProcessing, onSendMessage, isWorkspaceSidebarCollapsed, onExpandWorkspaceSidebar, chatSessions = [], onChatSelect }: WorkspaceIntroductionProps) {
+export default function WorkspaceIntroduction({ workspace, messages, isProcessing, onSendMessage, isWorkspaceSidebarCollapsed, onExpandWorkspaceSidebar, chatSessions = [], onChatSelect, currentChatId }: WorkspaceIntroductionProps) {
   const router = useRouter()
   const [message, setMessage] = useState('')
   const chatHistoryRef = useRef<HTMLDivElement>(null)
@@ -30,6 +31,8 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
 
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([])
   const [draftSelectedFileIds, setDraftSelectedFileIds] = useState<string[]>([])
+  const referenceFileInputRef = useRef<HTMLInputElement>(null)
+  const [referenceUploading, setReferenceUploading] = useState(false)
 
   // Check if we're in chat mode (has messages)
   const isInChatMode = messages.length > 0
@@ -72,11 +75,28 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   const getChatTitle = (session: ChatSession): string => {
     const firstUserMessage = session.messages.find(m => m.role === 'user')
     if (firstUserMessage) {
-      const title = firstUserMessage.content.slice(0, 50)
+      const title = firstUserMessage.content.slice(0, 30)
       return title.length < firstUserMessage.content.length ? `${title}...` : title
     }
     return 'New conversation'
   }
+
+  const currentChatSession = currentChatId
+    ? chatSessions.find(s => s.id === currentChatId)
+    : undefined
+
+  const getMessageDerivedChatLabel = (): string | undefined => {
+    if (messages.length === 0) return undefined
+    const firstUserMessage = messages.find(m => m.role === 'user')
+    const source = firstUserMessage?.content || messages[0]?.content
+    if (!source) return undefined
+    const trimmed = source.slice(0, 30)
+    return trimmed.length < source.length ? `${trimmed}...` : trimmed
+  }
+
+  const currentChatLabel = isInChatMode
+    ? (currentChatSession ? getChatTitle(currentChatSession) : (getMessageDerivedChatLabel() || 'New conversation'))
+    : undefined
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -124,6 +144,60 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
       isCancelled = true
     }
   }, [isReferenceModalOpen, workspace?.id])
+
+  const refreshWorkspaceFiles = async () => {
+    if (!workspace?.id) return
+    setFilesLoading(true)
+    setFilesError(null)
+    try {
+      const response = await fetch(`/api/vault/upload?workspaceId=${workspace.id}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to fetch files')
+      }
+
+      setWorkspaceFiles(Array.isArray(data?.files) ? data.files : [])
+    } catch (err) {
+      setWorkspaceFiles([])
+      setFilesError(err instanceof Error ? err.message : 'Failed to fetch files')
+    } finally {
+      setFilesLoading(false)
+    }
+  }
+
+  const handleReferenceFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setReferenceUploading(true)
+    setFilesError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('workspaceId', workspace.id)
+
+      const response = await fetch('/api/vault/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result?.error || 'Upload failed')
+      }
+
+      await refreshWorkspaceFiles()
+    } catch (err) {
+      setFilesError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setReferenceUploading(false)
+      if (referenceFileInputRef.current) {
+        referenceFileInputRef.current.value = ''
+      }
+    }
+  }
 
   const openReferenceModal = () => {
     setDraftSelectedFileIds(selectedFileIds)
@@ -177,9 +251,30 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
         style={{ backgroundColor: theme.cardBg, borderColor: theme.border }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold mb-4" style={{ color: theme.text }}>
-          Choose files you want to use as reference to answer your query
-        </h3>
+        <input
+          ref={referenceFileInputRef}
+          type="file"
+          onChange={handleReferenceFileUpload}
+          className="hidden"
+          disabled={referenceUploading}
+          accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.xls,.ppt,.pptx,.json,.xml,.html,.jpg,.jpeg,.png,.gif,.webp"
+        />
+
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <h3 className="text-base font-semibold" style={{ color: theme.text }}>
+            Choose files you want to use as reference to answer your query
+          </h3>
+          <button
+            type="button"
+            onClick={() => {
+              referenceFileInputRef.current?.click()
+            }}
+            disabled={referenceUploading}
+            className="px-3 py-2 rounded-lg text-sm bg-gray-900 text-white hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Add
+          </button>
+        </div>
 
         <div className="border rounded-xl overflow-hidden" style={{ borderColor: theme.border }}>
           {filesLoading ? (
@@ -201,7 +296,7 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                 return (
                   <label
                     key={file.id}
-                    className="flex items-center gap-4 p-4 cursor-pointer"
+                    className="relative flex items-center gap-4 p-4 cursor-pointer"
                     style={{ backgroundColor: theme.cardBg }}
                   >
                     <input
@@ -228,7 +323,10 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
 
                     {/* Row divider */}
                     {idx !== workspaceFiles.length - 1 && (
-                      <div className="absolute left-0 right-0" style={{ height: 1, backgroundColor: theme.border, marginTop: 56 }} />
+                      <div
+                        className="absolute left-0 right-0 bottom-0 pointer-events-none"
+                        style={{ height: 1, backgroundColor: theme.border }}
+                      />
                     )}
                   </label>
                 )
@@ -240,15 +338,14 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
         <div className="flex justify-end gap-3 mt-5">
           <button
             onClick={cancelReferenceSelection}
-            className="px-4 py-2 rounded-lg transition-colors text-sm"
+            className="px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer"
             style={{ color: theme.textSecondary }}
           >
             Cancel
           </button>
           <button
             onClick={saveReferenceSelection}
-            className="px-4 py-2 rounded-lg transition-colors text-sm"
-            style={{ backgroundColor: theme.hoverBg, color: theme.text }}
+            className="px-4 py-2 rounded-lg transition-colors text-sm bg-gray-900 text-white hover:bg-gray-700 cursor-pointer"
           >
             Save
           </button>
@@ -529,6 +626,22 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
             <span style={{ color: theme.text }} className="font-medium">{workspace.name}</span>
+            {currentChatLabel && (
+              <>
+                <svg className="w-4 h-4" style={{ color: theme.textMuted }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span style={{ color: theme.text }} className="font-medium">{currentChatLabel}</span>
+              </>
+            )}
+            {currentChatLabel && (
+              <>
+                <svg className="w-4 h-4" style={{ color: theme.textMuted }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span style={{ color: theme.text }} className="font-medium">{currentChatLabel}</span>
+              </>
+            )}
           </nav>
         </div>
 

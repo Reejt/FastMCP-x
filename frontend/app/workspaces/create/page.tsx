@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { User } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
+import { useWorkspacesStore } from '@/app/contexts/WorkspacesContext'
 
 export default function CreateWorkspacePage() {
   const router = useRouter()
   const supabase = createClient()
+  const addWorkspace = useWorkspacesStore((state) => state.addWorkspace)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
@@ -67,6 +69,9 @@ export default function CreateWorkspacePage() {
         setIsSubmitting(false)
         return
       }
+
+      // Add the new workspace to context - this will update all components
+      addWorkspace(workspaceData.workspace)
 
       // 2. Create instruction if provided
       if (instructions.trim()) {

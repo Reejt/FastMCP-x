@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import type { File } from '@/app/types'
 
@@ -13,8 +14,12 @@ interface ChatInputProps {
 }
 
 export default function ChatInput({ onSendMessage, disabled = false, workspaceName, workspaceId }: ChatInputProps) {
+  const router = useRouter()
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const referenceFileInputRef = useRef<HTMLInputElement>(null)
+  const [referenceUploading, setReferenceUploading] = useState(false)
 
   const [isReferenceModalOpen, setIsReferenceModalOpen] = useState(false)
   const [workspaceFiles, setWorkspaceFiles] = useState<File[]>([])
@@ -144,6 +149,62 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
     }
   }, [isReferenceModalOpen, workspaceId])
 
+  const refreshWorkspaceFiles = async () => {
+    if (!workspaceId) return
+    setFilesLoading(true)
+    setFilesError(null)
+    try {
+      const response = await fetch(`/api/vault/upload?workspaceId=${workspaceId}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to fetch files')
+      }
+
+      setWorkspaceFiles(Array.isArray(data?.files) ? data.files : [])
+    } catch (err) {
+      setWorkspaceFiles([])
+      setFilesError(err instanceof Error ? err.message : 'Failed to fetch files')
+    } finally {
+      setFilesLoading(false)
+    }
+  }
+
+  const handleReferenceFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setReferenceUploading(true)
+    setFilesError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (workspaceId) {
+        formData.append('workspaceId', workspaceId)
+      }
+
+      const response = await fetch('/api/vault/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result?.error || 'Upload failed')
+      }
+
+      await refreshWorkspaceFiles()
+    } catch (err) {
+      setFilesError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setReferenceUploading(false)
+      if (referenceFileInputRef.current) {
+        referenceFileInputRef.current.value = ''
+      }
+    }
+  }
+
   const referenceModal = isReferenceModalOpen ? (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={cancelReferenceSelection}>
       <div
@@ -151,9 +212,30 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
         style={{ backgroundColor: '#fcfcfc' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold mb-4" style={{ color: '#060606' }}>
-          Choose files you want to use as reference to answer your query
-        </h3>
+        <input
+          ref={referenceFileInputRef}
+          type="file"
+          onChange={handleReferenceFileUpload}
+          className="hidden"
+          disabled={referenceUploading}
+          accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.xls,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.json,.yaml,.yml,.sql,.sh,.ts,.tsx,.js,.jsx,.py"
+        />
+
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <h3 className="text-base font-semibold" style={{ color: '#060606' }}>
+            Choose files you want to use as reference to answer your query
+          </h3>
+          <button
+            type="button"
+            onClick={() => {
+              referenceFileInputRef.current?.click()
+            }}
+            disabled={!workspaceId || referenceUploading}
+            className="px-3 py-2 rounded-lg text-sm bg-gray-900 text-white hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Add
+          </button>
+        </div>
 
         <div className="border border-gray-200 rounded-xl overflow-hidden">
           {filesLoading ? (
@@ -197,10 +279,13 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
         </div>
 
         <div className="flex justify-end gap-3 mt-5">
-          <button onClick={cancelReferenceSelection} className="px-4 py-2 rounded-lg text-sm text-gray-600">
+          <button onClick={cancelReferenceSelection} className="px-4 py-2 rounded-lg text-sm text-gray-600 cursor-pointer">
             Cancel
           </button>
-          <button onClick={saveReferenceSelection} className="px-4 py-2 rounded-lg text-sm bg-gray-100 text-gray-900">
+          <button
+            onClick={saveReferenceSelection}
+            className="px-4 py-2 rounded-lg text-sm bg-gray-900 text-white hover:bg-gray-700 transition-colors cursor-pointer"
+          >
             Save
           </button>
         </div>

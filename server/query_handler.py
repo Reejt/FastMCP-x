@@ -584,13 +584,6 @@ def query_model(query: str, model_name: str = None, stream: bool = False, conver
         stream: Whether to stream the response (default: False)
     """
     try:
-        ollama_base_url = (
-            os.environ.get("OLLAMA_BASE_URL")
-            or os.environ.get("OLLAMA_HOST")
-            or "http://localhost:11434"
-        ).rstrip("/")
-        model_name = model_name or os.environ.get("OLLAMA_MODEL") or 'llama3.2:1b'
-
         # Build full prompt with conversation history if provided
         full_prompt = query
         if conversation_history and len(conversation_history) > 0:
@@ -599,7 +592,7 @@ def query_model(query: str, model_name: str = None, stream: bool = False, conver
         
         # Query the LLM
         response = requests.post(
-            f"{ollama_base_url}/api/generate",
+            'http://host.docker.internal:11434/api/generate',
             json={
                 'model': model_name,
                 'prompt': full_prompt,
