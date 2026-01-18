@@ -9,7 +9,7 @@ MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://backend:8000/sse")
 FASTMCP_SERVER_URL = MCP_SERVER_URL
 print(f"MCP Server URL: {FASTMCP_SERVER_URL}")
 
-async def answer_query(query: str, conversation_history: list = None, workspace_id: str = None):
+async def answer_query(query: str, conversation_history: list = None, workspace_id: str = None, selected_file_ids: list = None):
     """
     Answer a query using semantic search and LLM with document context
     
@@ -33,6 +33,12 @@ async def answer_query(query: str, conversation_history: list = None, workspace_
         # Add workspace_id if provided
         if workspace_id:
             tool_params["workspace_id"] = workspace_id
+
+        # Add selected_file_ids if provided
+        if selected_file_ids:
+            tool_params["selected_file_ids"] = json.dumps(selected_file_ids)
+        else:
+            tool_params["selected_file_ids"] = "[]"
         
         result = await client.call_tool("answer_query_tool", tool_params)
         

@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import uvicorn
 import sys
 import os
@@ -74,6 +74,7 @@ class QueryRequest(BaseModel):
     include_context_preview: Optional[bool] = True
     conversation_history: Optional[list] = []
     workspace_id: Optional[str] = None  # For workspace-specific instructions
+    selected_file_ids: Optional[List[str]] = None  # Restrict context to these workspace files
 
 class IngestRequest(BaseModel):
     file_name: str
@@ -120,6 +121,8 @@ async def query_endpoint(request: QueryRequest):
             print(f"📜 With conversation history: {len(request.conversation_history)} messages")
         if request.workspace_id:
             print(f"🏢 Workspace ID: {request.workspace_id}")
+        if request.selected_file_ids:
+            print(f"📎 Selected reference files: {len(request.selected_file_ids)}")
         
         import re
         
@@ -180,50 +183,54 @@ async def query_endpoint(request: QueryRequest):
                 ).eq('workspace_id', request.workspace_id).execute()
                 
                 if file_record.data and len(file_record.data) > 0:
-                    file_path = file_record.data[0]['file_path']
-                    print(f"📂 Found file in database: {file_path}")
-                    
-                    # Route to appropriate handler based on file type
-                    async def file_event_generator():
-                        try:
-                            if file_type == 'csv':
-                                print(f"📄 Querying CSV: {detected_file_name}")
-                                response = await mcp_query_csv_with_context(
-                                    query=request.query,
-                                    file_name=detected_file_name,
-                                    file_path=file_path,
-                                    conversation_history=request.conversation_history,
-                                    workspace_id=request.workspace_id
-                                )
-                            else:  # xlsx or xls
-                                print(f"📊 Querying Excel: {detected_file_name}")
-                                response = await mcp_query_excel_with_context(
-                                    query=request.query,
-                                    file_name=detected_file_name,
-                                    file_path=file_path,
-                                    conversation_history=request.conversation_history,
-                                    workspace_id=request.workspace_id
-                                )
-                            
-                            yield f"data: {json.dumps({'chunk': response})}\n\n"
-                            yield f"data: {json.dumps({'done': True})}\n\n"
-                            print(f"✅ File query completed")
-                            
-                        except Exception as e:
-                            print(f"❌ File query error: {str(e)}")
-                            import traceback
-                            traceback.print_exc()
-                            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                    
-                    return StreamingResponse(
-                        file_event_generator(),
-                        media_type="text/event-stream",
-                        headers={
-                            "Cache-Control": "no-cache",
-                            "Connection": "keep-alive",
-                            "X-Accel-Buffering": "no"
-                        }
-                    )
+                    if request.selected_file_ids and file_record.data[0].get('id') not in request.selected_file_ids:
+                        print(f"⚠️  Detected file is not in selected set; skipping specialized file route")
+                        print(f"   detected_file_id={file_record.data[0].get('id')}")
+                    else:
+                        file_path = file_record.data[0]['file_path']
+                        print(f"📂 Found file in database: {file_path}")
+                        
+                        # Route to appropriate handler based on file type
+                        async def file_event_generator():
+                            try:
+                                if file_type == 'csv':
+                                    print(f"📄 Querying CSV: {detected_file_name}")
+                                    response = await mcp_query_csv_with_context(
+                                        query=request.query,
+                                        file_name=detected_file_name,
+                                        file_path=file_path,
+                                        conversation_history=request.conversation_history,
+                                        workspace_id=request.workspace_id
+                                    )
+                                else:  # xlsx or xls
+                                    print(f"📊 Querying Excel: {detected_file_name}")
+                                    response = await mcp_query_excel_with_context(
+                                        query=request.query,
+                                        file_name=detected_file_name,
+                                        file_path=file_path,
+                                        conversation_history=request.conversation_history,
+                                        workspace_id=request.workspace_id
+                                    )
+                                
+                                yield f"data: {json.dumps({'chunk': response})}\n\n"
+                                yield f"data: {json.dumps({'done': True})}\n\n"
+                                print(f"✅ File query completed")
+                                
+                            except Exception as e:
+                                print(f"❌ File query error: {str(e)}")
+                                import traceback
+                                traceback.print_exc()
+                                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                        
+                        return StreamingResponse(
+                            file_event_generator(),
+                            media_type="text/event-stream",
+                            headers={
+                                "Cache-Control": "no-cache",
+                                "Connection": "keep-alive",
+                                "X-Accel-Buffering": "no"
+                            }
+                        )
                 else:
                     print(f"⚠️  File not found in database for workspace: {detected_file_name}")
                     print(f"   Will proceed with regular query")
@@ -293,14 +300,16 @@ async def query_endpoint(request: QueryRequest):
                     response_generator = query_with_instructions_stream(
                         query=request.query,
                         workspace_id=request.workspace_id,
-                        conversation_history=request.conversation_history
+                        conversation_history=request.conversation_history,
+                        selected_file_ids=request.selected_file_ids
                     )
                 else:
                     # Get streaming response without workspace instructions
                     response_generator = answer_query(
                         request.query, 
                         conversation_history=request.conversation_history,
-                        stream=True
+                        stream=True,
+                        selected_file_ids=request.selected_file_ids
                     )
                 
                 # Collect response chunks

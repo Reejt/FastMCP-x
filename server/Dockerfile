@@ -7,6 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     git \
+    curl \
     tesseract-ocr \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*

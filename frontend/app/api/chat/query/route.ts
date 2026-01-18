@@ -6,7 +6,7 @@ const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://bridge:3001';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, action = 'query', conversation_history = [], workspace_id } = body;
+    const { query, action = 'query', conversation_history = [], workspace_id, selected_file_ids } = body;
 
     if (!query) {
       return NextResponse.json(
@@ -16,10 +16,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Build request body
-    let requestBody: { query: string; conversation_history?: unknown[]; workspace_id?: string } = { 
-      query, 
-      conversation_history, 
-      workspace_id 
+    let requestBody: { query: string; conversation_history?: unknown[]; workspace_id?: string; selected_file_ids?: string[] } = {
+      query,
+      conversation_history,
+      workspace_id,
+      selected_file_ids,
     };
 
     // All requests use the same /api/query endpoint
@@ -97,12 +98,24 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error calling bridge server:', error);
 
+    // Check if it's a connection error
+    const isConnectionError = error instanceof Error && (
+      error.message.includes('ECONNREFUSED') ||
+      error.message.includes('fetch failed') ||
+      error.message.includes('Network request failed')
+    );
+
     return NextResponse.json(
       {
-        error: 'Failed to connect to bridge server',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        error: isConnectionError 
+          ? 'Bridge server is not running. Please start it with: python3 bridge_server.py'
+          : 'Failed to connect to bridge server',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        hint: isConnectionError 
+          ? 'The bridge server connects the frontend to the backend. Make sure it\'s running on port 3001.'
+          : undefined
       },
-      { status: 500 }
+      { status: isConnectionError ? 503 : 500 }
     );
   }
 }
