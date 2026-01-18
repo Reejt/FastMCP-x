@@ -169,8 +169,13 @@ export default function WorkspacePage() {
   }, [workspaceId, router])
 
   // Update local session state when messages change (no localStorage, Supabase handles persistence)
+  // Only resort chats when new message is added (detected by message count change)
   useEffect(() => {
     if (workspaceId && currentChatId && messages.length > 0) {
+      const existingSession = chatSessions[currentChatId]
+      const previousMessageCount = existingSession?.messages.length || 0
+      const currentMessageCount = messages.length
+      
       const session: ChatSession = {
         id: currentChatId,
         workspaceId,
@@ -180,13 +185,20 @@ export default function WorkspacePage() {
       }
       setChatSessions(prev => ({ ...prev, [currentChatId]: session }))
 
-      // Update workspace chat sessions list
-      setWorkspaceChatSessions(prev => {
-        const filtered = prev.filter(s => s.id !== currentChatId)
-        return [session, ...filtered].sort((a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      // Only resort if a new message was added (not just switching chats)
+      if (currentMessageCount > previousMessageCount) {
+        setWorkspaceChatSessions(prev => {
+          const filtered = prev.filter(s => s.id !== currentChatId)
+          return [session, ...filtered].sort((a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          )
+        })
+      } else {
+        // Just update the session without resorting
+        setWorkspaceChatSessions(prev => 
+          prev.map(s => s.id === currentChatId ? session : s)
         )
-      })
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, workspaceId, currentChatId])
@@ -269,7 +281,7 @@ export default function WorkspacePage() {
     }
   }
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, selected_file_ids?: string[]) => {
     if (!content.trim() || isProcessing) return
 
     // If no current chat session, create one for this new conversation
@@ -320,12 +332,26 @@ export default function WorkspacePage() {
         body: JSON.stringify({
           query: content,
           conversation_history,
-          workspace_id: workspaceId
+            workspace_id: workspaceId,
+            selected_file_ids
         }),
       })
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`)
+        // Try to get detailed error message from response
+        let errorMessage = `API error: ${response.statusText}`
+        try {
+          const errorData = await response.json()
+          if (errorData.error) {
+            errorMessage = errorData.error
+            if (errorData.hint) {
+              errorMessage += `\n\n${errorData.hint}`
+            }
+          }
+        } catch {
+          // If JSON parsing fails, use the status text
+        }
+        throw new Error(errorMessage)
       }
 
       // Check if response is streaming (SSE)
@@ -413,9 +439,23 @@ export default function WorkspacePage() {
       }
     } catch (error) {
       console.error('Error sending message:', error)
+      
+      // Create a more informative error message
+      let errorContent = 'Sorry, I encountered an error processing your request.'
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Bridge server is not running')) {
+          errorContent = `❌ **Bridge Server Not Running**\n\n${error.message}\n\nThe bridge server is required to process queries. It connects the frontend to the backend AI services.`
+        } else if (error.message.includes('Failed to connect')) {
+          errorContent = `❌ **Connection Error**\n\n${error.message}\n\nPlease check that all required services are running.`
+        } else {
+          errorContent = `❌ **Error**\n\n${error.message}`
+        }
+      }
+      
       const errorMessage: Message = {
         id: assistantMessageId,
-        content: 'Sorry, I encountered an error processing your request. Please try again.',
+        content: errorContent,
         role: 'assistant',
         timestamp: new Date(),
         isStreaming: false
@@ -489,6 +529,7 @@ export default function WorkspacePage() {
           onExpandWorkspaceSidebar={handleExpandWorkspaceSidebar}
           chatSessions={workspaceChatSessions}
           onChatSelect={handleChatSelect}
+          currentChatId={currentChatId}
         />
       </div>
     </div>

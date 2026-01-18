@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Workspace, Message, ChatSession } from '@/app/types'
+import { Workspace, Message, ChatSession, File } from '@/app/types'
 import InstructionsPanel from '@/app/components/WorkspaceIntroduction/InstructionsPanel'
 import VaultPanel from '@/app/components/WorkspaceIntroduction/VaultPanel'
 import MarkdownRenderer from '@/app/components/UI/MarkdownRenderer'
@@ -11,17 +11,28 @@ interface WorkspaceIntroductionProps {
   workspace: Workspace
   messages: Message[]
   isProcessing: boolean
-  onSendMessage: (message: string) => void
+  onSendMessage: (message: string, selectedFileIds?: string[]) => void
   isWorkspaceSidebarCollapsed?: boolean
   onExpandWorkspaceSidebar?: () => void
   chatSessions?: ChatSession[]
   onChatSelect?: (chatId: string) => void
+  currentChatId?: string
 }
 
-export default function WorkspaceIntroduction({ workspace, messages, isProcessing, onSendMessage, isWorkspaceSidebarCollapsed, onExpandWorkspaceSidebar, chatSessions = [], onChatSelect }: WorkspaceIntroductionProps) {
+export default function WorkspaceIntroduction({ workspace, messages, isProcessing, onSendMessage, isWorkspaceSidebarCollapsed, onExpandWorkspaceSidebar, chatSessions = [], onChatSelect, currentChatId }: WorkspaceIntroductionProps) {
   const router = useRouter()
   const [message, setMessage] = useState('')
   const chatHistoryRef = useRef<HTMLDivElement>(null)
+
+  const [isReferenceModalOpen, setIsReferenceModalOpen] = useState(false)
+  const [workspaceFiles, setWorkspaceFiles] = useState<File[]>([])
+  const [filesLoading, setFilesLoading] = useState(false)
+  const [filesError, setFilesError] = useState<string | null>(null)
+
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([])
+  const [draftSelectedFileIds, setDraftSelectedFileIds] = useState<string[]>([])
+  const referenceFileInputRef = useRef<HTMLInputElement>(null)
+  const [referenceUploading, setReferenceUploading] = useState(false)
 
   // Check if we're in chat mode (has messages)
   const isInChatMode = messages.length > 0
@@ -64,11 +75,28 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   const getChatTitle = (session: ChatSession): string => {
     const firstUserMessage = session.messages.find(m => m.role === 'user')
     if (firstUserMessage) {
-      const title = firstUserMessage.content.slice(0, 50)
+      const title = firstUserMessage.content.slice(0, 30)
       return title.length < firstUserMessage.content.length ? `${title}...` : title
     }
     return 'New conversation'
   }
+
+  const currentChatSession = currentChatId
+    ? chatSessions.find(s => s.id === currentChatId)
+    : undefined
+
+  const getMessageDerivedChatLabel = (): string | undefined => {
+    if (messages.length === 0) return undefined
+    const firstUserMessage = messages.find(m => m.role === 'user')
+    const source = firstUserMessage?.content || messages[0]?.content
+    if (!source) return undefined
+    const trimmed = source.slice(0, 30)
+    return trimmed.length < source.length ? `${trimmed}...` : trimmed
+  }
+
+  const currentChatLabel = isInChatMode
+    ? (currentChatSession ? getChatTitle(currentChatSession) : (getMessageDerivedChatLabel() || 'New conversation'))
+    : undefined
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -77,10 +105,259 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
     }
   }, [messages])
 
+  // Fetch workspace files when modal opens
+  useEffect(() => {
+    if (!isReferenceModalOpen) return
+    if (!workspace?.id) return
+
+    let isCancelled = false
+
+    const loadFiles = async () => {
+      setFilesLoading(true)
+      setFilesError(null)
+      try {
+        const response = await fetch(`/api/vault/upload?workspaceId=${workspace.id}`)
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data?.error || 'Failed to fetch files')
+        }
+
+        if (!isCancelled) {
+          setWorkspaceFiles(Array.isArray(data?.files) ? data.files : [])
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          setWorkspaceFiles([])
+          setFilesError(err instanceof Error ? err.message : 'Failed to fetch files')
+        }
+      } finally {
+        if (!isCancelled) {
+          setFilesLoading(false)
+        }
+      }
+    }
+
+    loadFiles()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [isReferenceModalOpen, workspace?.id])
+
+  const refreshWorkspaceFiles = async () => {
+    if (!workspace?.id) return
+    setFilesLoading(true)
+    setFilesError(null)
+    try {
+      const response = await fetch(`/api/vault/upload?workspaceId=${workspace.id}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to fetch files')
+      }
+
+      setWorkspaceFiles(Array.isArray(data?.files) ? data.files : [])
+    } catch (err) {
+      setWorkspaceFiles([])
+      setFilesError(err instanceof Error ? err.message : 'Failed to fetch files')
+    } finally {
+      setFilesLoading(false)
+    }
+  }
+
+  const handleReferenceFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setReferenceUploading(true)
+    setFilesError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('workspaceId', workspace.id)
+
+      const response = await fetch('/api/vault/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result?.error || 'Upload failed')
+      }
+
+      await refreshWorkspaceFiles()
+    } catch (err) {
+      setFilesError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setReferenceUploading(false)
+      if (referenceFileInputRef.current) {
+        referenceFileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const openReferenceModal = () => {
+    setDraftSelectedFileIds(selectedFileIds)
+    setIsReferenceModalOpen(true)
+  }
+
+  const closeReferenceModal = () => {
+    setIsReferenceModalOpen(false)
+  }
+
+  const cancelReferenceSelection = () => {
+    setDraftSelectedFileIds(selectedFileIds)
+    closeReferenceModal()
+  }
+
+  const saveReferenceSelection = () => {
+    setSelectedFileIds(draftSelectedFileIds)
+    closeReferenceModal()
+  }
+
+  const toggleDraftSelection = (fileId: string) => {
+    setDraftSelectedFileIds((prev) => {
+      if (prev.includes(fileId)) return prev.filter((id) => id !== fileId)
+      return [...prev, fileId]
+    })
+  }
+
+  const formatFileTypeLabel = (file: File): string => {
+    const name = file.file_name || ''
+    const ext = name.includes('.') ? name.split('.').pop()?.toUpperCase() : undefined
+    if (ext) return ext
+
+    const t = (file.file_type || '').toLowerCase()
+    if (t.includes('pdf')) return 'PDF'
+    if (t.includes('csv')) return 'CSV'
+    if (t.includes('spreadsheet') || t.includes('excel') || t.includes('xlsx') || t.includes('xls')) return 'XLSX'
+    if (t.includes('presentation') || t.includes('ppt')) return 'PPTX'
+    if (t.includes('word') || t.includes('doc')) return 'DOCX'
+    if (t.includes('markdown')) return 'MD'
+    if (t.includes('text')) return 'TXT'
+    return 'FILE'
+  }
+
+  const referenceModal = isReferenceModalOpen ? (
+    <div
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      onClick={cancelReferenceSelection}
+    >
+      <div
+        className="rounded-xl p-6 w-full max-w-2xl shadow-xl border"
+        style={{ backgroundColor: theme.cardBg, borderColor: theme.border }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <input
+          ref={referenceFileInputRef}
+          type="file"
+          onChange={handleReferenceFileUpload}
+          className="hidden"
+          disabled={referenceUploading}
+          accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.xls,.ppt,.pptx,.json,.xml,.html,.jpg,.jpeg,.png,.gif,.webp"
+        />
+
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <h3 className="text-base font-semibold" style={{ color: theme.text }}>
+            Choose files you want to use as reference to answer your query
+          </h3>
+          <button
+            type="button"
+            onClick={() => {
+              referenceFileInputRef.current?.click()
+            }}
+            disabled={referenceUploading}
+            className="px-3 py-2 rounded-lg text-sm bg-gray-900 text-white hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Add
+          </button>
+        </div>
+
+        <div className="border rounded-xl overflow-hidden" style={{ borderColor: theme.border }}>
+          {filesLoading ? (
+            <div className="p-4 text-sm" style={{ color: theme.textMuted }}>
+              Loading files...
+            </div>
+          ) : filesError ? (
+            <div className="p-4 text-sm" style={{ color: theme.textMuted }}>
+              {filesError}
+            </div>
+          ) : workspaceFiles.length === 0 ? (
+            <div className="p-4 text-sm" style={{ color: theme.textMuted }}>
+              No files uploaded in this workspace.
+            </div>
+          ) : (
+            <div className="max-h-[360px] overflow-y-auto">
+              {workspaceFiles.map((file, idx) => {
+                const checked = draftSelectedFileIds.includes(file.id)
+                return (
+                  <label
+                    key={file.id}
+                    className="relative flex items-center gap-4 p-4 cursor-pointer"
+                    style={{ backgroundColor: theme.cardBg }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleDraftSelection(file.id)}
+                      className="h-4 w-4"
+                    />
+
+                    <div className="h-12 w-12 rounded-xl bg-red-500 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold truncate" style={{ color: theme.text }}>
+                        {file.file_name}
+                      </div>
+                      <div className="text-xs" style={{ color: theme.textMuted }}>
+                        {formatFileTypeLabel(file)}
+                      </div>
+                    </div>
+
+                    {/* Row divider */}
+                    {idx !== workspaceFiles.length - 1 && (
+                      <div
+                        className="absolute left-0 right-0 bottom-0 pointer-events-none"
+                        style={{ height: 1, backgroundColor: theme.border }}
+                      />
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 mt-5">
+          <button
+            onClick={cancelReferenceSelection}
+            className="px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer"
+            style={{ color: theme.textSecondary }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={saveReferenceSelection}
+            className="px-4 py-2 rounded-lg transition-colors text-sm bg-gray-900 text-white hover:bg-gray-700 cursor-pointer"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (message.trim() && !isProcessing) {
-      onSendMessage(message.trim())
+      onSendMessage(message.trim(), selectedFileIds.length > 0 ? selectedFileIds : undefined)
       setMessage('')
     }
   }
@@ -97,7 +374,8 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   // ============================================
   if (isInChatMode) {
     return (
-      <div className="flex flex-col h-full w-full" style={{ backgroundColor: theme.bg }}>
+      <>
+        <div className="flex flex-col h-full w-full" style={{ backgroundColor: theme.bg }}>
         {/* Top Navigation Bar */}
         <div className="px-6 pt-4 pb-2" style={{ backgroundColor: theme.bg }}>
           <div className="flex items-center justify-between">
@@ -227,11 +505,21 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                   className="p-1 rounded-lg transition-colors mr-3 flex-shrink-0 hover:opacity-70"
                   aria-label="Add attachment"
                   disabled={isProcessing}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    openReferenceModal()
+                  }}
                 >
                   <svg className="w-5 h-5" style={{ color: theme.textSecondary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                   </svg>
                 </button>
+
+                {selectedFileIds.length > 0 && (
+                  <span className="text-xs mr-3" style={{ color: theme.textMuted }}>
+                    {selectedFileIds.length} files selected
+                  </span>
+                )}
 
                 {/* Text Input */}
                 <input
@@ -294,7 +582,9 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
             </form>
           </div>
         </div>
-      </div>
+        </div>
+        {referenceModal}
+      </>
     )
   }
 
@@ -302,7 +592,8 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   // INTRODUCTION MODE VIEW - Original design
   // ============================================
   return (
-    <div className="flex h-full w-full" style={{ backgroundColor: theme.bg }}>
+    <>
+      <div className="flex h-full w-full" style={{ backgroundColor: theme.bg }}>
       {/* Left Side - Chat Area (50% width) */}
       <div className="flex-1 flex flex-col px-6 pt-4 pb-8 overflow-auto" style={{ flexBasis: '50%' }}>
         {/* Header with Breadcrumb and Theme Toggle */}
@@ -335,6 +626,22 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
             <span style={{ color: theme.text }} className="font-medium">{workspace.name}</span>
+            {currentChatLabel && (
+              <>
+                <svg className="w-4 h-4" style={{ color: theme.textMuted }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span style={{ color: theme.text }} className="font-medium">{currentChatLabel}</span>
+              </>
+            )}
+            {currentChatLabel && (
+              <>
+                <svg className="w-4 h-4" style={{ color: theme.textMuted }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span style={{ color: theme.text }} className="font-medium">{currentChatLabel}</span>
+              </>
+            )}
           </nav>
         </div>
 
@@ -397,11 +704,21 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                         className="p-2 rounded-lg transition-colors hover:opacity-70"
                         aria-label="Add attachment"
                         disabled={isProcessing}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          openReferenceModal()
+                        }}
                       >
                         <svg className="w-5 h-5" style={{ color: theme.textMuted }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
                       </button>
+
+                      {selectedFileIds.length > 0 && (
+                        <span className="text-xs" style={{ color: theme.textMuted }}>
+                          {selectedFileIds.length} files selected
+                        </span>
+                      )}
                     </div>
 
                     {/* Submit Button */}
@@ -482,6 +799,9 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
           </div>
         </div>
       </div>
-    </div>
+      </div>
+      {referenceModal}
+    </>
   )
 }
+

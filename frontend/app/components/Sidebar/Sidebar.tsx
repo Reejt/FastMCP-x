@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter, usePathname } from 'next/navigation'
 import { User, Workspace } from '@/app/types'
 import SidebarItem from './SidebarItem'
+import ConfirmationModal from '../UI/ConfirmationModal'
+import { useWorkspacesStore } from '@/app/contexts/WorkspacesContext'
 
 
 interface SidebarProps {
@@ -12,9 +15,7 @@ interface SidebarProps {
   onSignOutAction: () => void
 }
 
-const MIN_WIDTH = 200
-const MAX_WIDTH = 350
-const DEFAULT_WIDTH = 256
+const FIXED_WIDTH = 256
 
 export default function Sidebar({
   user,
@@ -22,14 +23,23 @@ export default function Sidebar({
 }: SidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
+  const workspaces = useWorkspacesStore((state) => state.workspaces)
+  const updateWorkspace = useWorkspacesStore((state) => state.updateWorkspace)
+  const removeWorkspace = useWorkspacesStore((state) => state.removeWorkspace)
+  const loadWorkspaces = useWorkspacesStore((state) => state.loadWorkspaces)
   const [activeSection, setActiveSection] = useState<'chat' | 'vault' | 'workspaces' | 'instructions'>('chat')
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH)
-  const [isResizing, setIsResizing] = useState(false)
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
   const [isWorkspacesDropdownOpen, setIsWorkspacesDropdownOpen] = useState(true)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [workspaceToDelete, setWorkspaceToDelete] = useState<Workspace | null>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
 
   // Light theme colors
   const theme = {
@@ -40,6 +50,7 @@ export default function Sidebar({
     textMuted: '#999999',
     hoverBg: 'rgba(0,0,0,0.05)',
     activeBg: '#f0f0f0',
+    cardBg: '#ffffff',
   }
 
   // Update active section based on current pathname and extract workspace ID
@@ -64,88 +75,132 @@ export default function Sidebar({
     }
   }, [pathname]) // React to pathname changes only
 
-  // Load collapse state and workspaces on mount
+  // Load collapse state on mount
   useEffect(() => {
     const savedCollapsed = localStorage.getItem('sidebar-collapsed')
-    const savedWidth = localStorage.getItem('main-sidebar-width')
     
     if (savedCollapsed !== null) {
       setIsCollapsed(savedCollapsed === 'true')
     }
 
-    if (savedWidth !== null) {
-      const width = parseInt(savedWidth, 10)
-      if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
-        setSidebarWidth(width)
-      }
-    }
-
     // Load workspaces from API
-    const loadWorkspaces = async () => {
-      try {
-        const response = await fetch('/api/workspaces')
-        const data = await response.json()
+    loadWorkspaces()
+  }, [loadWorkspaces])
 
-        if (data.success && data.workspaces) {
-          setWorkspaces(data.workspaces)
-        }
-      } catch (error) {
-        console.error('Error loading workspaces:', error)
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null)
+        setMenuPosition(null)
       }
     }
 
-    loadWorkspaces()
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Handle mouse move for resizing
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return
-    
-    const newWidth = e.clientX
-    if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
-      setSidebarWidth(newWidth)
-    }
-  }, [isResizing])
-
-  // Handle mouse up to stop resizing
-  const handleMouseUp = useCallback(() => {
-    if (isResizing) {
-      setIsResizing(false)
-      localStorage.setItem('main-sidebar-width', String(sidebarWidth))
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-  }, [isResizing, sidebarWidth])
-
-  // Add/remove event listeners for resizing
+  // Focus rename input when entering rename mode
   useEffect(() => {
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
     }
+  }, [renamingId])
 
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
+  // Handle workspace rename
+  const handleRename = async (workspaceId: string, newName: string) => {
+    if (!newName.trim()) return
+
+    try {
+      const response = await fetch('/api/workspaces', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, name: newName.trim() })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Update context state - this will update all components
+        updateWorkspace(workspaceId, { name: newName.trim() })
+      }
+    } catch (error) {
+      console.error('Error renaming workspace:', error)
+    } finally {
+      setRenamingId(null)
+      setRenameValue('')
     }
-  }, [isResizing, handleMouseMove, handleMouseUp])
+  }
 
-  // Note: forceCollapse is kept for future use but doesn't restrict manual toggling
-  // Users can always expand/collapse the main sidebar regardless of workspace sidebar state
+  // Handle workspace delete
+  const handleDelete = async (workspaceId: string) => {
+    try {
+      const response = await fetch('/api/workspaces', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Update context state - this will update all components
+        removeWorkspace(workspaceId)
+        
+        // If we're currently viewing the deleted workspace, redirect to workspaces page
+        if (currentWorkspaceId === workspaceId) {
+          router.push('/workspaces')
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting workspace:', error)
+    }
+  }
+
+  // Start rename mode
+  const startRename = (workspace: Workspace) => {
+    setRenamingId(workspace.id)
+    setRenameValue(workspace.name)
+    setOpenMenuId(null)
+    setMenuPosition(null)
+  }
+
+  // Confirm delete
+  const confirmDelete = (workspace: Workspace) => {
+    setWorkspaceToDelete(workspace)
+    setDeleteModalOpen(true)
+    setOpenMenuId(null)
+    setMenuPosition(null)
+  }
+
+  // Handle menu button click and calculate position
+  const handleMenuClick = (event: React.MouseEvent, workspaceId: string) => {
+    event.stopPropagation()
+    
+    if (openMenuId === workspaceId) {
+      setOpenMenuId(null)
+      setMenuPosition(null)
+    } else {
+      const button = event.currentTarget as HTMLElement
+      const rect = button.getBoundingClientRect()
+      
+      // Position menu to the right of the button with some spacing
+      setMenuPosition({
+        top: rect.top,
+        left: rect.right + 8,
+      })
+      setOpenMenuId(workspaceId)
+    }
+  }
+
+  // Note: Users can always expand/collapse the main sidebar regardless of workspace sidebar state
 
   // Toggle collapse state and save to localStorage
   const toggleCollapse = () => {
     const newState = !isCollapsed
     setIsCollapsed(newState)
     localStorage.setItem('sidebar-collapsed', String(newState))
-  }
-
-  const handleResizeStart = (e: React.MouseEvent) => {
-    if (isCollapsed) return
-    e.preventDefault()
-    setIsResizing(true)
   }
 
   return (
@@ -155,10 +210,10 @@ export default function Sidebar({
         ref={sidebarRef}
         initial={false}
         animate={{
-          width: isCollapsed ? 64 : sidebarWidth,
+          width: isCollapsed ? 64 : FIXED_WIDTH,
         }}
         transition={{
-          duration: isResizing ? 0 : 0.3,
+          duration: 0.3,
           ease: 'easeInOut',
         }}
         onClick={isCollapsed ? toggleCollapse : undefined}
@@ -167,14 +222,6 @@ export default function Sidebar({
         role="navigation"
         aria-label="Main navigation"
       >
-        {/* Resize Handle */}
-        {!isCollapsed && (
-          <div
-            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-10"
-            onMouseDown={handleResizeStart}
-            style={{ backgroundColor: isResizing ? 'rgba(59, 130, 246, 0.5)' : 'transparent' }}
-          />
-        )}
         {/* Header */}
         <div className="transition-all duration-300 py-3 px-4">
           <div className="flex items-center justify-between">
@@ -315,27 +362,75 @@ export default function Sidebar({
                   ) : (
                     <>
                       {workspaces.slice(0, 5).map((workspace) => (
-                        <button
+                        <div
                           key={workspace.id}
-                          onClick={() => router.push(`/workspaces/${workspace.id}`)}
-                          className="w-full text-left px-4 py-2 text-sm rounded-lg transition-colors"
-                          style={{
-                            backgroundColor: currentWorkspaceId === workspace.id ? theme.activeBg : 'transparent',
-                            color: currentWorkspaceId === workspace.id ? theme.text : theme.textSecondary,
-                          }}
-                          onMouseEnter={(e) => {
-                            if (currentWorkspaceId !== workspace.id) {
-                              e.currentTarget.style.backgroundColor = theme.hoverBg
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (currentWorkspaceId !== workspace.id) {
-                              e.currentTarget.style.backgroundColor = 'transparent'
-                            }
-                          }}
+                          className="relative group"
                         >
-                          {workspace.name}
-                        </button>
+                          {renamingId === workspace.id ? (
+                            // Rename input
+                            <input
+                              ref={renameInputRef}
+                              type="text"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleRename(workspace.id, renameValue)
+                                } else if (e.key === 'Escape') {
+                                  setRenamingId(null)
+                                  setRenameValue('')
+                                }
+                              }}
+                              onBlur={() => {
+                                if (renameValue.trim()) {
+                                  handleRename(workspace.id, renameValue)
+                                } else {
+                                  setRenamingId(null)
+                                  setRenameValue('')
+                                }
+                              }}
+                              className="w-full px-4 py-2 text-sm rounded-lg border outline-none"
+                              style={{
+                                backgroundColor: theme.bg,
+                                color: theme.text,
+                                borderColor: theme.border,
+                              }}
+                              placeholder="Workspace name"
+                            />
+                          ) : (
+                            // Normal workspace item
+                            <button
+                              onClick={() => router.push(`/workspaces/${workspace.id}`)}
+                              className="w-full text-left px-4 py-2 text-sm rounded-lg transition-colors flex items-center justify-between"
+                              style={{
+                                backgroundColor: currentWorkspaceId === workspace.id ? theme.activeBg : 'transparent',
+                                color: currentWorkspaceId === workspace.id ? theme.text : theme.textSecondary,
+                              }}
+                              onMouseEnter={(e) => {
+                                if (currentWorkspaceId !== workspace.id) {
+                                  e.currentTarget.style.backgroundColor = theme.hoverBg
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (currentWorkspaceId !== workspace.id) {
+                                  e.currentTarget.style.backgroundColor = 'transparent'
+                                }
+                              }}
+                            >
+                              <span className="flex-1 truncate">{workspace.name}</span>
+                              
+                              {/* 3-dot menu button - visible on hover */}
+                              <div
+                                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => handleMenuClick(e, workspace.id)}
+                              >
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                                </svg>
+                              </div>
+                            </button>
+                          )}
+                        </div>
                       ))}
                       {workspaces.length > 5 && (
                         <button
@@ -359,20 +454,20 @@ export default function Sidebar({
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      router.push('/workspaces/create')
+                      router.push('/workspaces')
                     }}
                     className="w-full text-left px-4 py-2 text-sm rounded-lg transition-colors"
-                    style={{ color: '#22c55e' }}
+                    style={{ color: theme.textSecondary }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.backgroundColor = theme.hoverBg
-                      e.currentTarget.style.color = '#16a34a'
+                      e.currentTarget.style.color = theme.text
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.backgroundColor = 'transparent'
-                      e.currentTarget.style.color = '#22c55e'
+                      e.currentTarget.style.color = theme.textSecondary
                     }}
                   >
-                    + New Workspace
+                    See all
                   </button>
                 </motion.div>
               )}
@@ -500,6 +595,83 @@ export default function Sidebar({
           )}
         </div>
       </motion.aside>
+
+      {/* Independent Dropdown Menu (rendered via portal) */}
+      {openMenuId && menuPosition && typeof window !== 'undefined' && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed w-36 rounded-lg shadow-xl border z-[9999]"
+          style={{
+            top: `${menuPosition.top}px`,
+            left: `${menuPosition.left}px`,
+            backgroundColor: theme.bg,
+            borderColor: theme.border,
+          }}
+        >
+          {workspaces.find(w => w.id === openMenuId) && (
+            <>
+              <button
+                onClick={() => {
+                  const workspace = workspaces.find(w => w.id === openMenuId)
+                  if (workspace) startRename(workspace)
+                }}
+                className="w-full text-left px-4 py-2 text-sm rounded-t-lg transition-colors flex items-center space-x-2"
+                style={{ color: theme.text }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.hoverBg
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                }}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <span>Rename</span>
+              </button>
+              <button
+                onClick={() => {
+                  const workspace = workspaces.find(w => w.id === openMenuId)
+                  if (workspace) confirmDelete(workspace)
+                }}
+                className="w-full text-left px-4 py-2 text-sm rounded-b-lg transition-colors flex items-center space-x-2"
+                style={{ color: '#dc2626' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(220, 38, 38, 0.1)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                }}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span>Delete</span>
+              </button>
+            </>
+          )}
+        </div>,
+        document.body
+      )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false)
+          setWorkspaceToDelete(null)
+        }}
+        onConfirm={() => {
+          if (workspaceToDelete) {
+            handleDelete(workspaceToDelete.id)
+          }
+        }}
+        title="Delete Workspace"
+        message={`Are you sure you want to delete "${workspaceToDelete?.name}"? This action cannot be undone and will permanently delete all documents and data in this workspace.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDestructive={true}
+      />
     </>
   )
 }
