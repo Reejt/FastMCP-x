@@ -331,7 +331,19 @@ export default function DashboardPage() {
       })
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`)
+        let errorMessage = `API error: ${response.statusText}`
+        try {
+          const errorData = await response.json()
+          if (errorData.error) {
+            errorMessage = errorData.error
+            if (errorData.hint) {
+              errorMessage += `\n\n${errorData.hint}`
+            }
+          }
+        } catch {
+          // If JSON parsing fails, use the status text
+        }
+        throw new Error(errorMessage)
       }
 
       // Check if response is streaming (SSE)
@@ -341,77 +353,100 @@ export default function DashboardPage() {
         const reader = response.body?.getReader()
         const decoder = new TextDecoder()
         let accumulatedContent = ''
+        let streamError = false
 
         if (reader) {
-          while (true) {
-            const { done, value } = await reader.read()
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
 
-            if (done) break
+              if (done) break
 
-            const chunk = decoder.decode(value, { stream: true })
-            const lines = chunk.split('\n')
+              const chunk = decoder.decode(value, { stream: true })
+              const lines = chunk.split('\n')
 
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const jsonStr = line.slice(6)
-                if (!jsonStr.trim()) continue // Skip empty lines
-                
-                try {
-                  const data = JSON.parse(jsonStr)
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  const jsonStr = line.slice(6)
+                  if (!jsonStr.trim()) continue // Skip empty lines
+                  
+                  try {
+                    const data = JSON.parse(jsonStr)
 
-                  if (data.chunk) {
-                    // Append chunk to accumulated content
-                    accumulatedContent += data.chunk
+                    if (data.chunk) {
+                      // Append chunk to accumulated content
+                      accumulatedContent += data.chunk
 
-                    // Update the assistant message with new content
-                    setMessages((prev) =>
-                      prev.map((msg) =>
-                        msg.id === assistantMessageId
-                          ? { ...msg, content: accumulatedContent, isStreaming: true }
-                          : msg
+                      // Update the assistant message with new content
+                      setMessages((prev) =>
+                        prev.map((msg) =>
+                          msg.id === assistantMessageId
+                            ? { ...msg, content: accumulatedContent, isStreaming: true }
+                            : msg
+                        )
                       )
-                    )
-                  } else if (data.done) {
-                    // Streaming complete - save assistant response to database via API
-                    setMessages((prev) =>
-                      prev.map((msg) =>
-                        msg.id === assistantMessageId
-                          ? { ...msg, isStreaming: false }
-                          : msg
-                      )
-                    )
-
-                    // Save assistant message to database (only for workspace chats)
-                    if (workspaceId) {
-                      try {
-                        await fetch('/api/chats', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            workspaceId,
-                            role: 'assistant',
-                            message: accumulatedContent
-                          })
-                        })
-                      } catch (error) {
-                        console.error('Error saving assistant message:', error)
+                    } else if (data.done) {
+                      // Streaming complete - save assistant response to database via API
+                      if (accumulatedContent && !streamError) {
+                        // Save message via API to database
+                        if (workspaceId) {
+                          try {
+                            await fetch('/api/chats', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                workspaceId,
+                                role: 'assistant',
+                                message: accumulatedContent
+                              })
+                            })
+                          } catch (error) {
+                            console.error('Error saving assistant message:', error)
+                          }
+                        }
                       }
+                      setMessages((prev) =>
+                        prev.map((msg) =>
+                          msg.id === assistantMessageId
+                            ? { ...msg, isStreaming: false }
+                            : msg
+                        )
+                      )
+                      setIsProcessing(false)
+                      return
+                    } else if (data.error) {
+                      streamError = true
+                      console.error('🛑 Stream error:', data.error, 'Type:', data.type)
+                      throw new Error(data.error)
                     }
-                  } else if (data.error) {
-                    throw new Error(data.error)
-                  }
-                } catch (parseError) {
-                  // Log invalid SSE data for debugging
-                  if (jsonStr.startsWith('<')) {
-                    // HTML response (likely an error page)
-                    console.error('Received HTML instead of JSON. This indicates a server error.')
-                    throw new Error('Server returned HTML error page. Check server logs.')
-                  } else {
-                    console.error('Error parsing SSE data:', parseError, 'Raw data:', jsonStr)
+                  } catch (parseError) {
+                    // Log invalid SSE data for debugging
+                    if (parseError instanceof SyntaxError) {
+                      console.error('🛑 JSON parsing failed - invalid SSE:', { line, error: parseError.message })
+                      console.error('   Raw data:', jsonStr.substring(0, 100))
+                      streamError = true
+                      throw new Error(`Invalid JSON response: ${parseError.message}`)
+                    }
+                    throw parseError
                   }
                 }
               }
             }
+          } catch (readerError) {
+            console.error('🛑 Stream reading error:', readerError)
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { 
+                      ...msg, 
+                      content: accumulatedContent || `Error: ${readerError instanceof Error ? readerError.message : 'Stream failed'}`,
+                      isStreaming: false 
+                    }
+                  : msg
+              )
+            )
+            setIsProcessing(false)
+            throw readerError
           }
         }
       } else {
@@ -427,10 +462,30 @@ export default function DashboardPage() {
         )
       }
     } catch (error) {
-      console.error('Error sending message:', error)
+      console.error('❌ Error sending message:', error)
+      
+      let errorContent = 'Sorry, I encountered an error processing your request.'
+      
+      if (error instanceof Error) {
+        console.error('   Error type:', error.name)
+        console.error('   Error message:', error.message)
+        
+        if (error.message.includes('Bridge server is not running')) {
+          errorContent = `❌ **Bridge Server Not Running**\n\n${error.message}`
+        } else if (error.message.includes('Failed to connect')) {
+          errorContent = `❌ **Connection Error**\n\n${error.message}`
+        } else if (error.message.includes('JSON parsing failed')) {
+          errorContent = `❌ **Invalid Response Format**\n\n${error.message}`
+        } else if (error.message.includes('Stream')) {
+          errorContent = `❌ **Streaming Error**\n\n${error.message}`
+        } else {
+          errorContent = `❌ **Error**\n\n${error.message}`
+        }
+      }
+      
       const errorMessage: Message = {
         id: assistantMessageId,
-        content: 'Sorry, I encountered an error processing your request. Please try again.',
+        content: errorContent,
         role: 'assistant',
         timestamp: new Date(),
         isStreaming: false

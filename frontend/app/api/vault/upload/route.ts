@@ -2,8 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getWorkspaceFiles } from '@/lib/supabase/documents';
 
+// ============================================
+// CONFIGURATION FOR LARGE FILE UPLOADS
+// ============================================
+// Disable default body parsing to handle large multipart/form-data
+// This allows streaming upload processing instead of buffering in memory
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '30mb', // Allow up to 30MB file uploads
+    },
+  },
+};
+
+// Explicitly specify Node runtime (not Edge) for streaming support
+// Edge runtime has restrictions on streaming and large payloads
+export const runtime = 'nodejs';
+
 // Server-side env variable (no NEXT_PUBLIC_ prefix needed in API routes)
-const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://bridge:3001';
+// Defaults to localhost:3001 for local development
+const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001';
 
 export async function POST(request: NextRequest) {
   try {

@@ -7,6 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     git \
+    curl \
     tesseract-ocr \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -15,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Install Python dependencies with increased timeout and retries for network resilience
-RUN pip install --no-cache-dir --default-timeout=1000 --retries 5 -r requirements.txt
+RUN pip install --default-timeout=1000 --retries 5 -r requirements.txt
 
 # Copy application code
 COPY server/ ./server/

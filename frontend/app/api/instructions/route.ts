@@ -21,7 +21,7 @@ import {
  */
 async function clearBackendInstructionCache(workspaceId: string) {
   try {
-    const bridgeServerUrl = process.env.BRIDGE_SERVER_URL || 'http://bridge:3001'
+    const bridgeServerUrl = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001'
     await fetch(`${bridgeServerUrl}/api/clear-instruction-cache?workspace_id=${workspaceId}`, {
       method: 'POST'
     })
@@ -134,16 +134,20 @@ export async function PATCH(request: NextRequest) {
 
     let instruction
 
-    if (activate) {
-      instruction = await activateInstruction(instructionId)
-    } else if (deactivate) {
-      instruction = await deactivateInstruction(instructionId)
-    } else if (title !== undefined || instructions !== undefined) {
+    // First, update content if provided
+    if (title !== undefined || instructions !== undefined) {
       const updates: { title?: string; content?: string } = {}
       if (title !== undefined) updates.title = title
       if (instructions !== undefined) updates.content = instructions
       instruction = await updateInstruction(instructionId, updates)
-    } else {
+    }
+
+    // Then, handle activation/deactivation
+    if (activate) {
+      instruction = await activateInstruction(instructionId)
+    } else if (deactivate) {
+      instruction = await deactivateInstruction(instructionId)
+    } else if (!instruction) {
       return NextResponse.json(
         {
           success: false,

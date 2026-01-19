@@ -22,6 +22,147 @@ import io
 # from server.query_handler import query_model
 
 
+class EntityBinder:
+    """
+    Mandatory entity-first binding before any aggregation or filtering.
+    
+    Ensures that when a user mentions a specific entity, the system treats it as 
+    a hard constraint and fails fast if entity binding fails.
+    
+    This prevents data leakage where unrelated entities appear in results.
+    
+    ⚠️ ADAPTIVE: Works with ANY DataFrame - scientific data, sports records, 
+    medical records, sensor IDs, etc. Not limited to business entities.
+    """
+    
+    @staticmethod
+    def _get_entity_columns(df: pd.DataFrame) -> List[str]:
+        """
+        Automatically detect columns that are likely to contain entities.
+        
+        Pure heuristic approach (NO hardcoded patterns):
+        - String/object columns only (exclude numeric)
+        - Moderate cardinality (not all unique, not all the same)
+        - Columns with repeated values are entity columns
+        
+        Works with ANY domain: business, scientific, medical, sports, sensor data, etc.
+        
+        Returns:
+            List of column names in priority order (by cardinality)
+        """
+        entity_columns = []
+        
+        for col in df.columns:
+            # Skip purely numeric columns
+            if pd.api.types.is_numeric_dtype(df[col]):
+                continue
+            
+            # Count unique values
+            unique_count = df[col].nunique()
+            total_rows = len(df)
+            
+            # Skip if all unique (likely IDs or timestamps)
+            if unique_count == total_rows:
+                continue
+            
+            # Skip if all same (no grouping value)
+            if unique_count == 1:
+                continue
+            
+            # At least 2 unique values = repeating categorical data = entity column
+            # This is domain-agnostic and works with anything
+            cardinality_ratio = unique_count / total_rows
+            entity_columns.append((col, cardinality_ratio))
+        
+        # Sort by cardinality ratio (prefer moderate cardinality)
+        # Lower ratio = more repeated values = likely an entity grouping column
+        entity_columns.sort(key=lambda x: x[1])
+        
+        return [col for col, _ in entity_columns]
+    
+    @staticmethod
+    def detect_entity_scope(query: str, df: pd.DataFrame) -> Optional[Dict[str, str]]:
+        """
+        Detect if the query references a specific entity in the DataFrame.
+        
+        Algorithm:
+        1. Identify potential entity columns (adaptive, not hardcoded)
+        2. For each entity column, check if any value appears in the query
+        3. Return first match with confidence score
+        
+        Returns:
+            {'column': str, 'value': str, 'confidence': float} if found, None otherwise
+        
+        Examples:
+            "Tell me about company A" -> {'column': 'company', 'value': 'A', 'confidence': 0.95}
+            "Data for patient P123" -> {'column': 'patient_id', 'value': 'P123', 'confidence': 0.95}
+            "Show sensor X readings" -> {'column': 'sensor', 'value': 'X', 'confidence': 0.95}
+        """
+        query_lower = query.lower()
+        
+        # Get adaptive list of entity columns
+        entity_columns = EntityBinder._get_entity_columns(df)
+        
+        if not entity_columns:
+            # Fallback: if no entity columns found by heuristic, scan all string columns
+            entity_columns = [col for col in df.columns 
+                            if not pd.api.types.is_numeric_dtype(df[col])]
+        
+        # Try to match query against values in entity columns
+        for col in entity_columns:
+            unique_values = df[col].astype(str).unique()
+            
+            for value in unique_values:
+                value_lower = value.lower()
+                
+                # Avoid matching common stop words (too generic)
+                if EntityBinder._is_stop_word(value_lower):
+                    continue
+                
+                # Check if value appears in query
+                if value_lower in query_lower:
+                    return {
+                        'column': col,
+                        'value': value,
+                        'confidence': EntityBinder._calculate_entity_confidence(value, query)
+                    }
+        
+        return None
+    
+    @staticmethod
+    def _is_stop_word(value: str) -> bool:
+        """Filter out common stop words that shouldn't match as entities"""
+        stop_words = {
+            'nan', 'null', 'none', 'true', 'false', 'yes', 'no',
+            'and', 'or', 'the', 'a', 'an', 'is', 'are', 'was', 'were',
+            'of', 'to', 'for', 'in', 'on', 'at', 'by', 'with', 'from'
+        }
+        return value in stop_words
+    
+    @staticmethod
+    def _calculate_entity_confidence(value: str, query: str) -> float:
+        """
+        Calculate confidence that the value is a genuine entity reference.
+        
+        Higher confidence if:
+        - Value has word boundaries (not part of larger word)
+        - Value is longer (less likely to be coincidental match)
+        """
+        query_lower = query.lower()
+        value_lower = value.lower()
+        
+        # Word boundary match = high confidence
+        word_pattern = r'\b' + re.escape(value_lower) + r'\b'
+        if re.search(word_pattern, query_lower):
+            return 0.95
+        
+        # Substring match with length bonus
+        if len(value_lower) >= 3:
+            return 0.80  # Longer values are more likely to be intentional references
+        else:
+            return 0.70  # Short substrings are riskier
+
+
 class IntentDetector:
     """
     Converts natural language questions into structured intents.
@@ -32,6 +173,8 @@ class IntentDetector:
     - Grouping operations (GROUP BY)
     - Sorting operations (ORDER BY)
     - Top-K operations (LIMIT)
+    
+    ⚠️ IMPORTANT: Entity binding is now MANDATORY (enforced in process_csv_excel_query)
     """
     
     AGGREGATION_KEYWORDS = {
@@ -364,6 +507,7 @@ class SafeCodeExecutor:
     - No file I/O
     - No network requests
     - No import statements (only pd, np available)
+    - ⚠️ NEW: Enforces entity scope after execution
     """
     
     ALLOWED_MODULES = {'pd', 'np', 'pandas', 'numpy'}
@@ -394,6 +538,40 @@ class SafeCodeExecutor:
                 return False, f"Unauthorized import: {line}"
         
         return True, ""
+    
+    @staticmethod
+    def validate_entity_scope(result_df: pd.DataFrame, entity: Dict[str, str]) -> bool:
+        """
+        🛡️ Safety Assertion: Verify that the result contains ONLY the specified entity.
+        
+        This prevents silent failures where unrelated entities appear in results.
+        
+        Args:
+            result_df: The result DataFrame after all operations
+            entity: {'column': str, 'value': str} from EntityBinder.detect_entity_scope()
+        
+        Returns:
+            True if entity scope is valid, False otherwise
+        """
+        if not entity or result_df.empty:
+            return True
+        
+        entity_col = entity['column']
+        entity_val = entity['value']
+        
+        # Check if entity column still exists in result
+        if entity_col not in result_df.columns:
+            return True  # Column was aggregated away, assume it's fine
+        
+        # Check if ONLY the specified entity exists in results
+        result_values = result_df[entity_col].astype(str).unique()
+        
+        for value in result_values:
+            if value.lower() != entity_val.lower():
+                # Found a different entity value - this is a failure
+                return False
+        
+        return True
     
     @staticmethod
     def execute_code(code: str, df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
@@ -438,134 +616,12 @@ class SafeCodeExecutor:
             return None, f"Execution error: {str(e)}"
 
 
-class ResultFormatter:
-    """
-    Converts DataFrame results into natural language explanations.
-    
-    Uses the LLM to generate human-readable summaries of computed results,
-    but the actual numbers come from the DataFrame, not from the LLM's
-    "knowledge" or hallucinations.
-    """
-    
-    @staticmethod
-    def format_result(result_df: pd.DataFrame, intent: Dict[str, Any], query: str) -> str:
-        """
-        Format DataFrame result into natural language.
-        
-        Args:
-            result_df: The computed DataFrame
-            intent: The original intent
-            query: The original user query
-        
-        Returns:
-            Natural language summary
-        """
-        if result_df is None or result_df.empty:
-            return "No results found matching your criteria."
-        
-        # Convert result to string representation for LLM
-        if len(result_df) == 1 and len(result_df.columns) == 1:
-            # Single value - just return it
-            value = result_df.iloc[0, 0]
-            return ResultFormatter._format_single_value(value, query)
-        
-        elif len(result_df) == 1:
-            # Single row with multiple values
-            return ResultFormatter._format_single_row(result_df, query)
-        
-        elif len(result_df) <= 10:
-            # Small result set - include full table
-            return ResultFormatter._format_table(result_df, query)
-        
-        else:
-            # Large result set - show summary
-            return ResultFormatter._format_summary(result_df, query)
-    
-    @staticmethod
-    def _format_single_value(value: Any, query: str) -> str:
-        """Format a single computed value"""
-        # Round numeric values
-        if isinstance(value, float):
-            value = round(value, 2)
-        
-        # Use LLM to explain the result
-        prompt = f"""Based on the computed result, answer the user's question concisely.
-
-User Question: {query}
-Computed Result: {value}
-
-Provide a natural, brief answer using the exact computed value. Do not add estimates or approximations."""
-        try:
-            from server.query_handler import query_model
-            return query_model(prompt)
-        except ImportError:
-            return f"Result: {value}"
-    
-    @staticmethod
-    def _format_single_row(result_df: pd.DataFrame, query: str) -> str:
-        """Format a single row result"""
-        row_dict = result_df.iloc[0].to_dict()
-        data_str = ", ".join([f"{k}: {v}" for k, v in row_dict.items()])
-        
-        prompt = f"""Based on the computed data, answer the user's question.
-
-User Question: {query}
-Data: {data_str}
-
-Provide a clear, natural answer using the exact data provided. Format it as a readable sentence."""
-        try:
-            from server.query_handler import query_model
-            return query_model(prompt)
-        except ImportError:
-            return f"Data: {data_str}"
-    
-    @staticmethod
-    def _format_table(result_df: pd.DataFrame, query: str) -> str:
-        """Format a table result"""
-        table_str = result_df.to_string()
-        
-        prompt = f"""Based on the computed table, answer the user's question.
-
-User Question: {query}
-Table:
-{table_str}
-
-Summarize the key insights from this table in natural language. Be specific and include the actual numbers."""
-        try:
-            from server.query_handler import query_model
-            return query_model(prompt)
-        except ImportError:
-            return f"Table Results:\n{table_str}"
-    
-    @staticmethod
-    def _format_summary(result_df: pd.DataFrame, query: str) -> str:
-        """Format a large result set summary"""
-        # Show first 5 and last 5 rows
-        first_rows = result_df.head(5).to_string()
-        last_rows = result_df.tail(5).to_string()
-        
-        summary = f"Showing first 5 of {len(result_df)} results:\n{first_rows}\n\n... ({len(result_df) - 10} more rows) ...\n\nLast 5 results:\n{last_rows}"
-        
-        prompt = f"""Based on the computed data, answer the user's question.
-
-User Question: {query}
-Total Rows: {len(result_df)}
-Sample Data:
-{summary}
-
-Provide a concise summary of the results with key statistics and insights."""
-        try:
-            from server.query_handler import query_model
-            return query_model(prompt)
-        except ImportError:
-            return summary
-
-
 def process_csv_excel_query(query: str, file_path: str, is_excel: bool = False, conversation_history: List = None):
     """
     Main entry point for the sophisticated CSV/Excel processing pipeline.
     
-    5-Step Process:
+    6-Step Process:
+    0️⃣ [NEW] Enforce mandatory entity binding
     1️⃣ Parse CSV/Excel into DataFrame
     2️⃣ Convert question into intent
     3️⃣ Generate executable code
@@ -624,8 +680,42 @@ def process_csv_excel_query(query: str, file_path: str, is_excel: bool = False, 
         if df.empty:
             return "Error: File is empty or could not be loaded."
         
+        # Step 0️⃣: 🔒 MANDATORY Entity Binding (FAIL FAST IF ENTITY NOT FOUND)
+        print(f"🔍 Detecting entity scope in query...")
+        entity = EntityBinder.detect_entity_scope(query, df)
+        
+        if entity:
+            print(f"✅ Entity detected: {entity['column']} = {entity['value']} (confidence: {entity['confidence']:.0%})")
+        else:
+            # Check if query seems to require an entity (e.g., "Tell me about X" or "Show X data")
+            entity_requiring_patterns = [
+                r'(?:tell|show|give|get|find|fetch|what|which)\s+(?:about|for|me)',
+                r'(?:all|every)\s+(?:about|info|data)',
+                r'(?:compare|analyze)\s+.*\s+(?:and|with)',
+            ]
+            
+            requires_entity = any(re.search(pattern, query.lower()) for pattern in entity_requiring_patterns)
+            
+            if requires_entity:
+                # Entity was required but not found
+                entity_hint = _extract_entity_candidates(query, df)
+                if entity_hint:
+                    return f"I couldn't identify which specific {entity_hint} you're referring to. Found {entity_hint.split()[-1]}s in the data: {', '.join(df[entity_hint].astype(str).unique()[:5])}. Please be more specific."
+                else:
+                    return "I couldn't identify the specific entity you're referring to. Please specify which company, product, person, or other entity you want to analyze."
+        
         # Step 2️⃣: Detect intent
         intent = IntentDetector.detect_intent(query, df)
+        
+        # If we have an entity, INSERT it as the FIRST filter (mandatory constraint)
+        if entity:
+            entity_filter = {
+                'column': entity['column'],
+                'operator': 'equals',
+                'value': entity['value']
+            }
+            intent['filters'].insert(0, entity_filter)
+            print(f"🔒 Entity filter added as mandatory constraint: {entity_filter}")
         
         # Step 3️⃣: Generate code
         code = CodeGenerator.generate_code(intent)
@@ -637,10 +727,15 @@ def process_csv_excel_query(query: str, file_path: str, is_excel: bool = False, 
             # If code generation fails, fall back to simple LLM approach
             return _fallback_llm_query(query, df, file_path)
         
-        # Step 5️⃣: Format results in natural language
-        answer = ResultFormatter.format_result(result_df, intent, query)
+        # 🛡️ SAFETY CHECK: Verify entity scope is maintained
+        if entity and not SafeCodeExecutor.validate_entity_scope(result_df, entity):
+            return f"⚠️ Data consistency check failed. Results contain data from multiple {entity['column']}s, not just '{entity['value']}'. Please contact support."
         
-        return answer
+        # Step 5️⃣: Return results as formatted string
+        if result_df is None or result_df.empty:
+            return "No results found matching your criteria."
+        
+        return result_df.to_string()
         
     except FileNotFoundError:
         return f"Error: File not found: {file_path}"
@@ -648,23 +743,55 @@ def process_csv_excel_query(query: str, file_path: str, is_excel: bool = False, 
         return f"Error processing file: {str(e)}"
 
 
+def _extract_entity_candidates(query: str, df: pd.DataFrame) -> Optional[str]:
+    """
+    Extract entity column name if unclear which entity the user is asking about.
+    
+    Used for generating helpful error messages.
+    
+    Uses adaptive detection - works with ANY DataFrame structure.
+    """
+    entity_columns = EntityBinder._get_entity_columns(df)
+    
+    if entity_columns:
+        return entity_columns[0]  # Return the highest priority entity column
+    
+    return None
+
+
 def _fallback_llm_query(query: str, df: pd.DataFrame, file_path: str) -> str:
-    """Fallback to traditional LLM approach if programmatic method fails"""
-    # Limit to reasonable size
-    sample = df.head(100).to_string()
+    """Fallback to LLM approach if programmatic method fails
+    
+    Loads the CSV/Excel data and passes an enhanced query to the LLM
+    with the actual data sample and column information.
+    """
     file_name = file_path.split('/')[-1] if '/' in file_path else file_path.split('\\')[-1]
     
-    prompt = f"""Answer this question based on the data provided:
+    # Remove filename references from query for cleaner LLM prompt
+    cleaned_query = query
+    try:
+        from server.query_handler import extract_document_name
+        cleaned_query, _ = extract_document_name(query, None)
+    except Exception:
+        pass  # Use original query if extraction fails
+    
+    # Get data sample (limit to first 100 rows for reasonable context)
+    data_sample = df.head(100).to_string()
+    
+    # Build enhanced prompt with actual data
+    prompt = f"""Answer this question based on the actual data provided:
 
-Question: {query}
+Question: {cleaned_query}
 
 File: {file_name}
+Total Rows: {len(df)}
 Columns: {', '.join(df.columns.tolist())}
 
-Data Sample:
-{sample}
+Data:
+{data_sample}
 
-Provide a clear answer with the specific information requested."""
+Provide a clear, specific answer using the actual data shown. Include relevant numbers and insights from the data."""
+    
     try:
         from server.query_handler import query_model
         return query_model(prompt)

@@ -50,6 +50,10 @@ load_dotenv()
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 
+# Initialize Ollama configuration for local development and Docker
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+print(f"🦙 Ollama configured at: {OLLAMA_BASE_URL}")
+
 supabase_client: Client = None
 if SUPABASE_AVAILABLE and SUPABASE_URL and SUPABASE_KEY:
     try:
@@ -198,6 +202,55 @@ def _fuzzy_match_filename(potential: str, available_files: list, threshold: floa
     return best_match if best_ratio >= threshold else None
 
 
+def get_all_file_embeddings(file_name: str, workspace_id: str = None) -> List[Tuple[str, float, str, str]]:
+    """
+    Retrieve ALL embeddings for a specific file (fallback when similarity is too low)
+    
+    Args:
+        file_name: The name of the file to fetch all embeddings for
+        workspace_id: Optional workspace filter
+    
+    Returns:
+        List of (chunk_text, dummy_similarity, file_name, file_path) tuples
+    """
+    if not supabase_client:
+        print("⚠️  Supabase not configured - cannot fetch file embeddings")
+        return []
+    
+    try:
+        query_builder = supabase_client.table('document_embeddings').select(
+            'chunk_text, file_name, file_path'
+        ).eq('file_name', file_name)
+        
+        # Filter by workspace if provided
+        if workspace_id:
+            # Join with file_upload table to filter by workspace
+            query_builder = query_builder.eq('workspace_id', workspace_id)
+        
+        response = query_builder.order('chunk_index', desc=False).execute()
+        
+        if hasattr(response, 'data') and response.data:
+            results = []
+            for row in response.data:
+                # Use 0.0 as dummy similarity since we're returning all chunks
+                results.append((
+                    row['chunk_text'],
+                    0.0,  # Placeholder - all chunks from file
+                    row['file_name'],
+                    row.get('file_path')
+                ))
+            
+            print(f"✅ Retrieved {len(results)} chunks from file '{file_name}' as fallback")
+            return results
+        else:
+            print(f"⚠️  No embeddings found for file '{file_name}'")
+            return []
+            
+    except Exception as e:
+        print(f"⚠️  Error fetching file embeddings: {e}")
+        return []
+
+
 def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, file_name: str = None):
     """
     Perform semantic search using pgvector database-side similarity search
@@ -209,6 +262,7 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
     - Detects and filters by document name if mentioned in query
     - Searches document embeddings using semantic similarity
     - Returns results sorted by similarity score
+    - FALLBACK: If file_name exists but similarity is too low, returns ALL embeddings from that file
     
     Args:
         query: The search query text
@@ -274,10 +328,18 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
             print(f"✅ Found {result_count} similar chunks{doc_context} via pgvector RPC")
             return results
         else:
+            # FALLBACK: If file_name exists and no results from semantic search, fetch all embeddings from that file
+            if file_name:
+                print(f"📋 Semantic search returned no results for '{file_name}' - falling back to all embeddings")
+                return get_all_file_embeddings(file_name, workspace_id)
             print("⚠️  RPC returned no data - may not be configured correctly")
             
     except Exception as rpc_error:
         print(f"⚠️  RPC call failed: {rpc_error}")
+        # FALLBACK: If file_name exists and RPC fails, try to fetch all embeddings
+        if file_name:
+            print(f"🔄 RPC failed - attempting fallback to all embeddings from '{file_name}'")
+            return get_all_file_embeddings(file_name, workspace_id)
         
 
 
@@ -430,7 +492,7 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = Fals
         
         # Query the LLM
         response = requests.post(
-            'http://host.docker.internal:11434/api/generate',
+            f'{OLLAMA_BASE_URL}/api/generate',
             json={
                 'model': model_name,
                 'prompt': full_prompt,
@@ -493,6 +555,10 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
     Query the LLM with relevant document chunks as context using pgvector semantic search
     Text documents only - CSV/Excel files are handled separately via their dedicated functions
     
+    FALLBACK MECHANISM:
+    - If file_name exists in results but all scores are low (< 0.25), includes ALL embeddings from that file
+    - Ensures comprehensive context even when semantic matching yields weak similarity scores
+    
     Args:
         query: The question to ask
         max_chunks: Maximum number of document chunks to include (default: 5)
@@ -509,10 +575,22 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
     
     # Check if the best match has good similarity
     best_score = semantic_results[0][1]
+    file_name = semantic_results[0][2] if len(semantic_results) > 0 else None
     
-    # If similarity is too low, treat as general query without document context
+    # FALLBACK: If similarity is too low but file_name exists, include all embeddings from that file
     if best_score < 0.25:
-        return query_model(query, conversation_history=conversation_history, stream=stream)
+        if file_name:
+            print(f"⚠️  Low similarity score ({best_score:.2f}) detected - triggering fallback to all embeddings from '{file_name}'")
+            fallback_results = get_all_file_embeddings(file_name, workspace_id)
+            if fallback_results:
+                print(f"📚 Using comprehensive context from {len(fallback_results)} chunks from '{file_name}'")
+                semantic_results = fallback_results
+            else:
+                # Fallback failed, proceed without context
+                return query_model(query, conversation_history=conversation_history, stream=stream)
+        else:
+            # No file_name available and low similarity, treat as general query
+            return query_model(query, conversation_history=conversation_history, stream=stream)
     
     # Build context from search results (max 2000 chars per chunk)
     context_parts = [
@@ -529,44 +607,7 @@ DOCUMENT CONTENT:
 """
     
     # Query the LLM with context and conversation history
-    llm_response = query_model(enhanced_query, conversation_history=conversation_history, stream=stream)
-    
-    # Handle streaming response
-    if stream:
-        # Find the result with the highest similarity score (not just the first result)
-        sources = None
-        if include_context_preview and semantic_results and best_score >= 0.25:
-            # Sort by similarity score and get the filename from highest-scoring result
-            best_result = max(semantic_results, key=lambda x: x[1])  # x[1] is similarity_score
-            best_source = best_result[2]  # filename from best matching result
-            sources = [best_source]
-        
-        def stream_with_sources():
-            # Stream the main response
-            for chunk in llm_response:
-                yield chunk
-            
-            # Add sources at the end if applicable
-            if sources:
-                source_text = ", ".join(sources)
-                yield {"response": f"\n\n---\n**Sources:** {source_text}"}
-        
-        return stream_with_sources()
-    
-    # Format the response with source attribution
-    # Find the result with the highest similarity score (not just the first result)
-    sources = None
-    if include_context_preview and semantic_results and best_score >= 0.25:
-        # Sort by similarity score and get the filename from highest-scoring result
-        best_result = max(semantic_results, key=lambda x: x[1])  # x[1] is similarity_score
-        best_source = best_result[2]  # filename from best matching result
-        sources = [best_source]
-    
-    if sources:
-        source_text = ", ".join(sources)
-        return f"{llm_response}\n\n---\n**Sources:** {source_text}"
-    
-    return llm_response
+    return query_model(enhanced_query, conversation_history=conversation_history, stream=stream)
 
 
 

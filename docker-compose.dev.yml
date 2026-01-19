@@ -9,6 +9,8 @@ services:
       context: .
       dockerfile: server/Dockerfile
     container_name: fastmcp-backend-dev
+    ports:
+      - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
@@ -16,10 +18,15 @@ services:
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:1b}
 
     volumes:
       - ./server:/app/server
       - ./utils:/app/utils
+    extra_hosts:
+      - "host.internal.docker:host-gateway"
+      
   
     networks:
       - fastmcp-network
@@ -31,6 +38,8 @@ services:
       context: .
       dockerfile: bridge.Dockerfile
     container_name: fastmcp-bridge-dev
+    ports:
+      - "3001:3001"
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
@@ -42,6 +51,7 @@ services:
     volumes:
       - ./bridge_server.py:/app/bridge_server.py
       - ./client:/app/client
+      
     
     depends_on:
       - backend
@@ -74,8 +84,8 @@ services:
       - fastmcp-network
     restart: unless-stopped
 
-
-
 networks:
   fastmcp-network:
     driver: bridge
+
+
