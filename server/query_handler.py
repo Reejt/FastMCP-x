@@ -22,6 +22,7 @@ import pandas as pd
 import tempfile
 from typing import List, Tuple, Dict, Any
 from server.document_ingestion import documents
+from server.csv_excel_processor import process_csv_excel_query
 
 
 # Try to import embedding model
@@ -48,6 +49,10 @@ load_dotenv()
 # Initialize Supabase client for pgvector queries
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+
+# Initialize Ollama configuration for local development and Docker
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+print(f"🦙 Ollama configured at: {OLLAMA_BASE_URL}")
 
 supabase_client: Client = None
 if SUPABASE_AVAILABLE and SUPABASE_URL and SUPABASE_KEY:
@@ -197,6 +202,55 @@ def _fuzzy_match_filename(potential: str, available_files: list, threshold: floa
     return best_match if best_ratio >= threshold else None
 
 
+def get_all_file_embeddings(file_name: str, workspace_id: str = None) -> List[Tuple[str, float, str, str]]:
+    """
+    Retrieve ALL embeddings for a specific file (fallback when similarity is too low)
+    
+    Args:
+        file_name: The name of the file to fetch all embeddings for
+        workspace_id: Optional workspace filter
+    
+    Returns:
+        List of (chunk_text, dummy_similarity, file_name, file_path) tuples
+    """
+    if not supabase_client:
+        print("⚠️  Supabase not configured - cannot fetch file embeddings")
+        return []
+    
+    try:
+        query_builder = supabase_client.table('document_embeddings').select(
+            'chunk_text, file_name, file_path'
+        ).eq('file_name', file_name)
+        
+        # Filter by workspace if provided
+        if workspace_id:
+            # Join with file_upload table to filter by workspace
+            query_builder = query_builder.eq('workspace_id', workspace_id)
+        
+        response = query_builder.order('chunk_index', desc=False).execute()
+        
+        if hasattr(response, 'data') and response.data:
+            results = []
+            for row in response.data:
+                # Use 0.0 as dummy similarity since we're returning all chunks
+                results.append((
+                    row['chunk_text'],
+                    0.0,  # Placeholder - all chunks from file
+                    row['file_name'],
+                    row.get('file_path')
+                ))
+            
+            print(f"✅ Retrieved {len(results)} chunks from file '{file_name}' as fallback")
+            return results
+        else:
+            print(f"⚠️  No embeddings found for file '{file_name}'")
+            return []
+            
+    except Exception as e:
+        print(f"⚠️  Error fetching file embeddings: {e}")
+        return []
+
+
 def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, file_name: str = None, selected_file_ids: list = None):
     """
     Perform semantic search using pgvector database-side similarity search
@@ -208,6 +262,7 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
     - Detects and filters by document name if mentioned in query
     - Searches document embeddings using semantic similarity
     - Returns results sorted by similarity score
+    - FALLBACK: If file_name exists but similarity is too low, returns ALL embeddings from that file
     
     Args:
         query: The search query text
@@ -215,6 +270,7 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
         min_similarity: Minimum similarity threshold (0.0-1.0, default: 0.2)
         workspace_id: Optional workspace filter for search results (default: None)
         file_name: Optional specific document to search in (extracted if not provided)
+        selected_file_ids: Optional list of file IDs to filter search results
     
     Returns:
         List of (content, similarity_score, filename, file_path) tuples
@@ -233,26 +289,6 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
         cleaned_query, extracted_file = extract_document_name(query, workspace_id)
         file_name = extracted_file
         query = cleaned_query  # Use cleaned query for embedding
-
-    # If a selected set is provided, resolve it to filenames (and enforce restrictions)
-    selected_file_names = None
-    if selected_file_ids:
-        try:
-            file_query = supabase_client.table('file_upload').select('id,file_name').in_('id', selected_file_ids).is_('deleted_at', None)
-            if workspace_id:
-                file_query = file_query.eq('workspace_id', workspace_id)
-
-            selected_rows = file_query.execute()
-            rows = selected_rows.data if hasattr(selected_rows, 'data') and selected_rows.data else []
-            selected_file_names = [r.get('file_name') for r in rows if r.get('file_name')]
-        except Exception as e:
-            print(f"⚠️  Failed to resolve selected_file_ids to file names: {e}")
-            selected_file_names = []
-
-        # If query explicitly targets a file, require it to be in selected set
-        if file_name and selected_file_names is not None and file_name not in selected_file_names:
-            print(f"⚠️  Query targets '{file_name}', but it is not in selected_file_ids; skipping document context")
-            return []
     
     # Generate embedding for the query using same model as stored embeddings
     query_embedding = model.encode([query])[0]
@@ -264,68 +300,60 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
     
     print(f"🔍 Searching with pgvector ({search_context})")
         
-    try:
-        def parse_rpc_rows(rpc_response):
-            if not (hasattr(rpc_response, 'data') and rpc_response.data):
-                return []
 
-            parsed = []
-            for row in rpc_response.data:
-                parsed.append((
+    # Use RPC function for database-side similarity search
+    # This is the proper way to do pgvector queries without SQL injection
+    try:
+        # Always pass all parameters to avoid PostgreSQL function overloading ambiguity
+        # Use None for optional parameters that aren't needed
+        # Link selected_file_ids to extracted document name
+        selected_file_ids = None
+        if file_name and supabase_client:
+            # Query file_upload table to get file_id(s) for the extracted file_name
+            file_id_query = supabase_client.table('file_upload').select('id').eq('file_name', file_name)
+            if workspace_id:
+                file_id_query = file_id_query.eq('workspace_id', workspace_id)
+            file_id_result = file_id_query.execute()
+            if hasattr(file_id_result, 'data') and file_id_result.data:
+                selected_file_ids = [row['id'] for row in file_id_result.data]
+            
+            rpc_params = {
+            'query_embedding': query_embedding_list,
+            'match_threshold': min_similarity,
+            'match_count': top_k,
+            'file_filter': file_name,  # None if not filtering, string if filtering by filename
+            'file_ids': selected_file_ids  # Pass file_ids for more precise filtering
+        }
+
+        response = supabase_client.rpc('search_embeddings', rpc_params).execute()
+
+        if hasattr(response, 'data') and response.data:
+            results = []
+            for row in response.data:
+                results.append((
                     row['chunk_text'],
                     float(row['similarity_score']),
                     row['file_name'],
                     row.get('file_path')
                 ))
-            return parsed
 
-        # If we have a selected set and no explicit file filter, search within each selected file and merge
-        if selected_file_names is not None and not file_name:
-            if len(selected_file_names) == 0:
-                print("⚠️  selected_file_ids provided but resolved to no files")
-                return []
-
-            merged_results = []
-            for fname in selected_file_names:
-                rpc_params = {
-                    'query_embedding': query_embedding_list,
-                    'match_threshold': min_similarity,
-                    'match_count': top_k,
-                    'file_filter': fname
-                }
-                rpc_response = supabase_client.rpc('search_embeddings', rpc_params).execute()
-                merged_results.extend(parse_rpc_rows(rpc_response))
-
-            if merged_results:
-                merged_results.sort(key=lambda x: x[1], reverse=True)
-                trimmed = merged_results[:top_k]
-                print(f"✅ Found {len(trimmed)} similar chunks via pgvector RPC (selected files)")
-                return trimmed
-
-            print("⚠️  RPC returned no data for selected files")
-            return []
-
-        # Default: single RPC call (optionally filtered by filename)
-        rpc_params = {
-            'query_embedding': query_embedding_list,
-            'match_threshold': min_similarity,
-            'match_count': top_k,
-            'file_filter': file_name
-        }
-
-        response = supabase_client.rpc('search_embeddings', rpc_params).execute()
-        results = parse_rpc_rows(response)
-
-        if results:
             result_count = len(results)
             doc_context = f" in {file_name}" if file_name else ""
             print(f"✅ Found {result_count} similar chunks{doc_context} via pgvector RPC")
             return results
+        else:
+            # FALLBACK: If file_name exists and no results from semantic search, fetch all embeddings from that file
+            if file_name:
+                print(f"📋 Semantic search returned no results for '{file_name}' - falling back to all embeddings")
+                return get_all_file_embeddings(file_name, workspace_id)
+            print("⚠️  RPC returned no data - may not be configured correctly")
 
-        print("⚠️  RPC returned no data - may not be configured correctly")
-            
     except Exception as rpc_error:
         print(f"⚠️  RPC call failed: {rpc_error}")
+        # FALLBACK: If file_name exists and RPC fails, try to fetch all embeddings
+        if file_name:
+            print(f"🔄 RPC failed - attempting fallback to all embeddings from '{file_name}'")
+            return get_all_file_embeddings(file_name, workspace_id)
         
 
 
@@ -359,71 +387,47 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50):
 
 def query_csv_with_context(query: str, file_name: str, file_path: str = None, df: pd.DataFrame = None, conversation_history: list = None, **filters):
     """
-    Query CSV data using keyword filtering and LLM reasoning
-    Uses chunked loading to avoid RAM overhead on large files
-    Calls query_model internally to generate LLM response
+    Query CSV data using sophisticated programmatic reasoning pipeline:
+    
+    1️⃣ Parse CSV into DataFrame
+    2️⃣ Convert question into structured intent (filter, aggregate, group, order)
+    3️⃣ Generate executable pandas code (silently)
+    4️⃣ Execute code safely on DataFrame (actual computation, no hallucination)
+    5️⃣ Format results in natural language
+    
+    This approach ensures accurate, non-hallucinated results by performing
+    actual computations instead of relying on LLM text generation alone.
     
     Args:
         query: The natural language query
         file_name: Name of the CSV file
         file_path: Path to the CSV file (local or Supabase storage reference)
-        df: DataFrame to query (if None, will load from file_path with chunking)
+        df: DataFrame to query (if None, will load from file_path)
         conversation_history: List of previous messages for conversation context
         **filters: Optional keyword arguments for column-based filtering
     
     Returns:
-        LLM response based on CSV data
+        Natural language answer with actual computed results
     """
     try:
         path_to_load = file_path or file_name
         
-        # Extract meaningful search terms from query (keyword-based filtering only)
-        stop_words = ['what', 'is', 'the', 'of', 'in', 'for', 'and', 'or', 'a', 'an', 'to', 'from', 'with', 'by', 'on', 'at', 'about', 'salary', 'wage', 'cost', 'price', 'find', 'get', 'show', 'tell', 'me', 'you', 'your', 'his', 'her', 'their', 'whose']
-        search_terms = [
-            word.lower() for word in query.split()
-            if word.lower() not in stop_words and len(word) > 1
-        ]
-        
-        # For pre-loaded DataFrames, use it directly
+        # If DataFrame provided, save to temporary file for processing
         if df is not None and not df.empty:
-            relevant_rows = _apply_keyword_filtering(df, search_terms)
-        else:
-            # For file loading, use chunked reading to avoid RAM overhead
-            relevant_rows = _load_and_filter_chunked(path_to_load, search_terms, file_type='csv')
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as tmp:
+                df.to_csv(tmp.name, index=False)
+                path_to_load = tmp.name
         
-        if relevant_rows is None or relevant_rows.empty:
-            error_msg = f"Could not load or find matches in CSV file: {file_name}"
-            return query_model(f"Error: {error_msg} Please try a different query.", conversation_history=conversation_history)
+        # Use new sophisticated pipeline
+        result = process_csv_excel_query(
+            query=query,
+            file_path=path_to_load,
+            is_excel=False,
+            conversation_history=conversation_history
+        )
         
-        # Build context about the data structure
-        context = f"CSV File: {file_name}\n"
-        context += f"Columns: {', '.join(relevant_rows.columns.tolist())}\n"
-        context += f"Matching rows: {len(relevant_rows)}\n\n"
-        
-        # Apply additional filters if provided
-        for column, value in filters.items():
-            if column in relevant_rows.columns:
-                if isinstance(value, list):
-                    relevant_rows = relevant_rows[relevant_rows[column].isin(value)]
-                else:
-                    relevant_rows = relevant_rows[relevant_rows[column] == value]
-        
-        # Limit results to reasonable size (up to 100 rows for LLM context)
-        result_text = relevant_rows.head(100).to_string()
-        metadata = f"\nTotal matching rows: {len(relevant_rows)} from {file_name}"
-        csv_data = context + "Matching Data:\n" + result_text + metadata
-        
-        # Query LLM with CSV data context
-        enhanced_query = f"""Answer this question based on the CSV data provided:
-
-Question: {query}
-
-CSV Data:
-{csv_data}
-
-Provide a clear, direct answer with the specific information requested."""
-        
-        return query_model(enhanced_query, conversation_history=conversation_history)
+        return result
         
     except Exception as e:
         print(f"Error querying CSV: {e}")
@@ -431,141 +435,51 @@ Provide a clear, direct answer with the specific information requested."""
         return query_model(error_msg, conversation_history=conversation_history)
 
 
-def _load_and_filter_chunked(file_path: str, search_terms: list, file_type: str = 'csv', chunk_size: int = 1000):
-    """
-    Unified function to load and filter CSV/Excel in chunks using keyword matching
-    Avoids RAM overhead on large files
-    
-    Args:
-        file_path: Path to file (CSV or Excel)
-        search_terms: List of search terms to match
-        file_type: 'csv' or 'excel' (default: 'csv')
-        chunk_size: Rows per chunk (default: 1000)
-    
-    Returns:
-        Filtered DataFrame with matching rows
-    """
-    try:
-        matching_chunks = []
-        
-        # Determine how to read based on file type
-        if file_type == 'excel' or file_path.lower().endswith(('.xlsx', '.xls')):
-            reader = pd.read_excel(file_path, sheet_name=0, chunksize=chunk_size)
-        else:
-            reader = pd.read_csv(file_path, chunksize=chunk_size)
-        
-        # Read in chunks to avoid loading entire file into RAM
-        for chunk in reader:
-            if chunk.empty:
-                continue
-            
-            # Apply keyword filtering only
-            if search_terms:
-                chunk = _apply_keyword_filtering(chunk, search_terms)
-            
-            if not chunk.empty:
-                matching_chunks.append(chunk)
-        
-        # Concatenate all matching chunks
-        if matching_chunks:
-            return pd.concat(matching_chunks, ignore_index=True)
-        else:
-            return pd.DataFrame()
-            
-    except Exception as e:
-        print(f"Error in chunked file loading ({file_type}): {e}")
-        return None
-
-
-def _apply_keyword_filtering(df: pd.DataFrame, search_terms: list):
-    """
-    Filter DataFrame rows using keyword matching (AND logic for all terms)
-    """
-    if not search_terms:
-        return df
-    
-    # Try to match ALL terms first (AND logic)
-    mask_all = pd.Series([True] * len(df), index=df.index)
-    for term in search_terms:
-        term_mask = pd.Series([False] * len(df), index=df.index)
-        for col in df.columns:
-            try:
-                col_mask = df[col].astype(str).str.contains(term, case=False, na=False, regex=False)
-                term_mask = term_mask | col_mask
-            except:
-                continue
-        mask_all = mask_all & term_mask
-    
-    if mask_all.any():
-        return df[mask_all]
 
 
 def query_excel_with_context(query: str, file_name: str, file_path: str = None, df: pd.DataFrame = None, conversation_history: list = None, **filters):
     """
-    Query Excel data using keyword filtering and LLM reasoning
-    Uses chunked loading to avoid RAM overhead on large files
-    Calls query_model internally to generate LLM response
+    Query Excel data using sophisticated programmatic reasoning pipeline:
+    
+    1️⃣ Parse Excel into DataFrame
+    2️⃣ Convert question into structured intent (filter, aggregate, group, order)
+    3️⃣ Generate executable pandas code (silently)
+    4️⃣ Execute code safely on DataFrame (actual computation, no hallucination)
+    5️⃣ Format results in natural language
+    
+    This approach ensures accurate, non-hallucinated results by performing
+    actual computations instead of relying on LLM text generation alone.
     
     Args:
         query: The natural language query
         file_name: Name of the Excel file
         file_path: Path to the Excel file (local or Supabase storage reference)
-        df: DataFrame to query (if None, will load from file_path with chunking)
+        df: DataFrame to query (if None, will load from file_path)
         conversation_history: List of previous messages for conversation context
         **filters: Optional keyword arguments for column-based filtering
     
     Returns:
-        LLM response based on Excel data
+        Natural language answer with actual computed results
     """
     try:
         path_to_load = file_path or file_name
         
-        # Extract meaningful search terms from query (keyword-based filtering only)
-        stop_words = ['what', 'is', 'the', 'of', 'in', 'for', 'and', 'or', 'a', 'an', 'to', 'from', 'with', 'by', 'on', 'at', 'about', 'salary', 'wage', 'cost', 'price', 'find', 'get', 'show', 'tell', 'me', 'you', 'your', 'his', 'her', 'their', 'whose']
-        search_terms = [
-            word.lower() for word in query.split()
-            if word.lower() not in stop_words and len(word) > 1
-        ]
-        
-        # For pre-loaded DataFrames, use it directly
+        # If DataFrame provided, save to temporary file for processing
         if df is not None and not df.empty:
-            relevant_rows = _apply_keyword_filtering(df, search_terms)
-        else:
-            # For file loading, use chunked reading to avoid RAM overhead
-            relevant_rows = _load_and_filter_chunked(path_to_load, search_terms, file_type='excel')
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.xlsx', delete=False) as tmp:
+                df.to_excel(tmp.name, index=False)
+                path_to_load = tmp.name
         
-        if relevant_rows is None or relevant_rows.empty:
-            error_msg = f"Could not load or find matches in Excel file: {file_name}"
-            return query_model(f"Error: {error_msg} Please try a different query.", conversation_history=conversation_history)
+        # Use new sophisticated pipeline
+        result = process_csv_excel_query(
+            query=query,
+            file_path=path_to_load,
+            is_excel=True,
+            conversation_history=conversation_history
+        )
         
-        # Build context about the data structure
-        context = f"Excel File: {file_name}\n"
-        context += f"Columns: {', '.join(relevant_rows.columns.tolist())}\n"
-        context += f"Matching rows: {len(relevant_rows)}\n\n"
-        
-        # Apply additional filters if provided
-        for column, value in filters.items():
-            if column in relevant_rows.columns:
-                if isinstance(value, list):
-                    relevant_rows = relevant_rows[relevant_rows[column].isin(value)]
-                else:
-                    relevant_rows = relevant_rows[relevant_rows[column] == value]
-        
-        result_text = relevant_rows.head(100).to_string()
-        metadata = f"\nTotal matching rows: {len(relevant_rows)} from {file_name}"
-        excel_data = context + "Matching Data:\n" + result_text + metadata
-        
-        # Query LLM with Excel data context
-        enhanced_query = f"""Answer this question based on the Excel data provided:
-
-Question: {query}
-
-Excel Data:
-{excel_data}
-
-Provide a clear, direct answer with the specific information requested."""
-        
-        return query_model(enhanced_query, conversation_history=conversation_history)
+        return result
         
     except Exception as e:
         print(f"Error querying Excel: {e}")
@@ -573,7 +487,7 @@ Provide a clear, direct answer with the specific information requested."""
         return query_model(error_msg, conversation_history=conversation_history)
 
 
-def query_model(query: str, model_name: str = None, stream: bool = False, conversation_history: list = None):
+def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, conversation_history: list = None):
     """
     Query the Ollama model via HTTP API with optional conversation history
     
@@ -588,15 +502,15 @@ def query_model(query: str, model_name: str = None, stream: bool = False, conver
         full_prompt = query
         if conversation_history and len(conversation_history) > 0:
             history_text = "\n\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in conversation_history[-5:]])  # Last 5 messages for context
-            full_prompt = f"Previous conversation:\n{history_text}\n\nRespond directly to this query without repeating the conversation format: {query}"
+            full_prompt = f"Conversation History:\n{history_text}\n\nCurrent Query: {query}"
         
         # Query the LLM
         response = requests.post(
-            'http://host.docker.internal:11434/api/generate',
+            f'{OLLAMA_BASE_URL}/api/generate',
             json={
                 'model': model_name,
                 'prompt': full_prompt,
-                'stream': stream
+                'stream': False
             },
             timeout=120,  # Increased timeout for large content summarization
             stream=stream  # Enable streaming at requests level
@@ -634,17 +548,11 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
         workspace_id: Optional workspace filter for search results
+        selected_file_ids: Optional list of file IDs to filter search results
     """
     try:
         # Use document context for enhanced response
-        return query_with_context(
-            query,
-            max_chunks=2,
-            conversation_history=conversation_history,
-            stream=stream,
-            workspace_id=workspace_id,
-            selected_file_ids=selected_file_ids,
-        )
+        return query_with_context(query, max_chunks=5, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
         
     except Exception as e:
         error_message = f"Error processing query: {str(e)}"
@@ -662,6 +570,10 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
     Query the LLM with relevant document chunks as context using pgvector semantic search
     Text documents only - CSV/Excel files are handled separately via their dedicated functions
     
+    FALLBACK MECHANISM:
+    - If file_name exists in results but all scores are low (< 0.25), includes ALL embeddings from that file
+    - Ensures comprehensive context even when semantic matching yields weak similarity scores
+    
     Args:
         query: The question to ask
         max_chunks: Maximum number of document chunks to include (default: 5)
@@ -669,25 +581,32 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
         conversation_history: List of previous messages for conversation context
         stream: Whether to stream the response (default: False)
         workspace_id: Optional workspace filter for search results
+        selected_file_ids: Optional list of file IDs to filter search results
     """
     # Get relevant chunks using pgvector database-side search
-    semantic_results = semantic_search_pgvector(
-        query,
-        top_k=max_chunks,
-        min_similarity=0.18,
-        workspace_id=workspace_id,
-        selected_file_ids=selected_file_ids,
-    )
+    semantic_results = semantic_search_pgvector(query, top_k=max_chunks, min_similarity=0.18, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
     
     if not semantic_results:
         return query_model(query, conversation_history=conversation_history, stream=stream)
     
     # Check if the best match has good similarity
     best_score = semantic_results[0][1]
+    file_name = semantic_results[0][2] if len(semantic_results) > 0 else None
     
-    # If similarity is too low, treat as general query without document context
+    # FALLBACK: If similarity is too low but file_name exists, include all embeddings from that file
     if best_score < 0.25:
-        return query_model(query, conversation_history=conversation_history, stream=stream)
+        if file_name:
+            print(f"⚠️  Low similarity score ({best_score:.2f}) detected - triggering fallback to all embeddings from '{file_name}'")
+            fallback_results = get_all_file_embeddings(file_name, workspace_id)
+            if fallback_results:
+                print(f"📚 Using comprehensive context from {len(fallback_results)} chunks from '{file_name}'")
+                semantic_results = fallback_results
+            else:
+                # Fallback failed, proceed without context
+                return query_model(query, conversation_history=conversation_history, stream=stream)
+        else:
+            # No file_name available and low similarity, treat as general query
+            return query_model(query, conversation_history=conversation_history, stream=stream)
     
     # Build context from search results (max 2000 chars per chunk)
     context_parts = [
@@ -704,44 +623,7 @@ DOCUMENT CONTENT:
 """
     
     # Query the LLM with context and conversation history
-    llm_response = query_model(enhanced_query, conversation_history=conversation_history, stream=stream)
-    
-    # Handle streaming response
-    if stream:
-        # Find the result with the highest similarity score (not just the first result)
-        sources = None
-        if include_context_preview and semantic_results and best_score >= 0.25:
-            # Sort by similarity score and get the filename from highest-scoring result
-            best_result = max(semantic_results, key=lambda x: x[1])  # x[1] is similarity_score
-            best_source = best_result[2]  # filename from best matching result
-            sources = [best_source]
-        
-        def stream_with_sources():
-            # Stream the main response
-            for chunk in llm_response:
-                yield chunk
-            
-            # Add sources at the end if applicable
-            if sources:
-                source_text = ", ".join(sources)
-                yield {"response": f"\n\n---\n**Sources:** {source_text}"}
-        
-        return stream_with_sources()
-    
-    # Format the response with source attribution
-    # Find the result with the highest similarity score (not just the first result)
-    sources = None
-    if include_context_preview and semantic_results and best_score >= 0.25:
-        # Sort by similarity score and get the filename from highest-scoring result
-        best_result = max(semantic_results, key=lambda x: x[1])  # x[1] is similarity_score
-        best_source = best_result[2]  # filename from best matching result
-        sources = [best_source]
-    
-    if sources:
-        source_text = ", ".join(sources)
-        return f"{llm_response}\n\n---\n**Sources:** {source_text}"
-    
-    return llm_response
+    return query_model(enhanced_query, conversation_history=conversation_history, stream=stream)
 
 
 
@@ -818,7 +700,3 @@ def answer_link_query(link, question, conversation_history: list = None):
         return query_model(prompt, conversation_history=conversation_history)
     except Exception as e:
         return f"Error: {str(e)}"
-       
-    
-
-

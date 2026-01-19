@@ -238,9 +238,9 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Get document ID from request body
+    // Get document ID from request body (supports both 'id' and 'documentId' for backward compatibility)
     const body = await request.json();
-    const { id } = body;
+    const id = body.id || body.documentId;
 
     if (!id) {
       return NextResponse.json(
