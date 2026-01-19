@@ -324,7 +324,7 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
             'file_filter': file_name,  # None if not filtering, string if filtering by filename
             'file_ids': selected_file_ids  # Pass file_ids for more precise filtering
         }
-
+        
         response = supabase_client.rpc('search_embeddings', rpc_params).execute()
 
         if hasattr(response, 'data') and response.data:
@@ -538,7 +538,7 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = Fals
             
    
 
-def answer_query(query: str, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None):
+def answer_query(query: str, conversation_history: list = None, stream: bool = False, workspace_id: str = None):
     """
     Answer queries using pgvector database-side semantic search
     Database performs similarity matching - no application-level computation
@@ -565,7 +565,7 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
 
 
 
-def query_with_context(query: str, max_chunks: int = 5, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None):
+def query_with_context(query: str, max_chunks: int = 5, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None):
     """
     Query the LLM with relevant document chunks as context using pgvector semantic search
     Text documents only - CSV/Excel files are handled separately via their dedicated functions

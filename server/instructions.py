@@ -144,8 +144,7 @@ def query_with_instructions(
     workspace_id: str,
     model_name: str = "llama3.2:1b",
     base_system_prompt: str = "",
-    conversation_history: list = None,
-    selected_file_ids: list = None
+    conversation_history: list = None
 ) -> str:
     """
     Query LLM with workspace-specific instructions applied
@@ -175,8 +174,7 @@ def query_with_instructions(
             full_query,
             conversation_history=conversation_history,
             stream=False,
-            workspace_id=workspace_id,
-            selected_file_ids=selected_file_ids
+            workspace_id=workspace_id
         )
         
         return response
@@ -190,8 +188,7 @@ def query_with_instructions_stream(
     workspace_id: str,
     model_name: str = "llama3.2:1b",
     base_system_prompt: str = "",
-    conversation_history: list = None,
-    selected_file_ids: list = None
+    conversation_history: list = None
 ):
     """
     Query LLM with workspace-specific instructions (streaming version)
@@ -221,8 +218,7 @@ def query_with_instructions_stream(
             full_query,
             conversation_history=conversation_history,
             stream=True,
-            workspace_id=workspace_id,
-            selected_file_ids=selected_file_ids
+            workspace_id=workspace_id
         )
         
         # If response is a generator, yield from it

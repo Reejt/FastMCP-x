@@ -73,7 +73,7 @@ def ingest_file_tool(file_path: str, user_id: str, workspace_id: str = None, bas
         return error_msg
 
 @mcp.tool
-def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id: str = None, selected_file_ids: str = "[]") -> str:
+def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id: str = None) -> str:
     """
     Answer queries with conversation history support
     
@@ -84,8 +84,7 @@ def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id
     try:
         # Parse conversation history from JSON string
         history = json.loads(conversation_history) if conversation_history else []
-        selected_ids = json.loads(selected_file_ids) if selected_file_ids else []
-        result = answer_query(query, conversation_history=history, workspace_id=workspace_id, selected_file_ids=selected_ids)
+        result = answer_query(query, conversation_history=history, workspace_id=workspace_id)
         print(f"Query result: {result}")
         return result
     except Exception as e:

@@ -1,0 +1,328 @@
+{
+  "timestamp": "2026-01-17T21:01:39.391852",
+  "num_samples": 15,
+  "metrics": {
+    "retrieval_recall_at_5": 1.0,
+    "answer_f1": 0.0107,
+    "exact_match": 0.0,
+    "faithfulness": 0,
+    "avg_latency_ms": 4024.57
+  },
+  "by_category": {
+    "overview": {
+      "avg_recall": 1.0,
+      "avg_f1": 0.05344165638283285,
+      "avg_faith": 0,
+      "count": 3
+    },
+    "technical": {
+      "avg_recall": 1.0,
+      "avg_f1": 0.0,
+      "avg_faith": 0,
+      "count": 10
+    },
+    "data": {
+      "avg_recall": 1.0,
+      "avg_f1": 0.0,
+      "avg_faith": 0,
+      "count": 2
+    }
+  },
+  "by_difficulty": {
+    "easy": {
+      "avg_recall": 1.0,
+      "avg_f1": 0.03206499382969971,
+      "avg_faith": 0,
+      "count": 5
+    },
+    "medium": {
+      "avg_recall": 1.0,
+      "avg_f1": 0.0,
+      "avg_faith": 0,
+      "count": 7
+    },
+    "hard": {
+      "avg_recall": 1.0,
+      "avg_f1": 0.0,
+      "avg_faith": 0,
+      "count": 3
+    }
+  },
+  "issues": {
+    "low_recall": [],
+    "low_faithfulness": [],
+    "failed": []
+  },
+  "individual_results": [
+    {
+      "test_id": "gold_001",
+      "question": "What is Bitcoin?",
+      "ground_truth": "A peer-to-peer electronic cash system",
+      "generated_answer": "Bitcoin is a digital or virtual currency that uses cryptography for security and is decentralized, meaning it's not controlled by any government or financial institution. It was created in 2009 by an individual or group using the pseudonym Satoshi Nakamoto.\n\nBitcoin operates on a peer-to-peer network called the Bitcoin protocol, which allows users to send and receive transactions without the need for intermediaries like banks. Transactions are recorded on a public ledger called the blockchain, w",
+      "retrieved_doc_ids": [
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.007352941176470588,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 19172.374963760376
+    },
+    {
+      "test_id": "gold_002",
+      "question": "Who created Bitcoin?",
+      "ground_truth": "Satoshi Nakamoto",
+      "generated_answer": "Bitcoin was created by an individual or group of individuals using the pseudonym Satoshi Nakamoto. The true identity of Satoshi Nakamoto has never been officially confirmed, and it is still a mystery to this day. Nakamoto published the first Bitcoin whitepaper in 2008, which proposed the concept of a decentralized digital currency that would allow for peer-to-peer transactions without the need for intermediaries like banks.\n\nThe creation and development of Bitcoin were likely done independently ",
+      "retrieved_doc_ids": [
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.027972027972027972,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 4554.267644882202
+    },
+    {
+      "test_id": "gold_003",
+      "question": "What problem does Bitcoin solve?",
+      "ground_truth": "double-spending problem",
+      "generated_answer": "Bitcoin is a peer-to-peer electronic cash system \nNot found in document\n\n---\n**Sources:** bitcoin.pdf",
+      "retrieved_doc_ids": [
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2659.705877304077
+    },
+    {
+      "test_id": "gold_004",
+      "question": "How does Bitcoin prevent double spending?",
+      "ground_truth": "proof-of-work",
+      "generated_answer": "How does Bitcoin prevent double spending?\n\nBusinesses that receive frequent payments will probably still want to run their own nodes for more independent security and quicker verification.\n\n9. Combining and Splitting Value\n\n---\n**Sources:** bitcoin.pdf",
+      "retrieved_doc_ids": [
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2773.8473415374756
+    },
+    {
+      "test_id": "gold_005",
+      "question": "What is a blockchain?",
+      "ground_truth": "chain of blocks",
+      "generated_answer": "What is Bitcoin? Not found in document\n\n---\n**Sources:** bitcoin.pdf",
+      "retrieved_doc_ids": [
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2845.3447818756104
+    },
+    {
+      "test_id": "gold_006",
+      "question": "What is cloud security?",
+      "ground_truth": "security for cloud computing",
+      "generated_answer": "Cloud security is a 'cloud-first' strategy that modernizes existing business applications with SaaS applications and migrating app workloads to IaaS rather than upgrading costly legacy on.\n\n---\n**Sources:** Cloud Security.pdf",
+      "retrieved_doc_ids": [
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.125,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2780.468225479126
+    },
+    {
+      "test_id": "gold_007",
+      "question": "What are the main threats in cloud computing?",
+      "ground_truth": "data breach",
+      "generated_answer": "What are the main threats in cloud computing? Not found in document\n\n---\n**Sources:** Cloud Security.pdf",
+      "retrieved_doc_ids": [
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2535.351276397705
+    },
+    {
+      "test_id": "gold_008",
+      "question": "What is encryption used for in cloud security?",
+      "ground_truth": "protect data",
+      "generated_answer": "Q: \"What is encryption used for in cloud security?\"\nCORRECT ANSWER: \"in cloud security\"\nWRONG: \"encryption used for security\"\nCORRECT ANSWER: \"for cloud security\"\nWRONG: \"used by cloud security\"\n\n---\n**Sources:** Cloud Security.pdf",
+      "retrieved_doc_ids": [
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2938.5085105895996
+    },
+    {
+      "test_id": "gold_009",
+      "question": "What security controls are used in cloud environments?",
+      "ground_truth": "access control",
+      "generated_answer": "Q: What security controls are used in cloud environments?\nCORRECT ANSWER: Not found in document\nWRONG: Security by default: Security controls should be enabled by the cloud provider by default\n\n---\n**Sources:** Cloud Security.pdf",
+      "retrieved_doc_ids": [
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2768.5160636901855
+    },
+    {
+      "test_id": "gold_010",
+      "question": "What is identity management in cloud security?",
+      "ground_truth": "authentication",
+      "generated_answer": "What is identity management in cloud security?\nIdentity management: As mobile devices, apps, \nand user personas become more ubiquitous, \nidentity has become the new perimeter. Controlling \n--- Page 59 (Text) ---\n57 \nThese materials are ` \u00a9 2021 John Wiley & Sons, Inc.` Any dissemination, distribution, or unauthorized use \nis strictly prohibited.\n \n \n  \n \n \n  \n \n  \n \n \n \n \n \n \n \n  \n \n \n \n \n \n \n \naccess and privileges in the cloud (public, private, \nand hybrid) and on-premises based on secure \ncre",
+      "retrieved_doc_ids": [
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 4558.9611530303955
+    },
+    {
+      "test_id": "gold_011",
+      "question": "How many employees are in the dataset?",
+      "ground_truth": "50",
+      "generated_answer": "How many employees are in the dataset? \nNot found in document\n\n---\n**Sources:** employees.csv",
+      "retrieved_doc_ids": [
+        "employees.csv",
+        "employees.csv",
+        "employees.csv",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2582.6070308685303
+    },
+    {
+      "test_id": "gold_012",
+      "question": "What columns are in the employees data?",
+      "ground_truth": "EMPLOYEE",
+      "generated_answer": "What columns are in the employees data?\n\nNOT found in document\n\n---\n**Sources:** employees.csv",
+      "retrieved_doc_ids": [
+        "employees.csv",
+        "employees.csv",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf",
+        "Cloud Security.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2566.1492347717285
+    },
+    {
+      "test_id": "gold_013",
+      "question": "What is proof of work in Bitcoin?",
+      "ground_truth": "computational puzzle",
+      "generated_answer": "Proof of work in Bitcoin is similar to Adam Back's Hashcash \nNOT found in document\n\n---\n**Sources:** bitcoin.pdf",
+      "retrieved_doc_ids": [
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2561.246395111084
+    },
+    {
+      "test_id": "gold_014",
+      "question": "What are Bitcoin transactions?",
+      "ground_truth": "transfer of value",
+      "generated_answer": "Bitcoin transactions: In Out > +} In we > \nNot found in document\n\n---\n**Sources:** bitcoin.pdf",
+      "retrieved_doc_ids": [
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2545.100450515747
+    },
+    {
+      "test_id": "gold_015",
+      "question": "What is a Bitcoin node?",
+      "ground_truth": "network participant",
+      "generated_answer": "What is a Bitcoin node?\nNot found in document\n\n---\n**Sources:** bitcoin.pdf",
+      "retrieved_doc_ids": [
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf",
+        "bitcoin.pdf"
+      ],
+      "recall_at_5": 1.0,
+      "f1_score": 0.0,
+      "exact_match": 0.0,
+      "faithfulness_score": 0.0,
+      "latency_ms": 2526.146411895752
+    }
+  ]
+}

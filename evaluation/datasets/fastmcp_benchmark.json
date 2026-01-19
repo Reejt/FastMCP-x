@@ -1,0 +1,125 @@
+{
+  "name": "fastmcp_qa_benchmark",
+  "description": "Sample QA benchmark dataset for FastMCP evaluation",
+  "version": "1.0",
+  "test_cases": [
+    {
+      "id": "fastmcp_overview_1",
+      "question": "What is FastMCP?",
+      "answer": "FastMCP is a Model Context Protocol server for document-aware queries with semantic search",
+      "answers": [
+        "FastMCP is a Model Context Protocol server",
+        "A document-aware query assistant using MCP",
+        "FastMCP is an MCP server for semantic search and document queries"
+      ],
+      "category": "overview",
+      "difficulty": "easy"
+    },
+    {
+      "id": "fastmcp_embedding_1",
+      "question": "What embedding model does FastMCP use?",
+      "answer": "all-MiniLM-L6-v2 with 384 dimensions",
+      "category": "technical",
+      "difficulty": "medium"
+    },
+    {
+      "id": "fastmcp_search_1",
+      "question": "How does semantic search work in FastMCP?",
+      "answer": "Uses pgvector with cosine distance operator for similarity search at database level",
+      "category": "technical",
+      "difficulty": "medium"
+    },
+    {
+      "id": "fastmcp_storage_1",
+      "question": "Where are uploaded documents stored?",
+      "answer": "Documents are stored in Supabase with embeddings in pgvector",
+      "category": "architecture",
+      "difficulty": "medium"
+    },
+    {
+      "id": "fastmcp_llm_1",
+      "question": "What LLM does FastMCP use by default?",
+      "answer": "Ollama with llama3.2:3b model",
+      "answers": [
+        "llama3.2:3b via Ollama",
+        "Ollama running llama3.2",
+        "llama3.2 through Ollama API"
+      ],
+      "category": "technical",
+      "difficulty": "easy"
+    },
+    {
+      "id": "fastmcp_tools_1",
+      "question": "How do you add a new MCP tool to FastMCP?",
+      "answer": "Use the @mcp.tool decorator in server/main.py",
+      "category": "development",
+      "difficulty": "medium"
+    },
+    {
+      "id": "fastmcp_frontend_1",
+      "question": "What frontend framework does FastMCP use?",
+      "answer": "Next.js 14 with App Router and TypeScript",
+      "category": "architecture",
+      "difficulty": "easy"
+    },
+    {
+      "id": "fastmcp_auth_1",
+      "question": "How does authentication work in FastMCP?",
+      "answer": "Supabase Auth with magic links",
+      "category": "architecture",
+      "difficulty": "medium"
+    },
+    {
+      "id": "fastmcp_chunking_1",
+      "question": "What chunk size does FastMCP use for document processing?",
+      "answer": "600 characters with 50 character overlap",
+      "category": "technical",
+      "difficulty": "hard"
+    },
+    {
+      "id": "fastmcp_similarity_1",
+      "question": "What similarity threshold is used for relevant document matching?",
+      "answer": "0.4 or higher for relevant matches",
+      "category": "technical",
+      "difficulty": "hard"
+    },
+    {
+      "id": "multihop_1",
+      "question": "If I upload a PDF, what steps does FastMCP take to make it searchable?",
+      "answer": "Extracts text, chunks content into 600-char segments, generates embeddings with all-MiniLM-L6-v2, stores in pgvector database",
+      "category": "reasoning",
+      "difficulty": "hard"
+    },
+    {
+      "id": "comparison_1",
+      "question": "What are the advantages of pgvector over in-memory similarity search?",
+      "answer": "Database-level search is faster, scales to unlimited documents, uses zero application memory, and provides sub-10ms queries",
+      "category": "reasoning",
+      "difficulty": "hard"
+    },
+    {
+      "id": "edge_empty",
+      "question": "",
+      "answer": "",
+      "category": "edge_case",
+      "difficulty": "easy",
+      "metadata": {"test_type": "empty_query"}
+    },
+    {
+      "id": "edge_long",
+      "question": "This is a very long query that contains many words and goes on for quite a while to test how the system handles verbose input that might exceed normal query lengths and contains redundant information repeated multiple times to increase the token count significantly beyond what would be typical for a normal user query in a production system",
+      "answer": "",
+      "category": "edge_case", 
+      "difficulty": "easy",
+      "metadata": {"test_type": "long_query"}
+    },
+    {
+      "id": "out_of_domain_1",
+      "question": "What is the population of Tokyo?",
+      "answer": "",
+      "category": "out_of_domain",
+      "difficulty": "easy",
+      "metadata": {"expects_no_context": true}
+    }
+  ]
+}

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Server-side env variable (no NEXT_PUBLIC_ prefix needed in API routes)
-const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://bridge:3001';
+// Defaults to localhost:3001 for local development
+const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001';
 
 export async function POST(request: NextRequest) {
   try {

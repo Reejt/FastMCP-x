@@ -1,0 +1,128 @@
+{
+  "name": "indexed_docs_golden_dataset",
+  "description": "Golden evaluation dataset based on actually indexed documents (Cloud Security, Bitcoin, Employees)",
+  "version": "1.0",
+  "created": "2026-01-17",
+  "test_cases": [
+    {
+      "id": "gold_001",
+      "question": "What is Bitcoin?",
+      "ground_truth": "A peer-to-peer electronic cash system",
+      "source_doc_id": "bitcoin.pdf",
+      "category": "overview",
+      "difficulty": "easy"
+    },
+    {
+      "id": "gold_002",
+      "question": "Who created Bitcoin?",
+      "ground_truth": "Satoshi Nakamoto",
+      "source_doc_id": "bitcoin.pdf",
+      "category": "overview",
+      "difficulty": "easy"
+    },
+    {
+      "id": "gold_003",
+      "question": "What problem does Bitcoin solve?",
+      "ground_truth": "double-spending problem",
+      "source_doc_id": "bitcoin.pdf",
+      "category": "technical",
+      "difficulty": "medium"
+    },
+    {
+      "id": "gold_004",
+      "question": "How does Bitcoin prevent double spending?",
+      "ground_truth": "proof-of-work",
+      "source_doc_id": "bitcoin.pdf",
+      "category": "technical",
+      "difficulty": "medium"
+    },
+    {
+      "id": "gold_005",
+      "question": "What is a blockchain?",
+      "ground_truth": "chain of blocks",
+      "source_doc_id": "bitcoin.pdf",
+      "category": "technical",
+      "difficulty": "medium"
+    },
+    {
+      "id": "gold_006",
+      "question": "What is cloud security?",
+      "ground_truth": "security for cloud computing",
+      "source_doc_id": "Cloud Security.pdf",
+      "category": "overview",
+      "difficulty": "easy"
+    },
+    {
+      "id": "gold_007",
+      "question": "What are the main threats in cloud computing?",
+      "ground_truth": "data breach",
+      "source_doc_id": "Cloud Security.pdf",
+      "category": "technical",
+      "difficulty": "medium"
+    },
+    {
+      "id": "gold_008",
+      "question": "What is encryption used for in cloud security?",
+      "ground_truth": "protect data",
+      "source_doc_id": "Cloud Security.pdf",
+      "category": "technical",
+      "difficulty": "medium"
+    },
+    {
+      "id": "gold_009",
+      "question": "What security controls are used in cloud environments?",
+      "ground_truth": "access control",
+      "source_doc_id": "Cloud Security.pdf",
+      "category": "technical",
+      "difficulty": "medium"
+    },
+    {
+      "id": "gold_010",
+      "question": "What is identity management in cloud security?",
+      "ground_truth": "authentication",
+      "source_doc_id": "Cloud Security.pdf",
+      "category": "technical",
+      "difficulty": "hard"
+    },
+    {
+      "id": "gold_011",
+      "question": "How many employees are in the dataset?",
+      "ground_truth": "50",
+      "source_doc_id": "employees.csv",
+      "category": "data",
+      "difficulty": "easy"
+    },
+    {
+      "id": "gold_012",
+      "question": "What columns are in the employees data?",
+      "ground_truth": "EMPLOYEE",
+      "source_doc_id": "employees.csv",
+      "category": "data",
+      "difficulty": "easy"
+    },
+    {
+      "id": "gold_013",
+      "question": "What is proof of work in Bitcoin?",
+      "ground_truth": "computational puzzle",
+      "source_doc_id": "bitcoin.pdf",
+      "category": "technical",
+      "difficulty": "hard"
+    },
+    {
+      "id": "gold_014",
+      "question": "What are Bitcoin transactions?",
+      "ground_truth": "transfer of value",
+      "source_doc_id": "bitcoin.pdf",
+      "category": "technical",
+      "difficulty": "medium"
+    },
+    {
+      "id": "gold_015",
+      "question": "What is a Bitcoin node?",
+      "ground_truth": "network participant",
+      "source_doc_id": "bitcoin.pdf",
+      "category": "technical",
+      "difficulty": "hard"
+    }
+  ]
+}

@@ -3,8 +3,8 @@ import asyncio
 import os
 from fastmcp import Client
 
-# MCP Server URL - uses Docker service name
-MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://backend:8000/sse")
+# MCP Server URL - defaults to localhost for local development
+MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/sse")
 
 FASTMCP_SERVER_URL = MCP_SERVER_URL
 print(f"MCP Server URL: {FASTMCP_SERVER_URL}")
