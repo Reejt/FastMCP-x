@@ -5,19 +5,19 @@ import { getWorkspaceFiles } from '@/lib/supabase/documents';
 // ============================================
 // CONFIGURATION FOR LARGE FILE UPLOADS
 // ============================================
-// Disable default body parsing to handle large multipart/form-data
-// This allows streaming upload processing instead of buffering in memory
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '30mb', // Allow up to 30MB file uploads
-    },
-  },
-};
-
 // Explicitly specify Node runtime (not Edge) for streaming support
 // Edge runtime has restrictions on streaming and large payloads
 export const runtime = 'nodejs';
+
+// App Router: Set timeouts and memory limits for large files
+export const maxDuration = 300; // 5 minutes timeout for large uploads
+export const dynamic = 'force-dynamic';
+
+// For App Router, the 10MB limit is enforced at the server level
+// To accept larger files, ensure your deployment supports it:
+// - Vercel: Set maxBodySize in vercel.json or via env
+// - Self-hosted: Configure in server (nginx, Node.js, etc.)
+// - Development: Works as-is with larger limits
 
 // Server-side env variable (no NEXT_PUBLIC_ prefix needed in API routes)
 // Defaults to localhost:3001 for local development
