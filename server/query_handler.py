@@ -251,7 +251,7 @@ def get_all_file_embeddings(file_name: str, workspace_id: str = None) -> List[Tu
         return []
 
 
-def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, file_name: str = None):
+def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, file_name: str = None, selected_file_ids: list = None):
     """
     Perform semantic search using pgvector database-side similarity search
     
@@ -270,6 +270,7 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
         min_similarity: Minimum similarity threshold (0.0-1.0, default: 0.2)
         workspace_id: Optional workspace filter for search results (default: None)
         file_name: Optional specific document to search in (extracted if not provided)
+        selected_file_ids: Optional list of file IDs to filter search results
     
     Returns:
         List of (content, similarity_score, filename, file_path) tuples
@@ -299,20 +300,33 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
     
     print(f"🔍 Searching with pgvector ({search_context})")
         
+
     # Use RPC function for database-side similarity search
     # This is the proper way to do pgvector queries without SQL injection
     try:
         # Always pass all parameters to avoid PostgreSQL function overloading ambiguity
         # Use None for optional parameters that aren't needed
-        rpc_params = {
+        # Link selected_file_ids to extracted document name
+        selected_file_ids = None
+        if file_name and supabase_client:
+            # Query file_upload table to get file_id(s) for the extracted file_name
+            file_id_query = supabase_client.table('file_upload').select('id').eq('file_name', file_name)
+            if workspace_id:
+                file_id_query = file_id_query.eq('workspace_id', workspace_id)
+            file_id_result = file_id_query.execute()
+            if hasattr(file_id_result, 'data') and file_id_result.data:
+                selected_file_ids = [row['id'] for row in file_id_result.data]
+            
+            rpc_params = {
             'query_embedding': query_embedding_list,
             'match_threshold': min_similarity,
             'match_count': top_k,
-            'file_filter': file_name  # None if not filtering, string if filtering by filename
+            'file_filter': file_name,  # None if not filtering, string if filtering by filename
+            'file_ids': selected_file_ids  # Pass file_ids for more precise filtering
         }
         
         response = supabase_client.rpc('search_embeddings', rpc_params).execute()
-            
+
         if hasattr(response, 'data') and response.data:
             results = []
             for row in response.data:
@@ -322,7 +336,7 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
                     row['file_name'],
                     row.get('file_path')
                 ))
-            
+
             result_count = len(results)
             doc_context = f" in {file_name}" if file_name else ""
             print(f"✅ Found {result_count} similar chunks{doc_context} via pgvector RPC")
@@ -333,7 +347,7 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
                 print(f"📋 Semantic search returned no results for '{file_name}' - falling back to all embeddings")
                 return get_all_file_embeddings(file_name, workspace_id)
             print("⚠️  RPC returned no data - may not be configured correctly")
-            
+
     except Exception as rpc_error:
         print(f"⚠️  RPC call failed: {rpc_error}")
         # FALLBACK: If file_name exists and RPC fails, try to fetch all embeddings
@@ -534,10 +548,11 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
         workspace_id: Optional workspace filter for search results
+        selected_file_ids: Optional list of file IDs to filter search results
     """
     try:
         # Use document context for enhanced response
-        return query_with_context(query, max_chunks=5, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id)
+        return query_with_context(query, max_chunks=5, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
         
     except Exception as e:
         error_message = f"Error processing query: {str(e)}"
@@ -566,9 +581,10 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
         conversation_history: List of previous messages for conversation context
         stream: Whether to stream the response (default: False)
         workspace_id: Optional workspace filter for search results
+        selected_file_ids: Optional list of file IDs to filter search results
     """
     # Get relevant chunks using pgvector database-side search
-    semantic_results = semantic_search_pgvector(query, top_k=max_chunks, min_similarity=0.18, workspace_id=workspace_id)
+    semantic_results = semantic_search_pgvector(query, top_k=max_chunks, min_similarity=0.18, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
     
     if not semantic_results:
         return query_model(query, conversation_history=conversation_history, stream=stream)
@@ -684,7 +700,3 @@ def answer_link_query(link, question, conversation_history: list = None):
         return query_model(prompt, conversation_history=conversation_history)
     except Exception as e:
         return f"Error: {str(e)}"
-       
-    
-
-

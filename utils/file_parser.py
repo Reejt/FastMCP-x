@@ -20,9 +20,12 @@ from datetime import datetime
 from PIL import Image
 import io as io_module
 
-# Supabase configuration
-SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "https://fmlanqjduftxlktygpwe.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtbGFucWpkdWZ0eGxrdHlncHdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MDkzNTcsImV4cCI6MjA3NDk4NTM1N30.FT6c6BNfkJJFKliI1qv9uzBJj0UWMIaykRJrwKQKIfs")
+# Supabase configuration - try multiple environment variable names for compatibility
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("⚠️  Warning: Supabase environment variables not set. Content storage will fail.")
 
 # Use pypdf instead of deprecated PyPDF2
 try:

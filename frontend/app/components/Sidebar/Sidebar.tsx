@@ -15,7 +15,7 @@ interface SidebarProps {
   onSignOutAction: () => void
 }
 
-const FIXED_WIDTH = 256
+const FIXED_WIDTH = 270
 
 export default function Sidebar({
   user,
@@ -268,11 +268,12 @@ export default function Sidebar({
             {/* Chat Section */}
             <SidebarItem
               icon={
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                <svg fill="none" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="11" fill="#dadadaff" />
+                  <path stroke="black" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 6v12M6 12h12" />
                 </svg>
               }
-              label="Chat"
+              label="New Chat"
               isActive={activeSection === 'chat'}
               isCollapsed={isCollapsed}
               onClick={(e) => {
