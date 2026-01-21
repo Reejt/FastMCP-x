@@ -1,67 +1,29 @@
 /**
- * Chats API Route
- * Connects frontend page.tsx to Supabase via chats.ts service layer
+ * Single Session API Route
+ * Handles individual session operations (get messages, update title, delete)
  * 
- * Flow: page.tsx → /api/chats/route.ts → chats.ts → Supabase
+ * Flow: page.tsx → /api/chats/session → lib/supabase/chats.ts → Supabase
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
-  getWorkspaceChats,
-  createChatMessage,
-  deleteChatMessage
+  getSessionMessages,
+  getSessionById,
+  updateSessionTitle,
+  deleteSession
 } from '@/lib/supabase/chats'
+import { chatsToMessages } from '@/app/types'
 
 /**
- * GET /api/chats?workspaceId=xxx
- * Fetch all chats for a workspace
+ * GET /api/chats/session?sessionId=xxx
+ * Fetch all messages for a specific session
+ * Returns messages in UI format (Message[]) not DB format (Chat[])
  */
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const workspaceId = searchParams.get('workspaceId')
-
-    if (!workspaceId) {
-      return NextResponse.json(
-        { error: 'workspaceId is required' },
-        { status: 400 }
-      )
-    }
-
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Use service layer function
-    const chats = await getWorkspaceChats(workspaceId)
-
-    return NextResponse.json({ success: true, chats })
-  } catch (error) {
-    console.error('API error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
-
-/**
- * POST /api/chats
- * Create a new chat message
- * 
- * Body: { sessionId: string, workspaceId: string, role: string, message: string }
- */
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { sessionId, workspaceId, role, message } = body
+    const sessionId = searchParams.get('sessionId')
 
     if (!sessionId) {
       return NextResponse.json(
@@ -70,27 +32,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!workspaceId) {
-      return NextResponse.json(
-        { error: 'workspaceId is required' },
-        { status: 400 }
-      )
-    }
-
-    if (!role || !message) {
-      return NextResponse.json(
-        { error: 'role and message are required' },
-        { status: 400 }
-      )
-    }
-
-    if (!message.trim()) {
-      return NextResponse.json(
-        { error: 'Message cannot be empty' },
-        { status: 400 }
-      )
-    }
-
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -101,10 +42,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use service layer function with new signature
-    const chat = await createChatMessage(sessionId, workspaceId, role, message)
+    // Verify session exists and user has access
+    const session = await getSessionById(sessionId)
+    
+    // Fetch messages for this session
+    const chats = await getSessionMessages(sessionId)
+    
+    // Convert DB format (Chat[]) to UI format (Message[])
+    const messages = chatsToMessages(chats)
 
-    return NextResponse.json({ success: true, chat })
+    return NextResponse.json({ 
+      success: true, 
+      messages,
+      session
+    })
   } catch (error) {
     console.error('API error:', error)
     return NextResponse.json(
@@ -115,17 +66,19 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * DELETE /api/chats?chatId=xxx
- * Delete a chat message
+ * PATCH /api/chats/session
+ * Update session title
+ * 
+ * Body: { sessionId: string, title: string }
  */
-export async function DELETE(request: NextRequest) {
+export async function PATCH(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams
-    const chatId = searchParams.get('chatId')
+    const body = await request.json()
+    const { sessionId, title } = body
 
-    if (!chatId) {
+    if (!sessionId || !title) {
       return NextResponse.json(
-        { error: 'chatId is required' },
+        { error: 'sessionId and title are required' },
         { status: 400 }
       )
     }
@@ -141,7 +94,50 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Use service layer function
-    await deleteChatMessage(chatId)
+    const session = await updateSessionTitle(sessionId, title)
+
+    return NextResponse.json({ 
+      success: true, 
+      session 
+    })
+  } catch (error) {
+    console.error('API error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/chats/session?sessionId=xxx
+ * Soft delete a session (sets deleted_at timestamp)
+ * Messages are cascade-deleted by database FK constraint
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams
+    const sessionId = searchParams.get('sessionId')
+
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: 'sessionId is required' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Use service layer function (soft delete)
+    await deleteSession(sessionId)
 
     return NextResponse.json({ success: true })
   } catch (error) {

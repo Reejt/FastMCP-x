@@ -21,6 +21,7 @@ import {
  */
 async function clearBackendInstructionCache(workspaceId: string) {
   try {
+    // Defaults to localhost:3001 for local development (npm run dev)
     const bridgeServerUrl = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001'
     await fetch(`${bridgeServerUrl}/api/clear-instruction-cache?workspace_id=${workspaceId}`, {
       method: 'POST'
