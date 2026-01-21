@@ -62,11 +62,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://frontend:3000",  # Docker service name (container-to-container)
-        "http://localhost:3000",  # Browser access (for development)
+        "http://localhost:3000",  # Local development (npm run dev)
         "http://127.0.0.1:3000",  # Localhost IP fallback
         "http://localhost:*",     # Allow any localhost port
         "http://127.0.0.1:*",     # Allow any 127.0.0.1 port
+        "http://frontend:3000",  # Docker service name (if using Docker)
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -566,12 +566,61 @@ async def clear_instruction_cache_endpoint(workspace_id: Optional[str] = None):
         raise HTTPException(status_code=500, detail=f"Cache clearing failed: {str(e)}")
 
 
+# ============================================
+# Title Generation Endpoint
+# ============================================
+
+class TitleGenerationRequest(BaseModel):
+    """Request model for chat title generation"""
+    message: str
+
+@app.post("/generate-title")
+async def generate_title(request: TitleGenerationRequest):
+    """
+    Generate a descriptive title for a chat session based on the first message.
+    Uses Ollama LLM to create concise, meaningful titles.
+    
+    Args:
+        request: Contains the first message from the chat
+    
+    Returns:
+        Generated title (max 6 words)
+    """
+    try:
+        from server.query_handler import generate_chat_title
+        
+        print(f"📝 Title generation request received")
+        print(f"   message preview: {request.message[:100]}...")
+        
+        # Generate title using LLM
+        title = generate_chat_title(request.message)
+        
+        print(f"✅ Generated title: {title}")
+        
+        return {
+            "success": True,
+            "title": title
+        }
+    except Exception as e:
+        print(f"❌ Title generation error: {str(e)}")
+        # Return fallback title instead of error to ensure graceful degradation
+        words = request.message.split()[:5]
+        fallback_title = ' '.join(words) if words else 'New Chat'
+        if len(fallback_title) > 50:
+            fallback_title = fallback_title[:47] + '...'
+        
+        return {
+            "success": True,
+            "title": fallback_title
+        }
+
 
 if __name__ == "__main__":
     print("=" * 60)
     print("FastMCP Bridge Server")
     print("=" * 60)
-    print("Bridge Server URL: http://bridge:3001 (Docker) / http://localhost:3001 (Local)")
+    print("Bridge Server URL: http://localhost:3001 (Local Dev)")
+    print("Docker URL: http://bridge:3001 (if using Docker)")
     print("Routes requests to: client/fast_mcp_client.py")
     print("=" * 60)
     print("ℹ️  PREREQUISITE: FastMCP server must be running")
@@ -586,3 +635,4 @@ if __name__ == "__main__":
         port=3001,
         log_level="info"
     )
+

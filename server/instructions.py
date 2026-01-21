@@ -113,19 +113,21 @@ def build_system_prompt(workspace_id: str, base_prompt: str = ""):
         base_prompt: Optional base system prompt to prepend
     
     Returns:
-        Complete system prompt string
+        Complete system prompt string, or None if no instructions exist
     """
     instruction = get_active_instruction(workspace_id)
     
+    # Return None when there are no instructions to signal no modification needed
     if not instruction:
-        return base_prompt
+        return None
     
     # Use 'instructions' field (the actual database column name)
     instruction_content = instruction.get("instructions", "")
     instruction_title = instruction.get("title", "Custom Instruction")
     
+    # Return None if instruction content is empty
     if not instruction_content:
-        return base_prompt
+        return None
     
     # Build combined prompt
     combined_prompt = base_prompt
@@ -163,10 +165,11 @@ def query_with_instructions(
         # Build system prompt with instructions
         system_prompt = build_system_prompt(workspace_id, base_system_prompt)
         
-        # Construct full query with system prompt
+        # Only modify query if custom instructions exist
         if system_prompt:
             full_query = f"{system_prompt}\n\nUser Query: {query}"
         else:
+            # No instructions - pass query through unchanged
             full_query = query
         
         # Use answer_query from query_handler (handles semantic search + LLM)
@@ -207,10 +210,11 @@ def query_with_instructions_stream(
         # Build system prompt with instructions
         system_prompt = build_system_prompt(workspace_id, base_system_prompt)
         
-        # Construct full query with system prompt
+        # Only modify query if custom instructions exist
         if system_prompt:
             full_query = f"{system_prompt}\n\nUser Query: {query}"
         else:
+            # No instructions - pass query through unchanged
             full_query = query
         
         # Use answer_query from query_handler with streaming enabled

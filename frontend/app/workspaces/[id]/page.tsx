@@ -38,6 +38,7 @@ export default function WorkspacePage() {
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
   const [workspaceChatSessions, setWorkspaceChatSessions] = useState<ChatSession[]>([])
   const [currentChatId, setCurrentChatId] = useState<string>('')
+  const [currentSessionId, setCurrentSessionId] = useState<string>('')  // Session ID for DB persistence
   const [isWorkspaceSidebarCollapsed, setIsWorkspaceSidebarCollapsed] = useState(false)
   const [shouldCollapseMainSidebar, setShouldCollapseMainSidebar] = useState(false)
 
@@ -114,142 +115,171 @@ export default function WorkspacePage() {
       }
     }
 
-    const loadChatsFromSupabase = async () => {
+    const loadSessionsFromAPI = async () => {
       try {
-        console.log('Fetching chats from Supabase...')
-        const response = await fetch(`/api/chats?workspaceId=${workspaceId}`)
+        console.log('Fetching chat sessions from API...')
+        const response = await fetch(`/api/chats/sessions?workspaceId=${workspaceId}`)
         
         if (!response.ok) {
-          throw new Error(`Failed to fetch chats: ${response.statusText}`)
+          throw new Error(`Failed to fetch sessions: ${response.statusText}`)
         }
         
         const data = await response.json()
         
-        if (data.success && data.chats) {
-          // Convert Supabase Chat objects to Message objects
-          const loadedMessages: Message[] = data.chats.map((chat: { id: string; role: string; message: string; created_at: string }) => ({
-            id: chat.id,
-            content: chat.message,
-            role: chat.role as 'user' | 'assistant',
-            timestamp: new Date(chat.created_at),
-            isStreaming: false
+        if (data.success && data.sessions) {
+          console.log(`Loaded ${data.sessions.length} sessions`)
+          
+          // Convert API sessions to ChatSession type
+          const sessions: ChatSession[] = data.sessions.map((s: any) => ({
+            id: s.id,
+            workspace_id: s.workspace_id,
+            user_id: s.user_id,
+            title: s.title,
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+            deleted_at: s.deleted_at,
+            messages: []  // Messages loaded separately when session is selected
           }))
           
-          // Create a session for this workspace's chat history (but don't load messages yet)
-          if (loadedMessages.length > 0) {
-            const session: ChatSession = {
-              id: `${workspaceId}_main`,
-              workspaceId,
-              messages: loadedMessages,
-              createdAt: new Date(data.chats[0].created_at),
-              updatedAt: new Date(data.chats[data.chats.length - 1].created_at)
-            }
-            // Store the session but DON'T set messages - user must click to view
-            setChatSessions({ [session.id]: session })
-            setWorkspaceChatSessions([session])
-            // Keep messages empty initially - show only chat list
-            setMessages([])
-            setCurrentChatId('')
-          } else {
-            // No existing chats
-            setMessages([])
-            setCurrentChatId('')
-            setChatSessions({})
-            setWorkspaceChatSessions([])
-          }
+          setWorkspaceChatSessions(sessions)
+          
+          // Create sessions record for quick lookup
+          const sessionsRecord: Record<string, ChatSession> = {}
+          sessions.forEach(s => {
+            sessionsRecord[s.id] = s
+          })
+          setChatSessions(sessionsRecord)
+          
+          // Keep messages empty initially - user must click to view
+          setMessages([])
+          setCurrentChatId('')
+          setCurrentSessionId('')
+        } else {
+          // No existing sessions
+          setMessages([])
+          setCurrentChatId('')
+          setCurrentSessionId('')
+          setChatSessions({})
+          setWorkspaceChatSessions([])
         }
       } catch (error) {
-        console.error('Error loading chats from Supabase:', error)
+        console.error('Error loading sessions from API:', error)
         setMessages([])
       }
     }
 
     loadWorkspace()
-    loadChatsFromSupabase()
+    loadSessionsFromAPI()
   }, [workspaceId, router])
 
-  // Update local session state when messages change (no localStorage, Supabase handles persistence)
-  // Only resort chats when new message is added (detected by message count change)
-  useEffect(() => {
-    if (workspaceId && currentChatId && messages.length > 0) {
-      const existingSession = chatSessions[currentChatId]
-      const previousMessageCount = existingSession?.messages.length || 0
-      const currentMessageCount = messages.length
+  const handleChatSelect = async (chatId: string) => {
+    // chatId is actually sessionId from database
+    setCurrentChatId(chatId)
+    setCurrentSessionId(chatId)
+    
+    // Check if messages are already loaded in memory
+    const session = chatSessions[chatId]
+    if (session && session.messages && session.messages.length > 0) {
+      // Messages already loaded, just display them
+      setMessages(session.messages)
+      return
+    }
+    
+    // Load messages from API for this session
+    try {
+      const response = await fetch(`/api/chats/session?sessionId=${chatId}`)
       
-      const session: ChatSession = {
-        id: currentChatId,
-        workspaceId,
-        messages,
-        createdAt: chatSessions[currentChatId]?.createdAt || new Date(),
-        updatedAt: new Date()
+      if (!response.ok) {
+        throw new Error(`Failed to fetch session messages: ${response.statusText}`)
       }
-      setChatSessions(prev => ({ ...prev, [currentChatId]: session }))
-
-      // Only resort if a new message was added (not just switching chats)
-      if (currentMessageCount > previousMessageCount) {
-        setWorkspaceChatSessions(prev => {
-          const filtered = prev.filter(s => s.id !== currentChatId)
-          return [session, ...filtered].sort((a, b) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-          )
-        })
-      } else {
-        // Just update the session without resorting
-        setWorkspaceChatSessions(prev => 
-          prev.map(s => s.id === currentChatId ? session : s)
-        )
+      
+      const data = await response.json()
+      
+      if (data.success && data.messages) {
+        // Messages are already in UI format (converted by API)
+        setMessages(data.messages)
+        
+        // Update session in chatSessions record with loaded messages
+        setChatSessions(prev => ({
+          ...prev,
+          [chatId]: {
+            ...prev[chatId],
+            messages: data.messages
+          }
+        }))
       }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, workspaceId, currentChatId])
-
-  const handleChatSelect = (chatId: string) => {
-    // First check the chatSessions record
-    let session: ChatSession | undefined = chatSessions[chatId]
-    
-    // If not found, look in workspaceChatSessions array
-    if (!session) {
-      session = workspaceChatSessions.find(s => s.id === chatId)
-    }
-    
-    if (session) {
-      // Convert timestamp strings back to Date objects if needed
-      const messagesWithDates = session.messages.map(msg => ({
-        ...msg,
-        timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp)
-      }))
-      setMessages(messagesWithDates)
-      setCurrentChatId(chatId)
-      // Also add to chatSessions record for future lookups
-      setChatSessions(prev => ({
-        ...prev,
-        [chatId]: {
-          ...session,
-          messages: messagesWithDates
-        }
-      }))
+    } catch (error) {
+      console.error('Error loading session messages:', error)
+      setMessages([])
     }
   }
 
-  const handleNewChat = () => {
-    if (!workspaceId) return
+  const handleNewChat = async (): Promise<string | null> => {
+    if (!workspaceId) return null
 
-    const newSession: ChatSession = {
-      id: `${workspaceId}_${Date.now()}`,
-      workspaceId,
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date()
+    try {
+      // Create new session on server
+      const response = await fetch('/api/chats/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          title: 'New Chat'
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to create session')
+      }
+      
+      const data = await response.json()
+      
+      if (data.success && data.session) {
+        const newSession: ChatSession = {
+          id: data.session.id,
+          workspace_id: data.session.workspace_id,
+          user_id: data.session.user_id,
+          title: data.session.title,
+          created_at: data.session.created_at,
+          updated_at: data.session.updated_at,
+          deleted_at: data.session.deleted_at,
+          messages: []
+        }
+        
+        setMessages([])
+        setCurrentChatId(newSession.id)
+        setCurrentSessionId(newSession.id)
+        setChatSessions(prev => ({ ...prev, [newSession.id]: newSession }))
+        setWorkspaceChatSessions(prev => [newSession, ...prev])
+        
+        return newSession.id  // Return the session ID
+      }
+      return null
+    } catch (error) {
+      console.error('Error creating new chat session:', error)
+      return null
     }
-    setMessages([])
-    setCurrentChatId(newSession.id)
-    setChatSessions(prev => ({ ...prev, [newSession.id]: newSession }))
   }
 
   const handleWorkspaceSidebarToggle = (isCollapsed: boolean) => {
     setIsWorkspaceSidebarCollapsed(isCollapsed)
     // Only collapse main sidebar when workspace sidebar is expanded (not collapsed)
     setShouldCollapseMainSidebar(!isCollapsed)
+  }
+
+  const handleSessionRename = (sessionId: string, newTitle: string) => {
+    // Update workspaceChatSessions state immediately
+    setWorkspaceChatSessions(prev => 
+      prev.map(session => 
+        session.id === sessionId ? { ...session, title: newTitle } : session
+      )
+    )
+    
+    // Also update chatSessions record if it exists
+    setChatSessions(prev => ({
+      ...prev,
+      [sessionId]: prev[sessionId] ? { ...prev[sessionId], title: newTitle } : prev[sessionId]
+    }))
   }
 
   const handleExpandWorkspaceSidebar = () => {
@@ -265,12 +295,18 @@ export default function WorkspacePage() {
   }
 
   // Helper function to save a message to Supabase
-  const saveMessageToSupabase = async (role: string, message: string) => {
+  const saveMessageToSupabase = async (sessionId: string, role: string, message: string) => {
+    if (!sessionId) {
+      console.error('Cannot save message: no session ID provided')
+      return
+    }
+    
     try {
       await fetch('/api/chats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          sessionId: sessionId,
           workspaceId,
           role,
           message
@@ -284,11 +320,20 @@ export default function WorkspacePage() {
   const handleSendMessage = async (content: string, selected_file_ids?: string[]) => {
     if (!content.trim() || isProcessing) return
 
-    // If no current chat session, create one for this new conversation
-    if (!currentChatId) {
-      const newChatId = `${workspaceId}_${Date.now()}`
-      setCurrentChatId(newChatId)
+    // If no current session, create one first and get the session ID
+    let sessionIdToUse = currentSessionId
+    
+    if (!sessionIdToUse) {
+      const newSessionId = await handleNewChat()
+      if (!newSessionId) {
+        console.error('Failed to create session for new message')
+        return
+      }
+      sessionIdToUse = newSessionId
     }
+
+    // Check if this is the first message in the session (no messages yet)
+    const isFirstMessage = messages.length === 0
 
     // Add user message
     const userMessage: Message = {
@@ -301,8 +346,108 @@ export default function WorkspacePage() {
     setMessages((prev) => [...prev, userMessage])
     setIsProcessing(true)
 
-    // Save user message to Supabase
-    await saveMessageToSupabase('user', content)
+    // Save user message to Supabase with the correct sessionId
+    try {
+      await fetch('/api/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sessionIdToUse,
+          workspaceId,
+          role: 'user',
+          message: content
+        })
+      })
+      
+      // If this is the first message, generate a descriptive title using LLM
+      if (isFirstMessage) {
+        try {
+          console.log('🎯 Generating title for first message:', content.substring(0, 50))
+          
+          // Call the title generation API
+          const titleResponse = await fetch('/api/chats/generate-title', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: content
+            })
+          })
+          
+          console.log('📥 Title generation response status:', titleResponse.status)
+          
+          if (titleResponse.ok) {
+            const titleData = await titleResponse.json()
+            const generatedTitle = titleData.title || 'New Chat'
+            
+            console.log('✅ Generated title:', generatedTitle)
+            
+            // Update the session title in database
+            await fetch('/api/chats/session', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: sessionIdToUse,
+                title: generatedTitle
+              })
+            })
+            
+            // Update local state with new title
+            setChatSessions(prev => ({
+              ...prev,
+              [sessionIdToUse]: {
+                ...prev[sessionIdToUse],
+                title: generatedTitle
+              }
+            }))
+            
+            setWorkspaceChatSessions(prev => 
+              prev.map(s => s.id === sessionIdToUse ? { ...s, title: generatedTitle } : s)
+            )
+          } else {
+            // Fallback to truncated message if title generation fails
+            const fallbackTitle = content.length > 50 ? content.substring(0, 50) + '...' : content
+            await fetch('/api/chats/session', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: sessionIdToUse,
+                title: fallbackTitle
+              })
+            })
+            
+            setChatSessions(prev => ({
+              ...prev,
+              [sessionIdToUse]: {
+                ...prev[sessionIdToUse],
+                title: fallbackTitle
+              }
+            }))
+            
+            setWorkspaceChatSessions(prev => 
+              prev.map(s => s.id === sessionIdToUse ? { ...s, title: fallbackTitle } : s)
+            )
+          }
+        } catch (titleError) {
+          console.error('Error generating/updating session title:', titleError)
+          // Still use fallback title in case of any error
+          const fallbackTitle = content.length > 50 ? content.substring(0, 50) + '...' : content
+          try {
+            await fetch('/api/chats/session', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: sessionIdToUse,
+                title: fallbackTitle
+              })
+            })
+          } catch {
+            // Silently fail - title update is not critical
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error saving message to Supabase:', error)
+    }
 
     // Create a placeholder assistant message for streaming
     const assistantMessageId = (Date.now() + 1).toString()
@@ -317,8 +462,10 @@ export default function WorkspacePage() {
     setMessages((prev) => [...prev, assistantMessage])
 
     try {
-      // Prepare conversation history from existing messages (limit to last 10 messages for context)
-      const conversation_history = messages.slice(-10).map(msg => ({
+      // Prepare conversation history from current session messages (limit to last 10 for context)
+      // Include the new user message that was just added
+      const currentSessionMessages = [...messages, userMessage]
+      const conversation_history = currentSessionMessages.slice(-10).map(msg => ({
         role: msg.role,
         content: msg.content
       }))
@@ -396,7 +543,7 @@ export default function WorkspacePage() {
                     } else if (data.done) {
                       // Streaming complete - save assistant response to Supabase
                       if (accumulatedContent && !streamError) {
-                        saveMessageToSupabase('assistant', accumulatedContent)
+                        saveMessageToSupabase(sessionIdToUse, 'assistant', accumulatedContent)
                       }
                       setMessages((prev) =>
                         prev.map((msg) =>
@@ -448,7 +595,7 @@ export default function WorkspacePage() {
 
         // Save assistant response to Supabase
         if (data.response) {
-          await saveMessageToSupabase('assistant', data.response)
+          await saveMessageToSupabase(sessionIdToUse, 'assistant', data.response)
         }
 
         setMessages((prev) =>
@@ -546,6 +693,7 @@ export default function WorkspacePage() {
         onChatSelect={handleChatSelect}
         onNewChat={handleNewChat}
         onToggleSidebar={handleWorkspaceSidebarToggle}
+        onSessionRename={handleSessionRename}
       />
 
       {/* Main Content Area - Workspace Introduction Page takes full remaining width */}

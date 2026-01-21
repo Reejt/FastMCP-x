@@ -83,8 +83,9 @@ export interface DocumentEmbedding {
  */
 export interface Chat {
   id: string                    // UUID primary key
-  workspace_id: string | null   // Foreign key to workspaces(id) (nullable)
-  user_id: string | null        // Foreign key to auth.users(id) (nullable)
+  workspace_id: string          // Foreign key to workspaces(id) (NOT nullable after migration)
+  user_id: string               // Foreign key to auth.users(id) (NOT nullable after migration)
+  session_id: string            // Foreign key to chat_sessions(id) (NOT nullable)
   role: string                  // Message role (user, assistant, system, etc.) (NOT nullable)
   message: string               // Chat message content (NOT nullable)
   created_at: string            // ISO timestamp with time zone (NOT nullable)
@@ -129,6 +130,7 @@ export interface Message {
   content: string
   role: 'user' | 'assistant'
   timestamp: Date
+  session_id?: string           // Optional: Links message to session for proper scoping
   isStreaming?: boolean
 }
 
@@ -139,10 +141,42 @@ export interface User {
   name?: string
 }
 
+/**
+ * ChatSession from `chat_sessions` table
+ * Represents an isolated conversation thread within a workspace
+ */
 export interface ChatSession {
-  id: string
-  workspaceId?: string
-  messages: Message[]
-  createdAt: Date
-  updatedAt: Date
+  id: string                    // UUID primary key
+  workspace_id: string          // Foreign key to workspaces(id) (NOT nullable)
+  user_id: string               // Foreign key to auth.users(id) (NOT nullable)
+  title: string                 // Session title (default: "New Chat")
+  created_at: string            // ISO timestamp with time zone
+  updated_at: string            // ISO timestamp with time zone (auto-updated)
+  deleted_at: string | null     // Soft delete timestamp (nullable)
+  messages?: Message[]          // Frontend-only: Loaded separately from chats table
+}
+
+// ============================================
+// Type Conversion Helpers
+// ============================================
+
+/**
+ * Convert database Chat type to UI Message type
+ * Handles field name differences and type conversions
+ */
+export function chatToMessage(chat: Chat): Message {
+  return {
+    id: chat.id,
+    content: chat.message,        // DB: message → UI: content
+    role: chat.role as 'user' | 'assistant',
+    timestamp: new Date(chat.created_at),  // string → Date conversion
+    session_id: chat.session_id
+  }
+}
+
+/**
+ * Convert array of Chat to array of Message
+ */
+export function chatsToMessages(chats: Chat[]): Message[] {
+  return chats.map(chatToMessage)
 }

@@ -20,7 +20,8 @@ export const dynamic = 'force-dynamic';
 // - Development: Works as-is with larger limits
 
 // Server-side env variable (no NEXT_PUBLIC_ prefix needed in API routes)
-// Defaults to localhost:3001 for local development
+// Defaults to localhost:3001 for local development (npm run dev)
+// Set BRIDGE_SERVER_URL env variable for Docker or custom deployments
 const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001';
 
 export async function POST(request: NextRequest) {

@@ -25,6 +25,7 @@ interface WorkspaceSidebarProps {
   onChatSelect?: (chatId: string) => void
   onNewChat?: () => void
   onToggleSidebar?: (isCollapsed: boolean) => void
+  onSessionRename?: (sessionId: string, newTitle: string) => void
 }
 
 const MIN_WIDTH = 200
@@ -37,7 +38,8 @@ export default function WorkspaceSidebar({
   currentChatId,
   onChatSelect,
   onNewChat,
-  onToggleSidebar
+  onToggleSidebar,
+  onSessionRename
 }: WorkspaceSidebarProps) {
   const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -48,6 +50,10 @@ export default function WorkspaceSidebar({
   const [isLoadingInstruction, setIsLoadingInstruction] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editFormData, setEditFormData] = useState({ instructions: '' })
+  const [contextMenuSessionId, setContextMenuSessionId] = useState<string | null>(null)
+  const [renameModalSessionId, setRenameModalSessionId] = useState<string | null>(null)
+  const [renameFormValue, setRenameFormValue] = useState('')
+  const [isRenamingSession, setIsRenamingSession] = useState(false)
 
   // Light theme colors
   const theme = {
@@ -61,6 +67,95 @@ export default function WorkspaceSidebar({
     cardBg: '#f5f5f5',
     hoverGrey: '#f5f5f5',
   }
+
+  // Format relative time (1 hour ago, 2 days ago, etc.)
+  const formatRelativeTime = useCallback((dateString: string): string => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+    // Less than 10 seconds - show "Now"
+    if (diffInSeconds < 10) {
+      return 'Now'
+    }
+
+    // Less than 60 seconds
+    if (diffInSeconds < 60) {
+      return `${diffInSeconds} sec ago`
+    }
+
+    // Less than 60 minutes
+    const diffInMinutes = Math.floor(diffInSeconds / 60)
+    if (diffInMinutes < 60) {
+      return diffInMinutes === 1 ? '1 min ago' : `${diffInMinutes} mins ago`
+    }
+
+    // Less than 24 hours
+    const diffInHours = Math.floor(diffInMinutes / 60)
+    if (diffInHours < 24) {
+      return diffInHours === 1 ? '1 hour ago' : `${diffInHours} hours ago`
+    }
+
+    // Less than 7 days
+    const diffInDays = Math.floor(diffInHours / 24)
+    if (diffInDays < 7) {
+      return diffInDays === 1 ? '1 day ago' : `${diffInDays} days ago`
+    }
+
+    // Less than 30 days
+    if (diffInDays < 30) {
+      const diffInWeeks = Math.floor(diffInDays / 7)
+      return diffInWeeks === 1 ? '1 week ago' : `${diffInWeeks} weeks ago`
+    }
+
+    // Less than 365 days
+    if (diffInDays < 365) {
+      const diffInMonths = Math.floor(diffInDays / 30)
+      return diffInMonths === 1 ? '1 month ago' : `${diffInMonths} months ago`
+    }
+
+    // Over a year
+    const diffInYears = Math.floor(diffInDays / 365)
+    return diffInYears === 1 ? '1 year ago' : `${diffInYears} years ago`
+  }, [])
+
+  // Group sessions by date
+  const groupSessionsByDate = useCallback((sessions: ChatSession[]) => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    
+    const lastWeek = new Date(today)
+    lastWeek.setDate(lastWeek.getDate() - 7)
+
+    const groups: Record<string, ChatSession[]> = {
+      'Today': [],
+      'Yesterday': [],
+      'Last 7 Days': [],
+      'Older': []
+    }
+
+    sessions.forEach(session => {
+      const sessionDate = new Date(session.updated_at)
+      sessionDate.setHours(0, 0, 0, 0)
+
+      if (sessionDate.getTime() === today.getTime()) {
+        groups['Today'].push(session)
+      } else if (sessionDate.getTime() === yesterday.getTime()) {
+        groups['Yesterday'].push(session)
+      } else if (sessionDate >= lastWeek) {
+        groups['Last 7 Days'].push(session)
+      } else {
+        groups['Older'].push(session)
+      }
+    })
+
+    return groups
+  }, [])
+
+  const sessionGroups = groupSessionsByDate(chatSessions)
 
   // Load collapse state and width from localStorage on mount
   useEffect(() => {
@@ -133,6 +228,18 @@ export default function WorkspaceSidebar({
       document.removeEventListener('mouseup', handleMouseUp)
     }
   }, [isResizing, handleMouseMove, handleMouseUp])
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (contextMenuSessionId && !(e.target as Element).closest('.context-menu-trigger')) {
+        setContextMenuSessionId(null)
+      }
+    }
+
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [contextMenuSessionId])
 
   const handleToggleCollapse = () => {
     const newState = !isCollapsed
@@ -262,6 +369,53 @@ export default function WorkspaceSidebar({
     }
   }
 
+  // Handle rename session
+  const handleOpenRenameModal = (sessionId: string, currentTitle: string) => {
+    setRenameModalSessionId(sessionId)
+    setRenameFormValue(currentTitle)
+    setContextMenuSessionId(null)
+  }
+
+  const handleCloseRenameModal = () => {
+    setRenameModalSessionId(null)
+    setRenameFormValue('')
+    setIsRenamingSession(false)
+  }
+
+  const handleSaveRename = async () => {
+    if (!renameModalSessionId || !renameFormValue.trim()) return
+
+    try {
+      setIsRenamingSession(true)
+      const newTitle = renameFormValue.trim()
+
+      const response = await fetch('/api/chats/session', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: renameModalSessionId,
+          title: newTitle
+        })
+      })
+
+      if (response.ok) {
+        // Update parent component's state immediately via callback
+        if (onSessionRename) {
+          onSessionRename(renameModalSessionId, newTitle)
+        }
+        
+        handleCloseRenameModal()
+        
+        // Refresh as backup to sync with database
+        router.refresh()
+      }
+    } catch (error) {
+      console.error('Error renaming session:', error)
+    } finally {
+      setIsRenamingSession(false)
+    }
+  }
+
   if (!workspace) {
     return null
   }
@@ -351,6 +505,90 @@ export default function WorkspaceSidebar({
           </motion.div>
         )}
       </AnimatePresence>
+
+    {/* Rename Session Modal */}
+    <AnimatePresence>
+      {renameModalSessionId && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={handleCloseRenameModal}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="w-full max-w-md mx-4 p-6 rounded-lg shadow-xl"
+            style={{ backgroundColor: theme.bg }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold" style={{ color: theme.text }}>
+                Rename Chat Session
+              </h3>
+              <button
+                onClick={handleCloseRenameModal}
+                className="p-2 rounded transition-colors hover:opacity-70"
+                style={{ color: theme.textSecondary }}
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="mb-6">
+              <input
+                type="text"
+                value={renameFormValue}
+                onChange={(e) => setRenameFormValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveRename()
+                  if (e.key === 'Escape') handleCloseRenameModal()
+                }}
+                placeholder="Enter new chat title..."
+                autoFocus
+                className="w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
+                style={{ 
+                  backgroundColor: theme.bg, 
+                  borderColor: theme.border,
+                  color: theme.text
+                }}
+              />
+            </div>
+            
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleCloseRenameModal}
+                disabled={isRenamingSession}
+                className="px-5 py-2.5 rounded-lg font-medium transition-colors"
+                style={{ 
+                  backgroundColor: theme.hoverBg,
+                  color: theme.text
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveRename}
+                disabled={isRenamingSession || !renameFormValue.trim()}
+                className="px-5 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ 
+                  backgroundColor: '#000000ff',
+                  color: '#ffffff'
+                }}
+              >
+                {isRenamingSession ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
 
     <AnimatePresence initial={false}>
       {!isCollapsed && (
@@ -476,7 +714,17 @@ export default function WorkspaceSidebar({
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold uppercase" style={{ color: theme.textMuted }}>Chats</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold uppercase" style={{ color: theme.textMuted }}>Chats</h3>
+                    {chatSessions.length > 0 && (
+                      <span 
+                        className="px-2 py-0.5 rounded-full text-xs font-medium"
+                        style={{ backgroundColor: theme.cardBg, color: theme.textSecondary }}
+                      >
+                        {chatSessions.length}
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={onNewChat}
                     className="p-1 rounded transition-colors hover:opacity-70"
@@ -498,7 +746,7 @@ export default function WorkspaceSidebar({
                   </div>
                 ) : (
                   <motion.div 
-                    className="space-y-1"
+                    className="space-y-4"
                     initial="hidden"
                     animate="visible"
                     variants={{
@@ -509,29 +757,103 @@ export default function WorkspaceSidebar({
                       }
                     }}
                   >
-                    {chatSessions.map((session, index) => (
-                      <motion.button
-                        key={session.id}
-                        onClick={() => onChatSelect?.(session.id)}
-                        variants={{
-                          hidden: { opacity: 0, y: -10 },
-                          visible: { opacity: 1, y: 0 }
-                        }}
-                        whileHover={{ scale: 1.01 }}
-                        transition={{ duration: 0.2 }}
-                        className="w-full text-left px-3 py-2 rounded-lg transition-all"
-                        style={{
-                          backgroundColor: currentChatId === session.id ? theme.activeBg : 'transparent',
-                        }}
-                      >
-                        <div className="text-sm font-medium truncate" style={{ color: theme.text }}>
-                          {session.messages[0]?.content.substring(0, 30) || 'New Chat'}
-                          {session.messages[0]?.content.length > 30 && '...'}
+                    {Object.entries(sessionGroups).map(([groupName, sessions]) => (
+                      sessions.length > 0 ? (
+                        <div key={groupName}>
+                          <h4 className="text-xs font-semibold uppercase px-2 mb-2" style={{ color: theme.textMuted }}>
+                            {groupName}
+                          </h4>
+                          <div className="space-y-1">
+                            {sessions.map((session) => (
+                              <motion.div
+                                key={session.id}
+                                variants={{
+                                  hidden: { opacity: 0, y: -10 },
+                                  visible: { opacity: 1, y: 0 }
+                                }}
+                                className="relative group"
+                              >
+                                <button
+                                  onClick={() => onChatSelect?.(session.id)}
+                                  className="w-full text-left px-3 py-2 rounded-lg transition-all"
+                                  style={{
+                                    backgroundColor: currentChatId === session.id ? theme.activeBg : 'transparent',
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium truncate" style={{ color: theme.text }}>
+                                        {session.title || 'New Chat'}
+                                      </div>
+                                      <div className="text-sm mt-0.5" style={{ color: theme.textMuted }}>
+                                        {formatRelativeTime(session.updated_at)}
+                                      </div>
+                                    </div>
+                                    <div
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setContextMenuSessionId(contextMenuSessionId === session.id ? null : session.id)
+                                      }}
+                                      className="context-menu-trigger opacity-0 group-hover:opacity-100 p-1 rounded transition-all hover:bg-black/10 cursor-pointer"
+                                      style={{ color: theme.textSecondary }}
+                                      role="button"
+                                      aria-label="Options"
+                                      tabIndex={0}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.preventDefault()
+                                          e.stopPropagation()
+                                          setContextMenuSessionId(contextMenuSessionId === session.id ? null : session.id)
+                                        }
+                                      }}
+                                    >
+                                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                                      </svg>
+                                    </div>
+                                  </div>
+                                </button>
+
+                                {/* Context Menu */}
+                                <AnimatePresence>
+                                  {contextMenuSessionId === session.id && (
+                                    <motion.div
+                                      initial={{ opacity: 0, scale: 0.95 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      exit={{ opacity: 0, scale: 0.95 }}
+                                      transition={{ duration: 0.1 }}
+                                      className="absolute right-0 top-full mt-1 z-10 min-w-[160px] rounded-lg shadow-lg border"
+                                      style={{
+                                        backgroundColor: theme.bg,
+                                        borderColor: theme.border
+                                      }}
+                                    >
+                                      <button
+                                        onClick={() => handleOpenRenameModal(session.id, session.title || 'New Chat')}
+                                        className="w-full text-left px-3 py-2 text-sm rounded-lg transition-colors flex items-center gap-2"
+                                        style={{
+                                          color: theme.text,
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor = theme.hoverBg
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor = 'transparent'
+                                        }}
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                        Rename
+                                      </button>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </motion.div>
+                            ))}
+                          </div>
                         </div>
-                        <div className="text-sm mt-0.5" style={{ color: theme.textMuted }}>
-                          {new Date(session.updatedAt).toLocaleDateString()}
-                        </div>
-                      </motion.button>
+                      ) : null
                     ))}
                   </motion.div>
                 )}
