@@ -1,14 +1,20 @@
 """ 
 Query Handler for FastMCP - pgvector Enterprise Edition
 
-Database Schema (7 tables):
+Database Schema (8 tables):
 - auth.users: Supabase authentication (id, email, role, created_at, updated_at)
 - workspaces: User workspaces (id, user_id, name, created_at, updated_at)
 - file_upload: File metadata (id, workspace_id, user_id, file_name, file_type, file_path, size_bytes, status, uploaded_at, created_at, updated_at, deleted_at)
 - document_content: Extracted text (id, file_id, user_id, content, file_name, extracted_at, created_at, updated_at)
 - document_embeddings: Vector embeddings (id, user_id, file_id, chunk_index, chunk_text, embedding[vector], metadata[jsonb], created_at, updated_at)
 - workspace_instructions: Custom instructions (id, workspace_id, title, instructions, is_active, created_at, updated_at)
-- chats: Chat messages (id, workspace_id, user_id, role, message, created_at)
+- chat_sessions: Chat sessions (id, workspace_id, user_id, title, created_at, updated_at, deleted_at)
+- chats: Chat messages (id, workspace_id, user_id, session_id, role, message, created_at)
+
+Session Management:
+- Each chat session has a unique id and belongs to a workspace
+- Messages are linked to sessions via session_id foreign key
+- Conversation history is scoped to current session to prevent context leakage
 
 Similarity Search: Performed at DATABASE LEVEL using pgvector <=> operator
 No application-level cosine similarity calculations
@@ -497,7 +503,7 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
         return query_model(error_msg, conversation_history=conversation_history)
 
 
-def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, conversation_history: list = None):
+def query_model(query: str, model_name: str = 'llama3:8b', stream: bool = False, conversation_history: list = None):
     """
     Query the Ollama model via HTTP API with optional conversation history
     
@@ -710,3 +716,78 @@ def answer_link_query(link, question, conversation_history: list = None):
         return query_model(prompt, conversation_history=conversation_history)
     except Exception as e:
         return f"Error: {str(e)}"
+
+
+def generate_chat_title(first_message: str, model_name: str = 'llama3:8b') -> str:
+    """
+    Generate a concise, descriptive title for a chat session based on the first message.
+    
+    Args:
+        first_message: The first user message in the chat session
+        model_name: Name of the Ollama model to use
+        
+    Returns:
+        A short, descriptive title (max 6 words)
+    """
+    try:
+        # Create a prompt that instructs the LLM to generate a brief title
+        prompt = f"""You are a title generator. Create a concise title (3-6 words maximum) that captures the main topic of this message.
+
+Message: "{first_message}"
+
+IMPORTANT RULES:
+1. Return ONLY the title - no explanations, no quotes, no extra text
+2. Maximum 6 words (3-4 is ideal)
+3. Use title case (capitalize major words)
+4. Be specific and descriptive
+5. Focus on the main topic or action
+
+Examples:
+- Message: "How do I deploy a Next.js app to Vercel?" → Title: Deploy Next.js to Vercel
+- Message: "Explain Python list comprehensions with examples" → Title: Python List Comprehensions Guide
+- Message: "What are the best practices for React hooks?" → Title: React Hooks Best Practices
+
+Now generate the title:"""
+
+        # Query the LLM with a shorter timeout since this is a simple task
+        response = requests.post(
+            f'{OLLAMA_BASE_URL}/api/generate',
+            json={
+                'model': model_name,
+                'prompt': prompt,
+                'stream': False
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        
+        # Extract and clean the title
+        title = response.json().get('response', '').strip()
+        
+        # Remove any quotation marks that might have been added
+        title = title.replace('"', '').replace("'", '').strip()
+        
+        # Ensure title isn't too long (fallback to truncation)
+        words = title.split()
+        if len(words) > 6:
+            title = ' '.join(words[:6])
+        
+        # If title is still empty or too short, return a default
+        if not title or len(title) < 3:
+            # Create a fallback title from first few words of message
+            words = first_message.split()[:4]
+            title = ' '.join(words) if words else 'New Chat'
+            if len(title) > 50:
+                title = title[:47] + '...'
+        
+        return title
+        
+    except requests.RequestException as e:
+        # Fallback: use first few words of the message
+        words = first_message.split()[:4]
+        fallback_title = ' '.join(words) if words else 'New Chat'
+        if len(fallback_title) > 50:
+            fallback_title = fallback_title[:47] + '...'
+        return fallback_title
+    except Exception as e:
+        return 'New Chat'
