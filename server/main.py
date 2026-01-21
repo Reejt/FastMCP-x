@@ -73,18 +73,22 @@ def ingest_file_tool(file_path: str, user_id: str, workspace_id: str = None, bas
         return error_msg
 
 @mcp.tool
-def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id: str = None) -> str:
+def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id: str = None, selected_file_ids: str = None):
     """
-    Answer queries with conversation history support
+    Answer queries with conversation history support and file filtering
     
     Args:
         query: The current user query
         conversation_history: JSON string of previous messages (default: "[]")
+        workspace_id: Optional workspace ID for filtering
+        selected_file_ids: JSON string of file IDs to filter search (default: None)
     """
     try:
         # Parse conversation history from JSON string
         history = json.loads(conversation_history) if conversation_history else []
-        result = answer_query(query, conversation_history=history, workspace_id=workspace_id)
+        # Parse selected_file_ids from JSON string
+        file_ids = json.loads(selected_file_ids) if selected_file_ids else None
+        result = answer_query(query, conversation_history=history, workspace_id=workspace_id, selected_file_ids=file_ids)
         print(f"Query result: {result}")
         return result
     except Exception as e:
@@ -139,7 +143,7 @@ def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]
 
 
 @mcp.tool
-def query_csv_with_context_tool(query: str, file_name: str, file_path: str = None, conversation_history: str = "[]", workspace_id: str = None) -> str:
+def query_csv_with_context_tool(query: str, file_name: str, file_path: str = None, conversation_history: str = "[]", workspace_id: str = None, selected_file_ids: str = None) -> str:
     """
     Query CSV data using keyword filtering and LLM reasoning with conversation context
     
@@ -149,17 +153,20 @@ def query_csv_with_context_tool(query: str, file_name: str, file_path: str = Non
         file_path: Path to the CSV file (local or Supabase storage reference)
         conversation_history: JSON string of previous messages for context (default: "[]")
         workspace_id: Optional workspace ID filter
+        selected_file_ids: JSON string of selected file IDs for context (default: None)
     
     Returns:
         LLM-generated answer based on the CSV data with relevant rows
     """
     try:
         history = json.loads(conversation_history) if conversation_history else []
+        file_ids = json.loads(selected_file_ids) if selected_file_ids else None
         result = query_csv_with_context(
             query=query,
             file_name=file_name,
             file_path=file_path,
-            conversation_history=history
+            conversation_history=history,
+            selected_file_ids=file_ids
         )
         print(f"CSV query result: {result}")
         return result
@@ -170,7 +177,7 @@ def query_csv_with_context_tool(query: str, file_name: str, file_path: str = Non
 
 
 @mcp.tool
-def query_excel_with_context_tool(query: str, file_name: str, file_path: str = None, conversation_history: str = "[]", workspace_id: str = None) -> str:
+def query_excel_with_context_tool(query: str, file_name: str, file_path: str = None, conversation_history: str = "[]", workspace_id: str = None, selected_file_ids: str = None)-> str:
     """
     Query Excel data using keyword filtering and LLM reasoning with conversation context
     
@@ -180,17 +187,20 @@ def query_excel_with_context_tool(query: str, file_name: str, file_path: str = N
         file_path: Path to the Excel file (local or Supabase storage reference)
         conversation_history: JSON string of previous messages for context (default: "[]")
         workspace_id: Optional workspace ID filter
+        selected_file_ids: JSON string of selected file IDs for context (default: None)
     
     Returns:
         LLM-generated answer based on the Excel data with relevant rows
     """
     try:
         history = json.loads(conversation_history) if conversation_history else []
+        file_ids = json.loads(selected_file_ids) if selected_file_ids else None
         result = query_excel_with_context(
             query=query,
             file_name=file_name,
             file_path=file_path,
-            conversation_history=history
+            conversation_history=history,
+            selected_file_ids=file_ids
         )
         print(f"Excel query result: {result}")
         return result
