@@ -9,10 +9,10 @@ This is a **full-stack application** combining a Model Context Protocol (MCP) se
 - **Core Modules**:
   - `document_ingestion.py` - File ingestion, storage in `storage/`, auto-loading on startup
   - `query_handler.py` - Semantic search (sentence-transformers), context-aware LLM queries
-  - `excel_csv.py` - Natural language queries for Excel/CSV files using pandas
+  - `csv_excel_processor.py` - Natural language queries for Excel/CSV files using pandas
   - `web_search_file.py` - Tavily API integration for web search
 - **Single FastMCP Instance**: All tools registered via `@mcp.tool` decorator in `server/main.py`
-- **LLM Integration**: Ollama (default: llama3.2:1b) via HTTP API at `localhost:11434`
+- **LLM Integration**: Ollama (default: llama3.2:3b) via HTTP API at `localhost:11434`
 
 ### Frontend (Next.js)
 - **Framework**: Next.js 14 with App Router and TypeScript
@@ -160,7 +160,7 @@ except Exception as e:
 - **Storage directory**: Created at runtime in `document_ingestion.py` if missing using `os.makedirs()`
 - **Global state**: `documents` list is module-level in `document_ingestion.py`
 - **Frontend components**: Located in `frontend/app/components/` with TypeScript interfaces
-- **No tests directory exists yet** - tests need to be created
+- **Tests directory**: Located at `tests/` with existing test files for core modules
 
 ## External Dependencies
 

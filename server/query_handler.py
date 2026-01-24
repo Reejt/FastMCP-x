@@ -208,13 +208,14 @@ def _fuzzy_match_filename(potential: str, available_files: list, threshold: floa
     return best_match if best_ratio >= threshold else None
 
 
-def get_all_file_embeddings(file_name: str, workspace_id: str = None) -> List[Tuple[str, float, str, str]]:
+def get_all_file_embeddings(file_name: str, workspace_id: str = None, selected_file_ids: list = None):
     """
     Retrieve ALL embeddings for a specific file (fallback when similarity is too low)
     
     Args:
         file_name: The name of the file to fetch all embeddings for
         workspace_id: Optional workspace filter
+        selected_file_ids: Optional list of file IDs to filter search results
     
     Returns:
         List of (chunk_text, dummy_similarity, file_name, file_path) tuples
@@ -224,26 +225,40 @@ def get_all_file_embeddings(file_name: str, workspace_id: str = None) -> List[Tu
         return []
     
     try:
+        # Query document_embeddings and join with file_upload to get file_name and file_path
         query_builder = supabase_client.table('document_embeddings').select(
-            'chunk_text, file_name, file_path'
-        ).eq('file_name', file_name)
+            'chunk_text, chunk_index, file_id, file_upload(file_name, file_path, workspace_id)'
+        )
+        
+        # Filter by file_id if selected_file_ids provided
+        if selected_file_ids:
+            query_builder = query_builder.in_('file_id', selected_file_ids)
         
         # Filter by workspace if provided
         if workspace_id:
-            # Join with file_upload table to filter by workspace
-            query_builder = query_builder.eq('workspace_id', workspace_id)
+            query_builder = query_builder.eq('file_upload.workspace_id', workspace_id)
         
         response = query_builder.order('chunk_index', desc=False).execute()
         
         if hasattr(response, 'data') and response.data:
             results = []
             for row in response.data:
+                # Extract file info from joined table
+                file_info = row.get('file_upload')
+                if isinstance(file_info, list) and len(file_info) > 0:
+                    file_info = file_info[0]
+                elif not isinstance(file_info, dict):
+                    file_info = {}
+                
+                file_name_result = file_info.get('file_name', file_name)
+                file_path = file_info.get('file_path')
+                
                 # Use 0.0 as dummy similarity since we're returning all chunks
                 results.append((
                     row['chunk_text'],
                     0.0,  # Placeholder - all chunks from file
-                    row['file_name'],
-                    row.get('file_path')
+                    file_name_result,
+                    file_path
                 ))
             
             print(f"✅ Retrieved {len(results)} chunks from file '{file_name}' as fallback")
@@ -312,23 +327,14 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
     try:
         # Always pass all parameters to avoid PostgreSQL function overloading ambiguity
         # Use None for optional parameters that aren't needed
-        # Link selected_file_ids to extracted document name
-        selected_file_ids = None
-        if file_name and supabase_client:
-            # Query file_upload table to get file_id(s) for the extracted file_name
-            file_id_query = supabase_client.table('file_upload').select('id').eq('file_name', file_name)
-            if workspace_id:
-                file_id_query = file_id_query.eq('workspace_id', workspace_id)
-            file_id_result = file_id_query.execute()
-            if hasattr(file_id_result, 'data') and file_id_result.data:
-                selected_file_ids = [row['id'] for row in file_id_result.data]
-            
-            rpc_params = {
+        # Directly use selected_file_ids if provided
+        
+        rpc_params = {
             'query_embedding': query_embedding_list,
             'match_threshold': min_similarity,
             'match_count': top_k,
             'file_filter': file_name,  # None if not filtering, string if filtering by filename
-            'file_ids': selected_file_ids  # Pass file_ids for more precise filtering
+            'file_ids': selected_file_ids  # Pass file_ids directly for precise filtering
         }
         
         response = supabase_client.rpc('search_embeddings', rpc_params).execute()
@@ -349,17 +355,17 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
             return results
         else:
             # FALLBACK: If file_name exists and no results from semantic search, fetch all embeddings from that file
-            if file_name:
+            if file_name or selected_file_ids:
                 print(f"📋 Semantic search returned no results for '{file_name}' - falling back to all embeddings")
-                return get_all_file_embeddings(file_name, workspace_id)
+                return get_all_file_embeddings(file_name, workspace_id, selected_file_ids)
             print("⚠️  RPC returned no data - may not be configured correctly")
 
     except Exception as rpc_error:
         print(f"⚠️  RPC call failed: {rpc_error}")
         # FALLBACK: If file_name exists and RPC fails, try to fetch all embeddings
-        if file_name:
+        if file_name or selected_file_ids:
             print(f"🔄 RPC failed - attempting fallback to all embeddings from '{file_name}'")
-            return get_all_file_embeddings(file_name, workspace_id)
+            return get_all_file_embeddings(file_name, workspace_id, selected_file_ids)
         
 
 
@@ -391,7 +397,7 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50):
     return chunks
 
 
-def query_csv_with_context(query: str, file_name: str, file_path: str = None, df: pd.DataFrame = None, conversation_history: list = None, **filters):
+def query_csv_with_context(query: str, file_name: str, file_path: str = None, df: pd.DataFrame = None, conversation_history: list = None, selected_file_ids: list = None, **filters):
     """
     Query CSV data using sophisticated programmatic reasoning pipeline:
     
@@ -410,6 +416,7 @@ def query_csv_with_context(query: str, file_name: str, file_path: str = None, df
         file_path: Path to the CSV file (local or Supabase storage reference)
         df: DataFrame to query (if None, will load from file_path)
         conversation_history: List of previous messages for conversation context
+        selected_file_ids: List of selected file IDs for context (optional)
         **filters: Optional keyword arguments for column-based filtering
     
     Returns:
@@ -430,7 +437,8 @@ def query_csv_with_context(query: str, file_name: str, file_path: str = None, df
             query=query,
             file_path=path_to_load,
             is_excel=False,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            selected_file_ids=selected_file_ids
         )
         
         return result
@@ -443,7 +451,7 @@ def query_csv_with_context(query: str, file_name: str, file_path: str = None, df
 
 
 
-def query_excel_with_context(query: str, file_name: str, file_path: str = None, df: pd.DataFrame = None, conversation_history: list = None, **filters):
+def query_excel_with_context(query: str, file_name: str, file_path: str = None, df: pd.DataFrame = None, conversation_history: list = None, selected_file_ids: list = None, **filters):
     """
     Query Excel data using sophisticated programmatic reasoning pipeline:
     
@@ -462,6 +470,7 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
         file_path: Path to the Excel file (local or Supabase storage reference)
         df: DataFrame to query (if None, will load from file_path)
         conversation_history: List of previous messages for conversation context
+        selected_file_ids: List of selected file IDs for context (optional)
         **filters: Optional keyword arguments for column-based filtering
     
     Returns:
@@ -482,7 +491,8 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
             query=query,
             file_path=path_to_load,
             is_excel=True,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            selected_file_ids=selected_file_ids
         )
         
         return result
@@ -603,7 +613,7 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
     if best_score < 0.25:
         if file_name:
             print(f"⚠️  Low similarity score ({best_score:.2f}) detected - triggering fallback to all embeddings from '{file_name}'")
-            fallback_results = get_all_file_embeddings(file_name, workspace_id)
+            fallback_results = get_all_file_embeddings(file_name, workspace_id, selected_file_ids)
             if fallback_results:
                 print(f"📚 Using comprehensive context from {len(fallback_results)} chunks from '{file_name}'")
                 semantic_results = fallback_results

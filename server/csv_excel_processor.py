@@ -81,7 +81,7 @@ class EntityBinder:
         return [col for col, _ in entity_columns]
     
     @staticmethod
-    def detect_entity_scope(query: str, df: pd.DataFrame) -> Optional[Dict[str, str]]:
+    def detect_entity_scope(query: str, df: pd.DataFrame):
         """
         Detect if the query references a specific entity in the DataFrame.
         
@@ -130,7 +130,7 @@ class EntityBinder:
         return None
     
     @staticmethod
-    def _is_stop_word(value: str) -> bool:
+    def _is_stop_word(value: str):
         """Filter out common stop words that shouldn't match as entities"""
         stop_words = {
             'nan', 'null', 'none', 'true', 'false', 'yes', 'no',
@@ -140,7 +140,7 @@ class EntityBinder:
         return value in stop_words
     
     @staticmethod
-    def _calculate_entity_confidence(value: str, query: str) -> float:
+    def _calculate_entity_confidence(value: str, query: str):
         """
         Calculate confidence that the value is a genuine entity reference.
         
@@ -351,7 +351,7 @@ class IntentDetector:
         return None
     
     @staticmethod
-    def _extract_limit(query: str) -> int:
+    def _extract_limit(query: str):
         """Extract a limit from queries like 'top 5' or 'bottom 10'"""
         pattern = r'(top|bottom)\s+(\d+)'
         matches = re.findall(pattern, query.lower())
@@ -400,7 +400,7 @@ class CodeGenerator:
         return "\n".join(code_lines)
     
     @staticmethod
-    def _generate_filter_code(filter_op: Dict) -> str:
+    def _generate_filter_code(filter_op: Dict):
         """Generate filter code"""
         col = filter_op['column']
         op = filter_op['operator']
@@ -421,7 +421,7 @@ class CodeGenerator:
         return ""
     
     @staticmethod
-    def _generate_groupby_code(intent: Dict) -> str:
+    def _generate_groupby_code(intent: Dict):
         """Generate GROUP BY code with aggregations"""
         groupby_cols = intent['groupby']
         agg_dict = {}
@@ -436,7 +436,7 @@ class CodeGenerator:
             agg_dict[col].append(agg_type)
         
         # Build aggregation code
-        code = f"result = result.groupby({groupby_cols}).agg({{"
+        code = "result = result.groupby(" + str(groupby_cols) + ").agg({"
         
         agg_specs = []
         for col, funcs in agg_dict.items():
@@ -449,7 +449,7 @@ class CodeGenerator:
         return code
     
     @staticmethod
-    def _generate_simple_agg_code(intent: Dict) -> str:
+    def _generate_simple_agg_code(intent: Dict):
         """Generate simple aggregation without grouping"""
         agg_dict = {}
         
@@ -486,7 +486,7 @@ class CodeGenerator:
         return code
     
     @staticmethod
-    def _generate_sort_code(intent: Dict) -> str:
+    def _generate_sort_code(intent: Dict):
         """Generate sorting code"""
         if not intent['orderby'] or not intent['target_columns']:
             return ""
@@ -616,7 +616,7 @@ class SafeCodeExecutor:
             return None, f"Execution error: {str(e)}"
 
 
-def process_csv_excel_query(query: str, file_path: str, is_excel: bool = False, conversation_history: List = None):
+def process_csv_excel_query(query: str, file_path: str = None, is_excel: bool = False, conversation_history: List = None, selected_file_ids: List = None):
     """
     Main entry point for the sophisticated CSV/Excel processing pipeline.
     
@@ -630,14 +630,55 @@ def process_csv_excel_query(query: str, file_path: str, is_excel: bool = False, 
     
     Args:
         query: User's natural language question
-        file_path: Path to CSV or Excel file (can be local path or Supabase storage path)
+        file_path: Path to CSV or Excel file (can be local path or Supabase storage path) - optional if selected_file_ids provided
         is_excel: Whether file is Excel (default: False for CSV)
         conversation_history: Previous messages for context
+        selected_file_ids: List of selected file IDs to load from Supabase
     
     Returns:
         Natural language answer with actual computed results
     """
     try:
+        # Step 0️⃣: Resolve file_path from selected_file_ids if provided
+        if selected_file_ids and not file_path:
+            print(f"📋 Resolving file path from selected file IDs: {selected_file_ids}")
+            try:
+                from supabase import create_client
+                import os
+                
+                SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
+                SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+                
+                if not SUPABASE_URL or not SUPABASE_KEY:
+                    return "Error: Supabase credentials not configured"
+                
+                supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                
+                # Query file_upload table for files matching selected_file_ids
+                file_records = supabase.table('file_upload').select('id, file_path, file_name').in_(
+                    'id', selected_file_ids
+                ).execute()
+                
+                if not file_records.data:
+                    return f"❌ No files found for selected IDs: {selected_file_ids}"
+                
+                if len(file_records.data) > 1:
+                    return f"⚠️ Multiple files selected ({len(file_records.data)}). Please select only one file for query."
+                
+                # Get the first (and only) matching file
+                file_record = file_records.data[0]
+                file_path = file_record['file_path']
+                file_name = file_record['file_name']
+                
+                print(f"✅ Resolved file: {file_name} -> {file_path}")
+                print(f"📊 File ID: {file_record['id']}")
+                
+            except Exception as e:
+                return f"Error resolving file from Supabase: {str(e)}"
+        
+        if not file_path:
+            return "Error: No file path provided and no selected_file_ids to resolve"
+        
         # Step 1️⃣: Parse file into DataFrame
         # Check if file_path is a Supabase storage path (contains /)
         if '/' in file_path and not file_path.startswith('/'):
@@ -725,7 +766,7 @@ def process_csv_excel_query(query: str, file_path: str, is_excel: bool = False, 
         
         if error:
             # If code generation fails, fall back to simple LLM approach
-            return _fallback_llm_query(query, df, file_path)
+            return _fallback_llm_query(query, df, file_path, selected_file_ids)
         
         # 🛡️ SAFETY CHECK: Verify entity scope is maintained
         if entity and not SafeCodeExecutor.validate_entity_scope(result_df, entity):
@@ -759,15 +800,104 @@ def _extract_entity_candidates(query: str, df: pd.DataFrame) -> Optional[str]:
     return None
 
 
-def _fallback_llm_query(query: str, df: pd.DataFrame, file_path: str) -> str:
+def _fallback_llm_query(query: str, df: pd.DataFrame = None, file_path: str = None, selected_file_ids: List = None) -> str:
     """Fallback to LLM approach if programmatic method fails
     
     Loads the CSV/Excel data and passes an enhanced query to the LLM
     with the actual data sample and column information.
-    """
-    file_name = file_path.split('/')[-1] if '/' in file_path else file_path.split('\\')[-1]
     
-    # Remove filename references from query for cleaner LLM prompt
+    Args:
+        query: User's natural language question
+        df: Input DataFrame (optional if selected_file_ids provided)
+        file_path: Path to the CSV or Excel file (optional if selected_file_ids provided)
+        selected_file_ids: List of selected file IDs to load from Supabase
+    """
+    # Step 1: Resolve file and load DataFrame if needed
+    if df is None:
+        print(f"📋 DataFrame not provided, resolving from file_path or selected_file_ids")
+        
+        # If only selected_file_ids provided, resolve file_path from Supabase
+        if selected_file_ids and not file_path:
+            print(f"📋 Resolving file path from selected file IDs: {selected_file_ids}")
+            try:
+                from supabase import create_client
+                import os
+                
+                SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
+                SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+                
+                if not SUPABASE_URL or not SUPABASE_KEY:
+                    return "Error: Supabase credentials not configured"
+                
+                supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                
+                # Query file_upload table for files matching selected_file_ids
+                file_records = supabase.table('file_upload').select('id, file_path, file_name').in_(
+                    'id', selected_file_ids
+                ).execute()
+                
+                if not file_records.data:
+                    return f"❌ No files found for selected IDs: {selected_file_ids}"
+                
+                if len(file_records.data) > 1:
+                    return f"⚠️ Multiple files selected ({len(file_records.data)}). Please select only one file for query."
+                
+                # Get the first (and only) matching file
+                file_record = file_records.data[0]
+                file_path = file_record['file_path']
+                file_name = file_record['file_name']
+                
+                print(f"✅ Resolved file: {file_name} -> {file_path}")
+                print(f"📊 File ID: {file_record['id']}")
+                
+            except Exception as e:
+                return f"Error resolving file from Supabase: {str(e)}"
+        
+        if not file_path:
+            return "Error: No DataFrame provided and no file_path or selected_file_ids to resolve"
+        
+        # Load DataFrame from file_path
+        try:
+            print(f"📥 Loading file: {file_path}")
+            if '/' in file_path and not file_path.startswith('/'):
+                # Supabase storage path
+                from supabase import create_client
+                import os
+                
+                SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
+                SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+                
+                if not SUPABASE_URL or not SUPABASE_KEY:
+                    return "Error: Supabase credentials not configured"
+                
+                supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                file_content = supabase.storage.from_('vault_files').download(file_path)
+                
+                is_excel = file_path.lower().endswith(('.xlsx', '.xls'))
+                import io
+                if is_excel:
+                    df = pd.read_excel(io.BytesIO(file_content), sheet_name=0)
+                else:
+                    df = pd.read_csv(io.BytesIO(file_content))
+            else:
+                # Local file path
+                is_excel = file_path.lower().endswith(('.xlsx', '.xls'))
+                if is_excel:
+                    df = pd.read_excel(file_path, sheet_name=0)
+                else:
+                    df = pd.read_csv(file_path)
+            
+            print(f"✅ File loaded successfully")
+        except Exception as e:
+            return f"Error loading file: {str(e)}"
+    
+    # Step 2: Get file name
+    if file_path:
+        file_name = file_path.split('/')[-1] if '/' in file_path else file_path.split('\\')[-1]
+    else:
+        file_name = "uploaded_file"
+    
+    # Step 3: Remove filename references from query for cleaner LLM prompt
     cleaned_query = query
     try:
         from server.query_handler import extract_document_name
@@ -775,10 +905,10 @@ def _fallback_llm_query(query: str, df: pd.DataFrame, file_path: str) -> str:
     except Exception:
         pass  # Use original query if extraction fails
     
-    # Get data sample (limit to first 100 rows for reasonable context)
+    # Step 4: Get data sample (limit to first 100 rows for reasonable context)
     data_sample = df.head(100).to_string()
     
-    # Build enhanced prompt with actual data
+    # Step 5: Build enhanced prompt with actual data
     prompt = f"""Answer this question based on the actual data provided:
 
 Question: {cleaned_query}
@@ -792,6 +922,7 @@ Data:
 
 Provide a clear, specific answer using the actual data shown. Include relevant numbers and insights from the data."""
     
+    # Step 6: Query LLM with the prompt
     try:
         from server.query_handler import query_model
         return query_model(prompt)
