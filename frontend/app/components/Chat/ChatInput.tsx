@@ -7,16 +7,19 @@ import type { File } from '@/app/types'
 
 interface ChatInputProps {
   onSendMessage: (message: string, selectedFileIds?: string[]) => void
+  onCancel?: () => void
   disabled?: boolean
+  isStreaming?: boolean
   hasMessages?: boolean
   workspaceName?: string
   workspaceId?: string
 }
 
-export default function ChatInput({ onSendMessage, disabled = false, workspaceName, workspaceId }: ChatInputProps) {
+export default function ChatInput({ onSendMessage, disabled = false, workspaceName, workspaceId, onCancel, isStreaming = false }: ChatInputProps) {
   const router = useRouter()
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [cancelDisabled, setCancelDisabled] = useState(false)
 
   const referenceFileInputRef = useRef<HTMLInputElement>(null)
   const [referenceUploading, setReferenceUploading] = useState(false)
@@ -35,12 +38,22 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (input.trim() && !disabled) {
+    if (input.trim() && !disabled && !isStreaming) {
       onSendMessage(input.trim(), selectedFileIds.length > 0 ? selectedFileIds : undefined)
       setInput('')
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
+    }
+  }
+
+  const handleCancel = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (isStreaming && !cancelDisabled) {
+      setCancelDisabled(true)
+      onCancel?.()
+      // Re-enable cancel button after a short delay to prevent accidental double-clicks
+      setTimeout(() => setCancelDisabled(false), 500)
     }
   }
 
@@ -340,25 +353,44 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
-            disabled={disabled}
+            disabled={disabled || isStreaming}
             rows={1}
             className="flex-1 bg-transparent placeholder-gray-400 resize-none focus:outline-none max-h-32 overflow-y-auto text-sm"
             style={{ color: '#060606', minHeight: '24px' }}
           />
 
-          {/* Send Arrow Icon - Right */}
-          <button
-            type="submit"
-            onClick={(e) => e.stopPropagation()}
-            disabled={disabled || !input.trim()}
-            className="hover:text-gray-800 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors ml-4 flex-shrink-0"
-            style={{ color: !disabled && input.trim() ? '#060606' : undefined }}
-            aria-label="Send message"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-            </svg>
-          </button>
+          {/* Send/Cancel Button - Right */}
+          {isStreaming ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleCancel(e)
+              }}
+              disabled={cancelDisabled}
+              className="hover:text-red-600 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors ml-4 flex-shrink-0"
+              style={{ color: cancelDisabled ? undefined : '#dc2626' }}
+              aria-label="Cancel streaming"
+              title="Cancel response generation"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 4h12v12H6z" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="submit"
+              onClick={(e) => e.stopPropagation()}
+              disabled={disabled || !input.trim()}
+              className="hover:text-gray-800 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors ml-4 flex-shrink-0"
+              style={{ color: !disabled && input.trim() ? '#060606' : undefined }}
+              aria-label="Send message"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+              </svg>
+            </button>
+          )}
           </div>
         </motion.form>
       </div>
