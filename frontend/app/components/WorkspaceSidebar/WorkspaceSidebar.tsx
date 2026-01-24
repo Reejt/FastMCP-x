@@ -26,6 +26,7 @@ interface WorkspaceSidebarProps {
   onNewChat?: () => void
   onToggleSidebar?: (isCollapsed: boolean) => void
   onSessionRename?: (sessionId: string, newTitle: string) => void
+  onSessionDelete?: (sessionId: string) => void
 }
 
 const MIN_WIDTH = 200
@@ -39,7 +40,8 @@ export default function WorkspaceSidebar({
   onChatSelect,
   onNewChat,
   onToggleSidebar,
-  onSessionRename
+  onSessionRename,
+  onSessionDelete
 }: WorkspaceSidebarProps) {
   const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -54,6 +56,9 @@ export default function WorkspaceSidebar({
   const [renameModalSessionId, setRenameModalSessionId] = useState<string | null>(null)
   const [renameFormValue, setRenameFormValue] = useState('')
   const [isRenamingSession, setIsRenamingSession] = useState(false)
+  const [deleteConfirmSessionId, setDeleteConfirmSessionId] = useState<string | null>(null)
+  const [deleteConfirmTitle, setDeleteConfirmTitle] = useState('')
+  const [isDeletingSession, setIsDeletingSession] = useState(false)
 
   // Light theme colors
   const theme = {
@@ -416,6 +421,46 @@ export default function WorkspaceSidebar({
     }
   }
 
+  const handleOpenDeleteConfirm = (sessionId: string, sessionTitle: string) => {
+    setDeleteConfirmSessionId(sessionId)
+    setDeleteConfirmTitle(sessionTitle)
+    setContextMenuSessionId(null)
+  }
+
+  const handleCloseDeleteConfirm = () => {
+    setDeleteConfirmSessionId(null)
+    setDeleteConfirmTitle('')
+    setIsDeletingSession(false)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmSessionId) return
+
+    try {
+      setIsDeletingSession(true)
+
+      const response = await fetch(`/api/chats/session?sessionId=${deleteConfirmSessionId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      if (response.ok) {
+        // Notify parent component immediately (instant UI update)
+        const deletedSessionId = deleteConfirmSessionId
+        if (onSessionDelete) {
+          onSessionDelete(deletedSessionId)
+        }
+        
+        // Close modal and reset state
+        handleCloseDeleteConfirm()
+      }
+    } catch (error) {
+      console.error('Error deleting session:', error)
+    } finally {
+      setIsDeletingSession(false)
+    }
+  }
+
   if (!workspace) {
     return null
   }
@@ -505,6 +550,84 @@ export default function WorkspaceSidebar({
           </motion.div>
         )}
       </AnimatePresence>
+
+    {/* Delete Session Confirmation Modal */}
+    <AnimatePresence>
+      {deleteConfirmSessionId && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={handleCloseDeleteConfirm}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="w-full max-w-md mx-4 p-6 rounded-lg shadow-xl"
+            style={{ backgroundColor: theme.bg }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold" style={{ color: theme.text }}>
+                Delete Chat Session
+              </h3>
+              <button
+                onClick={handleCloseDeleteConfirm}
+                className="p-2 rounded transition-colors hover:opacity-70"
+                style={{ color: theme.textSecondary }}
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-sm mb-3" style={{ color: theme.text }}>
+                Are you sure you want to delete this chat session?
+              </p>
+              <div className="p-3 rounded-lg" style={{ backgroundColor: theme.cardBg }}>
+                <p className="text-sm font-medium truncate" style={{ color: theme.text }}>
+                  {deleteConfirmTitle || 'New Chat'}
+                </p>
+              </div>
+              <p className="text-xs mt-3" style={{ color: theme.textMuted }}>
+                This action cannot be undone. All messages in this session will be permanently deleted.
+              </p>
+            </div>
+            
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleCloseDeleteConfirm}
+                disabled={isDeletingSession}
+                className="px-5 py-2.5 rounded-lg font-medium transition-colors"
+                style={{ 
+                  backgroundColor: theme.hoverBg,
+                  color: theme.text
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isDeletingSession}
+                className="px-5 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ 
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff'
+                }}
+              >
+                {isDeletingSession ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
 
     {/* Rename Session Modal */}
     <AnimatePresence>
@@ -845,6 +968,25 @@ export default function WorkspaceSidebar({
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                         </svg>
                                         Rename
+                                      </button>
+                                      <div className="border-t" style={{ borderColor: theme.border }} />
+                                      <button
+                                        onClick={() => handleOpenDeleteConfirm(session.id, session.title || 'New Chat')}
+                                        className="w-full text-left px-3 py-2 text-sm rounded-lg transition-colors flex items-center gap-2"
+                                        style={{
+                                          color: '#ef4444',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor = theme.hoverBg
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor = 'transparent'
+                                        }}
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                        Delete
                                       </button>
                                     </motion.div>
                                   )}
