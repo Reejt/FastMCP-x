@@ -208,14 +208,15 @@ def _fuzzy_match_filename(potential: str, available_files: list, threshold: floa
     return best_match if best_ratio >= threshold else None
 
 
-def get_all_file_embeddings(file_name: str, workspace_id: str = None, selected_file_ids: list = None):
+def get_all_file_embeddings(file_name: str = None, workspace_id: str = None, selected_file_ids: list = None):
     """
-    Retrieve ALL embeddings for a specific file (fallback when similarity is too low)
+    Retrieve ALL embeddings for specific file(s) (fallback when similarity is too low)
+    Handles both single file (by name) and multiple files (by IDs)
     
     Args:
-        file_name: The name of the file to fetch all embeddings for
+        file_name: The name of the file to fetch all embeddings for (optional, used if selected_file_ids not provided)
         workspace_id: Optional workspace filter
-        selected_file_ids: Optional list of file IDs to filter search results
+        selected_file_ids: Optional list of file IDs to filter search results (takes precedence over file_name)
     
     Returns:
         List of (chunk_text, dummy_similarity, file_name, file_path) tuples
@@ -230,9 +231,16 @@ def get_all_file_embeddings(file_name: str, workspace_id: str = None, selected_f
             'chunk_text, chunk_index, file_id, file_upload(file_name, file_path, workspace_id)'
         )
         
-        # Filter by file_id if selected_file_ids provided
+        # Filter by file_ids if selected_file_ids provided (handles multiple files)
         if selected_file_ids:
             query_builder = query_builder.in_('file_id', selected_file_ids)
+            filter_desc = f"{len(selected_file_ids)} selected files"
+        elif file_name:
+            # Filter by file_name only if no file_ids provided
+            query_builder = query_builder.eq('file_upload.file_name', file_name)
+            filter_desc = f"file '{file_name}'"
+        else:
+            return []
         
         # Filter by workspace if provided
         if workspace_id:
@@ -256,15 +264,15 @@ def get_all_file_embeddings(file_name: str, workspace_id: str = None, selected_f
                 # Use 0.0 as dummy similarity since we're returning all chunks
                 results.append((
                     row['chunk_text'],
-                    0.0,  # Placeholder - all chunks from file
+                    0.0,  # Placeholder - all chunks from file(s)
                     file_name_result,
                     file_path
                 ))
             
-            print(f"✅ Retrieved {len(results)} chunks from file '{file_name}' as fallback")
+            print(f"✅ Retrieved {len(results)} chunks from {filter_desc} as fallback")
             return results
         else:
-            print(f"⚠️  No embeddings found for file '{file_name}'")
+            print(f"⚠️  No embeddings found for {filter_desc}")
             return []
             
     except Exception as e:
@@ -354,18 +362,24 @@ def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float =
             print(f"✅ Found {result_count} similar chunks{doc_context} via pgvector RPC")
             return results
         else:
-            # FALLBACK: If file_name exists and no results from semantic search, fetch all embeddings from that file
-            if file_name or selected_file_ids:
+            # FALLBACK: If file(s) exist and no results from semantic search, fetch all embeddings from those files
+            if selected_file_ids:
+                print(f"📋 Semantic search returned no results for {len(selected_file_ids)} selected file(s) - falling back to all embeddings")
+                return get_all_file_embeddings(file_name=None, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
+            elif file_name:
                 print(f"📋 Semantic search returned no results for '{file_name}' - falling back to all embeddings")
-                return get_all_file_embeddings(file_name, workspace_id, selected_file_ids)
+                return get_all_file_embeddings(file_name=file_name, workspace_id=workspace_id, selected_file_ids=None)
             print("⚠️  RPC returned no data - may not be configured correctly")
 
     except Exception as rpc_error:
         print(f"⚠️  RPC call failed: {rpc_error}")
-        # FALLBACK: If file_name exists and RPC fails, try to fetch all embeddings
-        if file_name or selected_file_ids:
+        # FALLBACK: If file(s) exist and RPC fails, try to fetch all embeddings
+        if selected_file_ids:
+            print(f"🔄 RPC failed - attempting fallback to all embeddings from {len(selected_file_ids)} selected file(s)")
+            return get_all_file_embeddings(file_name=None, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
+        elif file_name:
             print(f"🔄 RPC failed - attempting fallback to all embeddings from '{file_name}'")
-            return get_all_file_embeddings(file_name, workspace_id, selected_file_ids)
+            return get_all_file_embeddings(file_name=file_name, workspace_id=workspace_id, selected_file_ids=None)
         
 
 
@@ -503,7 +517,7 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
         return query_model(error_msg, conversation_history=conversation_history)
 
 
-def query_model(query: str, model_name: str = 'llama3:8b', stream: bool = False, conversation_history: list = None):
+def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, conversation_history: list = None):
     """
     Query the Ollama model via HTTP API with optional conversation history
     
@@ -587,8 +601,9 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
     Text documents only - CSV/Excel files are handled separately via their dedicated functions
     
     FALLBACK MECHANISM:
-    - If file_name exists in results but all scores are low (< 0.25), includes ALL embeddings from that file
+    - If file(s) exist but all scores are low (< 0.25), includes ALL embeddings from those files
     - Ensures comprehensive context even when semantic matching yields weak similarity scores
+    - Handles both single and multiple selected files
     
     Args:
         query: The question to ask
@@ -604,25 +619,6 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
     
     if not semantic_results:
         return query_model(query, conversation_history=conversation_history, stream=stream)
-    
-    # Check if the best match has good similarity
-    best_score = semantic_results[0][1]
-    file_name = semantic_results[0][2] if len(semantic_results) > 0 else None
-    
-    # FALLBACK: If similarity is too low but file_name exists, include all embeddings from that file
-    if best_score < 0.25:
-        if file_name:
-            print(f"⚠️  Low similarity score ({best_score:.2f}) detected - triggering fallback to all embeddings from '{file_name}'")
-            fallback_results = get_all_file_embeddings(file_name, workspace_id, selected_file_ids)
-            if fallback_results:
-                print(f"📚 Using comprehensive context from {len(fallback_results)} chunks from '{file_name}'")
-                semantic_results = fallback_results
-            else:
-                # Fallback failed, proceed without context
-                return query_model(query, conversation_history=conversation_history, stream=stream)
-        else:
-            # No file_name available and low similarity, treat as general query
-            return query_model(query, conversation_history=conversation_history, stream=stream)
     
     # Build context from search results (max 2000 chars per chunk)
     context_parts = [
@@ -718,7 +714,7 @@ def answer_link_query(link, question, conversation_history: list = None):
         return f"Error: {str(e)}"
 
 
-def generate_chat_title(first_message: str, model_name: str = 'llama3:8b') -> str:
+def generate_chat_title(first_message: str, model_name: str = 'llama3.2:1b') -> str:
     """
     Generate a concise, descriptive title for a chat session based on the first message.
     

@@ -376,7 +376,8 @@ class CodeGenerator:
         Returns:
             Python code as a string (safe to execute)
         """
-        code_lines = ["import pandas as pd", "import numpy as np", "result = df.copy()"]
+        # NOTE: Don't include imports - pd and np are already in execution environment
+        code_lines = ["result = df.copy()"]
         
         # Step 1: Apply filters
         for filter_op in intent['filters']:
@@ -641,7 +642,7 @@ def process_csv_excel_query(query: str, file_path: str = None, is_excel: bool = 
     try:
         # Step 0️⃣: Resolve file_path from selected_file_ids if provided
         if selected_file_ids and not file_path:
-            print(f"📋 Resolving file path from selected file IDs: {selected_file_ids}")
+            print(f"📋 Resolving file paths from selected file IDs: {selected_file_ids}")
             try:
                 from supabase import create_client
                 import os
@@ -654,7 +655,7 @@ def process_csv_excel_query(query: str, file_path: str = None, is_excel: bool = 
                 
                 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
                 
-                # Query file_upload table for files matching selected_file_ids
+                # Query file_upload table for files matching selected_file_ids (handles multiple)
                 file_records = supabase.table('file_upload').select('id, file_path, file_name').in_(
                     'id', selected_file_ids
                 ).execute()
@@ -662,16 +663,93 @@ def process_csv_excel_query(query: str, file_path: str = None, is_excel: bool = 
                 if not file_records.data:
                     return f"❌ No files found for selected IDs: {selected_file_ids}"
                 
-                if len(file_records.data) > 1:
-                    return f"⚠️ Multiple files selected ({len(file_records.data)}). Please select only one file for query."
+                print(f"✅ Resolved {len(file_records.data)} file(s)")
                 
-                # Get the first (and only) matching file
-                file_record = file_records.data[0]
-                file_path = file_record['file_path']
-                file_name = file_record['file_name']
+                # Load and process each file separately, then combine results
+                all_results = []
+                for file_record in file_records.data:
+                    file_record_path = file_record['file_path']
+                    file_record_name = file_record['file_name']
+                    is_record_excel = file_record_path.lower().endswith(('.xlsx', '.xls'))
+                    
+                    print(f"📥 Processing file: {file_record_name}")
+                    
+                    try:
+                        # Load file from Supabase Storage
+                        file_content = supabase.storage.from_('vault_files').download(file_record_path)
+                        
+                        import io
+                        if is_record_excel:
+                            file_df = pd.read_excel(io.BytesIO(file_content), sheet_name=0)
+                        else:
+                            file_df = pd.read_csv(io.BytesIO(file_content))
+                        
+                        print(f"✅ Loaded: {file_record_name} ({len(file_df)} rows)")
+                        
+                        # Process this file individually
+                        entity = EntityBinder.detect_entity_scope(query, file_df)
+                        if entity:
+                            print(f"   ✅ Entity detected: {entity['column']} = {entity['value']}")
+                        
+                        intent = IntentDetector.detect_intent(query, file_df)
+                        
+                        if entity:
+                            entity_filter = {
+                                'column': entity['column'],
+                                'operator': 'equals',
+                                'value': entity['value']
+                            }
+                            intent['filters'].insert(0, entity_filter)
+                        
+                        code = CodeGenerator.generate_code(intent)
+                        result_df, error = SafeCodeExecutor.execute_code(code, file_df)
+                        
+                        if error:
+                            # Fallback to LLM approach for this file if code generation fails
+                            print(f"   ⚠️  Code execution failed, falling back to LLM: {error}")
+                            llm_result = _fallback_llm_query(query, file_df, file_record_path, None)
+                            all_results.append(f"\n📄 **{file_record_name}** (LLM analysis):\n{llm_result}")
+                        else:
+                            if result_df is not None and not result_df.empty:
+                                # Limit output to first 100 rows to avoid flooding logs with huge datasets
+                                result_sample = result_df.head(100).to_string()
+                                rows_info = f" (showing first 100 of {len(result_df)} rows)" if len(result_df) > 100 else f" ({len(result_df)} rows)"
+                                
+                                # Send result to LLM for natural language response
+                                try:
+                                    from server.query_handler import query_model
+                                    prompt = f"""Answer this question based on the computed data results:
+
+Question: {query}
+
+File: {file_record_name}{rows_info}
+Columns: {', '.join(result_df.columns.tolist())}
+
+Computed Results:
+{result_sample}
+
+Provide a clear, specific answer using the actual computed data shown. Include relevant numbers and insights."""
+                                    llm_response = query_model(prompt)
+                                    all_results.append(f"\n📄 **{file_record_name}**{rows_info}:\n{llm_response}")
+                                except ImportError:
+                                    # Fallback to raw data if query_model unavailable
+                                    all_results.append(f"\n📄 **{file_record_name}**{rows_info}:\n{result_sample}")
+                                
+                                print(f"   ✅ Processed successfully ({len(result_df)} rows)")
+                            else:
+                                all_results.append(f"\n📄 **{file_record_name}**: No results found")
+                        
+                    except Exception as e:
+                        return f"Error processing file {file_record_name}: {str(e)}"
                 
-                print(f"✅ Resolved file: {file_name} -> {file_path}")
-                print(f"📊 File ID: {file_record['id']}")
+                # Combine all results as strings (process files separately, not concatenated)
+                if len(all_results) > 1:
+                    print(f"📊 Combining results from {len(all_results)} files...")
+                    return "\n".join(all_results)
+                elif len(all_results) == 1:
+                    return all_results[0]
+                else:
+                    return "No results from any files"
                 
             except Exception as e:
                 return f"Error resolving file from Supabase: {str(e)}"
@@ -800,25 +878,28 @@ def _extract_entity_candidates(query: str, df: pd.DataFrame) -> Optional[str]:
     return None
 
 
-def _fallback_llm_query(query: str, df: pd.DataFrame = None, file_path: str = None, selected_file_ids: List = None) -> str:
+def _fallback_llm_query(query: str, df: pd.DataFrame = None, file_path: str = None, selected_file_ids: List = None):
     """Fallback to LLM approach if programmatic method fails
     
     Loads the CSV/Excel data and passes an enhanced query to the LLM
     with the actual data sample and column information.
+    Handles both single and multiple files.
     
     Args:
         query: User's natural language question
         df: Input DataFrame (optional if selected_file_ids provided)
         file_path: Path to the CSV or Excel file (optional if selected_file_ids provided)
-        selected_file_ids: List of selected file IDs to load from Supabase
+        selected_file_ids: List of selected file IDs to load from Supabase (handles multiple files)
     """
-    # Step 1: Resolve file and load DataFrame if needed
+    # Step 1: Resolve file(s) and load DataFrame if needed
+    file_names = []
+    
     if df is None:
         print(f"📋 DataFrame not provided, resolving from file_path or selected_file_ids")
         
-        # If only selected_file_ids provided, resolve file_path from Supabase
+        # If only selected_file_ids provided, resolve file_paths from Supabase
         if selected_file_ids and not file_path:
-            print(f"📋 Resolving file path from selected file IDs: {selected_file_ids}")
+            print(f"📋 Resolving file paths from selected file IDs: {selected_file_ids}")
             try:
                 from supabase import create_client
                 import os
@@ -831,7 +912,7 @@ def _fallback_llm_query(query: str, df: pd.DataFrame = None, file_path: str = No
                 
                 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
                 
-                # Query file_upload table for files matching selected_file_ids
+                # Query file_upload table for files matching selected_file_ids (handles multiple)
                 file_records = supabase.table('file_upload').select('id, file_path, file_name').in_(
                     'id', selected_file_ids
                 ).execute()
@@ -839,81 +920,150 @@ def _fallback_llm_query(query: str, df: pd.DataFrame = None, file_path: str = No
                 if not file_records.data:
                     return f"❌ No files found for selected IDs: {selected_file_ids}"
                 
-                if len(file_records.data) > 1:
-                    return f"⚠️ Multiple files selected ({len(file_records.data)}). Please select only one file for query."
+                print(f"✅ Resolved {len(file_records.data)} file(s)")
                 
-                # Get the first (and only) matching file
-                file_record = file_records.data[0]
-                file_path = file_record['file_path']
-                file_name = file_record['file_name']
+                # Load all selected files and combine DataFrames
+                all_dfs = []
+                for file_record in file_records.data:
+                    file_record_path = file_record['file_path']
+                    file_record_name = file_record['file_name']
+                    
+                    print(f"📥 Loading file: {file_record_name} -> {file_record_path}")
+                    
+                    try:
+                        # Load file from Supabase Storage
+                        file_content = supabase.storage.from_('vault_files').download(file_record_path)
+                        
+                        is_excel = file_record_path.lower().endswith(('.xlsx', '.xls'))
+                        import io
+                        if is_excel:
+                            file_df = pd.read_excel(io.BytesIO(file_content), sheet_name=0)
+                        else:
+                            file_df = pd.read_csv(io.BytesIO(file_content))
+                        
+                        all_dfs.append(file_df)
+                        file_names.append(file_record_name)
+                        print(f"✅ Loaded: {file_record_name} ({len(file_df)} rows)")
+                        
+                    except Exception as e:
+                        return f"Error loading file {file_record_name}: {str(e)}"
                 
-                print(f"✅ Resolved file: {file_name} -> {file_path}")
-                print(f"📊 File ID: {file_record['id']}")
+                # Process files separately, not concatenated
+                if len(all_dfs) > 1:
+                    print(f"� Combining {len(all_dfs)} files...")
+                    # Build combined context from all files for LLM
+                    print(f"📊 Processing {len(all_dfs)} files separately for LLM query...")
+                    all_files_context = []
+                    for i, file_df in enumerate(all_dfs):
+                        file_name = file_names[i] if i < len(file_names) else f"file_{i+1}"
+                        data_sample = file_df.head(50).to_string()
+                        file_context = f"\n📄 **{file_name}** ({len(file_df)} rows)\nColumns: {', '.join(file_df.columns.tolist())}\nData:\n{data_sample}"
+                        all_files_context.append(file_context)
+                    
+                    cleaned_query = query
+                    try:
+                        from server.query_handler import extract_document_name
+                        cleaned_query, _ = extract_document_name(query, None)
+                    except Exception:
+                        pass
+                    
+                    files_display = ", ".join(file_names)
+                    # ⚠️ NOTE: cleaned_query = query (no filename extraction needed for selected_file_ids)
+                    # Files were selected via UI, not mentioned in query text
+                    prompt = f"""Answer this question based on the actual data from multiple files:
+
+Question: {query}
+
+Files: {files_display}
+{"".join(all_files_context)}
+
+Provide a clear answer analyzing data from ALL files shown."""
+                    
+                    try:
+                        from server.query_handler import query_model
+                        return query_model(prompt)
+                    except ImportError:
+                        return f"Unable to process query. Files: {files_display}"
+                else:
+                    # ===== CONDITION 2: Single file via selected_file_ids =====
+                    print(f"📄 Single file loaded via selected_file_ids, continuing with single-file processing...")
+                    df = all_dfs[0]
                 
             except Exception as e:
-                return f"Error resolving file from Supabase: {str(e)}"
+                return f"Error resolving files from Supabase: {str(e)}"
         
-        if not file_path:
-            return "Error: No DataFrame provided and no file_path or selected_file_ids to resolve"
-        
-        # Load DataFrame from file_path
-        try:
-            print(f"📥 Loading file: {file_path}")
-            if '/' in file_path and not file_path.startswith('/'):
-                # Supabase storage path
-                from supabase import create_client
-                import os
-                
-                SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
-                SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-                
-                if not SUPABASE_URL or not SUPABASE_KEY:
-                    return "Error: Supabase credentials not configured"
-                
-                supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-                file_content = supabase.storage.from_('vault_files').download(file_path)
-                
-                is_excel = file_path.lower().endswith(('.xlsx', '.xls'))
-                import io
-                if is_excel:
-                    df = pd.read_excel(io.BytesIO(file_content), sheet_name=0)
-                else:
-                    df = pd.read_csv(io.BytesIO(file_content))
-            else:
-                # Local file path
-                is_excel = file_path.lower().endswith(('.xlsx', '.xls'))
-                if is_excel:
-                    df = pd.read_excel(file_path, sheet_name=0)
-                else:
-                    df = pd.read_csv(file_path)
+        if df is None:
+            if not file_path:
+                return "Error: No DataFrame provided and no file_path or selected_file_ids to resolve"
             
-            print(f"✅ File loaded successfully")
-        except Exception as e:
-            return f"Error loading file: {str(e)}"
+            # ===== CONDITION 3: Single file via file_path =====
+            print(f"📥 Loading single file via file_path...")
+            try:
+                print(f"📥 Loading file: {file_path}")
+                if '/' in file_path and not file_path.startswith('/'):
+                    # Supabase storage path
+                    from supabase import create_client
+                    import os
+                    
+                    SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
+                    SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+                    
+                    if not SUPABASE_URL or not SUPABASE_KEY:
+                        return "Error: Supabase credentials not configured"
+                    
+                    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                    file_content = supabase.storage.from_('vault_files').download(file_path)
+                    
+                    is_excel = file_path.lower().endswith(('.xlsx', '.xls'))
+                    import io
+                    if is_excel:
+                        df = pd.read_excel(io.BytesIO(file_content), sheet_name=0)
+                    else:
+                        df = pd.read_csv(io.BytesIO(file_content))
+                else:
+                    # Local file path
+                    is_excel = file_path.lower().endswith(('.xlsx', '.xls'))
+                    if is_excel:
+                        df = pd.read_excel(file_path, sheet_name=0)
+                    else:
+                        df = pd.read_csv(file_path)
+                
+                print(f"✅ File loaded successfully")
+                file_names.append(file_path.split('/')[-1] if '/' in file_path else file_path.split('\\')[-1])
+            except Exception as e:
+                return f"Error loading file: {str(e)}"
+        else:
+            # ===== CONDITION 4: DataFrame passed directly =====
+            print(f"📋 DataFrame provided directly, using as-is...")
+            file_names.append("uploaded_file")
     
-    # Step 2: Get file name
-    if file_path:
-        file_name = file_path.split('/')[-1] if '/' in file_path else file_path.split('\\')[-1]
-    else:
-        file_name = "uploaded_file"
+    # Step 2: Get file names for display
+    if not file_names:
+        file_names = ["uploaded_file"]
+    
+    files_display = ", ".join(file_names) if len(file_names) > 1 else file_names[0]
     
     # Step 3: Remove filename references from query for cleaner LLM prompt
+    # ✅ Only extract document name if file_path was provided (user might have mentioned filename)
     cleaned_query = query
-    try:
-        from server.query_handler import extract_document_name
-        cleaned_query, _ = extract_document_name(query, None)
-    except Exception:
-        pass  # Use original query if extraction fails
+    if file_path:  # Only for CONDITION 3 where file_path is used
+        try:
+            from server.query_handler import extract_document_name
+            cleaned_query, _ = extract_document_name(query, None)
+        except Exception:
+            pass  # Use original query if extraction fails
     
     # Step 4: Get data sample (limit to first 100 rows for reasonable context)
     data_sample = df.head(100).to_string()
     
-    # Step 5: Build enhanced prompt with actual data
+    # Step 5: Build enhanced prompt with actual data (now supports multiple files)
+    file_info = f"Files: {files_display}" if len(file_names) > 1 else f"File: {files_display}"
+    
     prompt = f"""Answer this question based on the actual data provided:
 
 Question: {cleaned_query}
 
-File: {file_name}
+{file_info}
 Total Rows: {len(df)}
 Columns: {', '.join(df.columns.tolist())}
 
@@ -927,4 +1077,4 @@ Provide a clear, specific answer using the actual data shown. Include relevant n
         from server.query_handler import query_model
         return query_model(prompt)
     except ImportError:
-        return f"Unable to process query due to import error. File: {file_name}, Columns: {', '.join(df.columns.tolist())}"
+        return f"Unable to process query due to import error. Files: {files_display}, Columns: {', '.join(df.columns.tolist())}"

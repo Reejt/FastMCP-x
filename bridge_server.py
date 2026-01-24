@@ -204,22 +204,34 @@ async def query_endpoint(request: QueryRequest):
             
             async def file_event_generator():
                 try:
+                    # If selected_file_ids provided, don't pass file_path to enable multi-file handling
+                    use_file_path = None if request.selected_file_ids else file_info.get('file_path')
+                    
+                    # Only use actual file_name when it exists, otherwise pass empty string for multi-file
+                    use_file_name = file_info.get('file_name', '')
+                    
                     if file_info['file_type'] == 'csv':
-                        print(f"📄 Querying {source_label} CSV: {file_info['file_name']}")
+                        if request.selected_file_ids:
+                            print(f"📄 Querying CSV with {len(request.selected_file_ids)} selected files")
+                        else:
+                            print(f"📄 Querying CSV: {use_file_name}")
                         response = await mcp_query_csv_with_context(
                             query=request.query,
-                            file_name=file_info['file_name'],
-                            file_path=file_info['file_path'],
+                            file_name=use_file_name,
+                            file_path=use_file_path,
                             conversation_history=request.conversation_history,
                             workspace_id=request.workspace_id,
                             selected_file_ids=request.selected_file_ids
                         )
                     else:  # xlsx or xls
-                        print(f"📊 Querying {source_label} Excel: {file_info['file_name']}")
+                        if request.selected_file_ids:
+                            print(f"📊 Querying Excel with {len(request.selected_file_ids)} selected files")
+                        else:
+                            print(f"📊 Querying Excel: {use_file_name}")
                         response = await mcp_query_excel_with_context(
                             query=request.query,
-                            file_name=file_info['file_name'],
-                            file_path=file_info['file_path'],
+                            file_name=use_file_name,
+                            file_path=use_file_path,
                             conversation_history=request.conversation_history,
                             workspace_id=request.workspace_id,
                             selected_file_ids=request.selected_file_ids
@@ -227,10 +239,10 @@ async def query_endpoint(request: QueryRequest):
                     
                     yield f"data: {json.dumps({'chunk': response})}\n\n"
                     yield f"data: {json.dumps({'done': True})}\n\n"
-                    print(f"✅ {source_label} query completed")
+                    print(f"✅ Query completed")
                     
                 except Exception as e:
-                    print(f"❌ {source_label} query error: {str(e)}")
+                    print(f"❌ Query error: {str(e)}")
                     import traceback
                     traceback.print_exc()
                     yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -267,18 +279,28 @@ async def query_endpoint(request: QueryRequest):
                 ).eq('workspace_id', request.workspace_id).execute()
                 
                 if file_records.data:
-                    # Take the first selected file (primary focus)
-                    primary_file = file_records.data[0]
-                    selected_file_info = {
-                        'file_name': primary_file['file_name'],
-                        'file_path': primary_file['file_path'],
-                        'file_id': primary_file['id'],
-                        'file_type': get_file_type(primary_file['file_name'])
-                    }
+                    # Check if ANY selected files are CSV/Excel types
+                    csv_excel_files = [f for f in file_records.data if get_file_type(f['file_name']) in ['csv', 'xlsx', 'xls']]
                     
-                    print(f"✅ Selected file loaded: {selected_file_info['file_name']} (ID: {selected_file_info['file_id']})")
-                    if len(file_records.data) > 1:
-                        print(f"   Note: {len(file_records.data)} files selected, using primary file")
+                    if csv_excel_files:
+                        # Found CSV/Excel files - determine routing based on all files
+                        file_types_in_selection = set(get_file_type(f['file_name']) for f in csv_excel_files)
+                        has_mixed = len(file_types_in_selection) > 1
+                        
+                        # Route to CSV handler if ANY file is CSV, otherwise use Excel
+                        route_type = 'csv' if any(get_file_type(f['file_name']) == 'csv' for f in csv_excel_files) else 'xlsx'
+                        
+                        selected_file_info = {
+                            'file_type': route_type,
+                            'has_mixed': has_mixed
+                        }
+                        
+                        print(f"✅ Found {len(csv_excel_files)} CSV/Excel file(s) in selection")
+                        print(f"   File types: {file_types_in_selection}, Mixed: {has_mixed}")
+                        print(f"   Will process ALL {len(request.selected_file_ids)} selected files combined")
+                    else:
+                        # No CSV/Excel files in selection, will fall through to query detection
+                        print(f"⚠️  No CSV/Excel files in selection")
                         
             except Exception as db_error:
                 print(f"⚠️  Failed to load selected files: {str(db_error)}")
