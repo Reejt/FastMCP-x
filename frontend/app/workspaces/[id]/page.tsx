@@ -282,6 +282,27 @@ export default function WorkspacePage() {
     }))
   }
 
+  const handleSessionDelete = (sessionId: string) => {
+    // Remove deleted session from workspaceChatSessions immediately
+    setWorkspaceChatSessions(prev => 
+      prev.filter(session => session.id !== sessionId)
+    )
+    
+    // Remove from chatSessions record
+    setChatSessions(prev => {
+      const updated = { ...prev }
+      delete updated[sessionId]
+      return updated
+    })
+    
+    // Clear messages and chat state if deleted session was active
+    if (currentChatId === sessionId) {
+      setMessages([])
+      setCurrentChatId('')
+      setCurrentSessionId('')
+    }
+  }
+
   const handleExpandWorkspaceSidebar = () => {
     setIsWorkspaceSidebarCollapsed(false)
     localStorage.setItem('workspace-sidebar-collapsed', 'false')
@@ -694,6 +715,7 @@ export default function WorkspacePage() {
         onNewChat={handleNewChat}
         onToggleSidebar={handleWorkspaceSidebarToggle}
         onSessionRename={handleSessionRename}
+        onSessionDelete={handleSessionDelete}
       />
 
       {/* Main Content Area - Workspace Introduction Page takes full remaining width */}

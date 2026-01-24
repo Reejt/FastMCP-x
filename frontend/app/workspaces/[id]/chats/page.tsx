@@ -45,7 +45,7 @@ export default function WorkspaceChatPage() {
   const getCurrentChatLabel = () => {
     if (!currentChatId) return undefined
     const session = workspaceChatSessions.find(s => s.id === currentChatId)
-    const label = session?.messages.find(m => m.role === 'user')?.content || session?.messages[0]?.content
+    const label = session?.messages?.find(m => m.role === 'user')?.content || session?.messages?.[0]?.content
     if (!label) return 'New Chat'
     const trimmed = label.slice(0, 30)
     return trimmed.length < label.length ? `${trimmed}...` : trimmed
@@ -122,18 +122,21 @@ export default function WorkspaceChatPage() {
           // Convert Chat records to ChatSession format
           const chatSession: ChatSession = {
             id: `${workspaceId}_main`,
-            workspaceId,
+            workspace_id: workspaceId,
+            user_id: user?.id || '',
+            title: 'Workspace Chat',
             messages: chats.map((chat: Chat) => ({
               id: chat.id,
               content: chat.message,
               role: chat.role,
               timestamp: new Date(chat.created_at)
             })),
-            createdAt: new Date(),
-            updatedAt: new Date()
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            deleted_at: null
           }
 
-          if (chatSession.messages.length > 0) {
+          if ((chatSession.messages?.length ?? 0) > 0) {
             setWorkspaceChatSessions([chatSession])
             setCurrentChatId(chatSession.id)
           }

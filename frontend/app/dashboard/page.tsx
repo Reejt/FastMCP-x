@@ -122,10 +122,13 @@ export default function DashboardPage() {
     // General chat is ephemeral - start with empty messages, no persistence
     const newSession: ChatSession = {
       id: 'general_chat',
-      workspaceId: undefined,
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date()
+      workspace_id: '',
+      user_id: '',
+      title: 'General Chat',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted_at: null,
+      messages: []
     }
     setMessages([])
     setCurrentChatId(newSession.id)
@@ -158,8 +161,8 @@ export default function DashboardPage() {
             setCurrentWorkspaceName(workspace.name)
             setCurrentWorkspace({
               ...workspace,
-              createdAt: new Date(workspace.createdAt),
-              updatedAt: new Date(workspace.updatedAt)
+              created_at: new Date(workspace.created_at).toISOString(),
+              updated_at: new Date(workspace.updated_at).toISOString()
             })
           }
         } catch (error) {
@@ -194,10 +197,13 @@ export default function DashboardPage() {
         ...prev,
         [sessionId]: {
           id: sessionId,
-          workspaceId,
+          workspace_id: workspaceId,
+          user_id: user?.id || '',
+          title: 'Workspace Chat',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          deleted_at: null,
           messages,
-          createdAt: new Date(),
-          updatedAt: new Date()
         }
       }))
 
@@ -205,10 +211,13 @@ export default function DashboardPage() {
       if (messages.length > 0) {
         setWorkspaceChatSessions([{
           id: sessionId,
-          workspaceId,
-          messages,
-          createdAt: new Date(),
-          updatedAt: new Date()
+          workspace_id: workspaceId,
+          user_id: user?.id || '',
+          title: 'Workspace Chat',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          deleted_at: null,
+          messages
         }])
       }
     } catch (error) {
@@ -232,7 +241,7 @@ export default function DashboardPage() {
   const handleChatSelect = (chatId: string) => {
     const session = chatSessions[chatId]
     if (session) {
-      setMessages(session.messages)
+      setMessages(session.messages || [])
       setCurrentChatId(chatId)
     }
   }
