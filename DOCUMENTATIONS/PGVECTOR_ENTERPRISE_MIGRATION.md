@@ -275,26 +275,33 @@ CREATE INDEX ON document_embeddings USING ivfflat (embedding vector_cosine_ops) 
 CREATE OR REPLACE FUNCTION search_embeddings(
   query_embedding vector,
   match_threshold float,
-  match_count int
+  match_count int,
+  file_filter text DEFAULT NULL,
+  file_ids uuid[] DEFAULT NULL
 )
 RETURNS TABLE (
   id uuid,
-  content text,
+  chunk_text text,
   file_name text,
   file_id uuid,
+  file_path text,
   similarity_score float
 ) LANGUAGE plpgsql STABLE AS $$
 BEGIN
   RETURN QUERY
   SELECT
-    document_embeddings.id,
-    document_embeddings.content,
-    document_embeddings.file_name,
-    document_embeddings.file_id,
-    (1 - (document_embeddings.embedding <=> query_embedding)) as similarity_score
-  FROM document_embeddings
-  WHERE 1 - (document_embeddings.embedding <=> query_embedding) >= match_threshold
-  ORDER BY document_embeddings.embedding <=> query_embedding
+    de.id,
+    de.chunk_text,
+    fu.file_name,
+    de.file_id,
+    fu.file_path,
+    (1 - (de.embedding <=> query_embedding)) as similarity_score
+  FROM document_embeddings de
+  LEFT JOIN file_upload fu ON de.file_id = fu.id
+  WHERE 1 - (de.embedding <=> query_embedding) >= match_threshold
+    AND (file_filter IS NULL OR fu.file_name = file_filter)
+    AND (file_ids IS NULL OR de.file_id = ANY(file_ids))
+  ORDER BY de.embedding <=> query_embedding
   LIMIT match_count;
 END;
 $$;

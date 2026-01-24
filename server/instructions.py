@@ -191,7 +191,8 @@ def query_with_instructions_stream(
     workspace_id: str,
     model_name: str = "llama3.2:1b",
     base_system_prompt: str = "",
-    conversation_history: list = None
+    conversation_history: list = None,
+    selected_file_ids: list = None
 ):
     """
     Query LLM with workspace-specific instructions (streaming version)
@@ -202,6 +203,7 @@ def query_with_instructions_stream(
         model_name: Ollama model to use (passed to answer_query)
         base_system_prompt: Optional base system prompt
         conversation_history: Optional conversation history
+        selected_file_ids: Optional list of file IDs to filter search results
     
     Returns:
         Generator yielding response chunks
@@ -222,7 +224,8 @@ def query_with_instructions_stream(
             full_query,
             conversation_history=conversation_history,
             stream=True,
-            workspace_id=workspace_id
+            workspace_id=workspace_id,
+            selected_file_ids=selected_file_ids
         )
         
         # If response is a generator, yield from it

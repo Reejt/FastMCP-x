@@ -29,7 +29,7 @@ applyTo: '**'
 ### Testing
 
 #### Backend
-- Add tests in the `tests/` directory (currently not implemented - please create)
+- Add tests in the `tests/` directory (tests already implemented for core modules)
 - Test all MCP tool functions with various inputs
 - Run tests with: `pytest tests/`
 
@@ -41,10 +41,11 @@ applyTo: '**'
 ### Backend Development
 
 #### Adding New MCP Tools
-1. Define the tool function in the appropriate module (`document_ingestion.py`, `query_handler.py`, `excel_csv.py`, `web_search_file.py`)
+1. Define the tool function in the appropriate module (`document_ingestion.py`, `query_handler.py`, `csv_excel_processor.py`, `web_search_file.py`)
 2. Register the tool in `server/main.py` with `@mcp.tool` decorator
-3. Update the CLI client (`client/fast_mcp_client.py`) if needed
-4. Document the new tool in `README.md`
+3. Add tests in `tests/` directory for the new tool
+4. Update the CLI client (`client/fast_mcp_client.py`) if needed
+5. Document the new tool in `README.md`
 
 #### LLM Integration
 - Default model: **Ollama (llama3.2:3b)** via HTTP API at `localhost:11434`

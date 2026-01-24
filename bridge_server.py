@@ -106,6 +106,7 @@ class QueryRequest(BaseModel):
     include_context_preview: Optional[bool] = True
     conversation_history: Optional[list] = []
     workspace_id: Optional[str] = None  # For workspace-specific instructions
+    selected_file_ids: Optional[List[str]] = None  # For filtering search to specific files
 
 class IngestRequest(BaseModel):
     file_name: str
@@ -196,6 +197,96 @@ async def query_endpoint(request: QueryRequest):
                 }
             )
         
+        # Helper function to route file queries (reduces redundancy)
+        async def route_file_query(file_info, source_label="file"):
+            """Route query to appropriate file handler (CSV/Excel)"""
+            print(f"🎯 Routing to {file_info['file_type'].upper()} handler ({source_label})")
+            
+            async def file_event_generator():
+                try:
+                    if file_info['file_type'] == 'csv':
+                        print(f"📄 Querying {source_label} CSV: {file_info['file_name']}")
+                        response = await mcp_query_csv_with_context(
+                            query=request.query,
+                            file_name=file_info['file_name'],
+                            file_path=file_info['file_path'],
+                            conversation_history=request.conversation_history,
+                            workspace_id=request.workspace_id,
+                            selected_file_ids=request.selected_file_ids
+                        )
+                    else:  # xlsx or xls
+                        print(f"📊 Querying {source_label} Excel: {file_info['file_name']}")
+                        response = await mcp_query_excel_with_context(
+                            query=request.query,
+                            file_name=file_info['file_name'],
+                            file_path=file_info['file_path'],
+                            conversation_history=request.conversation_history,
+                            workspace_id=request.workspace_id,
+                            selected_file_ids=request.selected_file_ids
+                        )
+                    
+                    yield f"data: {json.dumps({'chunk': response})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                    print(f"✅ {source_label} query completed")
+                    
+                except Exception as e:
+                    print(f"❌ {source_label} query error: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            
+            return StreamingResponse(
+                file_event_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"
+                }
+            )
+        
+        # Helper function to determine file type from extension
+        def get_file_type(filename):
+            """Determine file type from extension"""
+            file_ext = filename.lower()
+            if file_ext.endswith('.csv'):
+                return 'csv'
+            elif file_ext.endswith(('.xlsx', '.xls')):
+                return 'xlsx' if file_ext.endswith('.xlsx') else 'xls'
+            return None
+        
+        # Check for explicitly selected files first (highest priority)
+        # If user has selected specific files, route directly to file handler
+        selected_file_info = None
+        if request.selected_file_ids and request.workspace_id and supabase_client:
+            try:
+                print(f"📋 Checking {len(request.selected_file_ids)} selected files")
+                # Look up the selected files in Supabase
+                file_records = supabase_client.table('file_upload').select('*').in_(
+                    'id', request.selected_file_ids
+                ).eq('workspace_id', request.workspace_id).execute()
+                
+                if file_records.data:
+                    # Take the first selected file (primary focus)
+                    primary_file = file_records.data[0]
+                    selected_file_info = {
+                        'file_name': primary_file['file_name'],
+                        'file_path': primary_file['file_path'],
+                        'file_id': primary_file['id'],
+                        'file_type': get_file_type(primary_file['file_name'])
+                    }
+                    
+                    print(f"✅ Selected file loaded: {selected_file_info['file_name']} (ID: {selected_file_info['file_id']})")
+                    if len(file_records.data) > 1:
+                        print(f"   Note: {len(file_records.data)} files selected, using primary file")
+                        
+            except Exception as db_error:
+                print(f"⚠️  Failed to load selected files: {str(db_error)}")
+        
+        # If selected file available, route to appropriate handler immediately
+        if selected_file_info and selected_file_info.get('file_type'):
+            return await route_file_query(selected_file_info, "selected file")
+        
         # Detect file references in query using extract_document_name() for robust matching
         # This handles various patterns like "in sales.csv", "from data.xlsx", "query data.csv", etc.
         cleaned_query, detected_file_name = extract_document_name(request.query, request.workspace_id)
@@ -204,13 +295,7 @@ async def query_endpoint(request: QueryRequest):
             print(f"📊 File reference detected in query: {detected_file_name}")
             
             # Determine file type from detected filename
-            file_ext = detected_file_name.lower()
-            if file_ext.endswith('.csv'):
-                file_type = 'csv'
-            elif file_ext.endswith(('.xlsx', '.xls')):
-                file_type = 'xlsx' if file_ext.endswith('.xlsx') else 'xls'
-            else:
-                file_type = None
+            file_type = get_file_type(detected_file_name)
             
             # Query Supabase for actual files in this workspace to find the match
             file_path = None
@@ -247,46 +332,12 @@ async def query_endpoint(request: QueryRequest):
             
             # If file_path found, route to CSV/Excel handler
             if file_path and file_type:
-                async def file_event_generator():
-                    try:
-                        if file_type == 'csv':
-                            print(f"📄 Querying CSV: {detected_file_name}")
-                            response = await mcp_query_csv_with_context(
-                                query=request.query,
-                                file_name=detected_file_name,
-                                file_path=file_path,
-                                conversation_history=request.conversation_history,
-                                workspace_id=request.workspace_id
-                            )
-                        else:  # xlsx or xls
-                            print(f"📊 Querying Excel: {detected_file_name}")
-                            response = await mcp_query_excel_with_context(
-                                query=request.query,
-                                file_name=detected_file_name,
-                                file_path=file_path,
-                                conversation_history=request.conversation_history,
-                                workspace_id=request.workspace_id
-                            )
-                        
-                        yield f"data: {json.dumps({'chunk': response})}\n\n"
-                        yield f"data: {json.dumps({'done': True})}\n\n"
-                        print(f"✅ File query completed")
-                        
-                    except Exception as e:
-                        print(f"❌ File query error: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
-                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                
-                return StreamingResponse(
-                    file_event_generator(),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                        "X-Accel-Buffering": "no"
-                    }
-                )
+                detected_file_info = {
+                    'file_name': detected_file_name,
+                    'file_path': file_path,
+                    'file_type': file_type
+                }
+                return await route_file_query(detected_file_info, "detected file")
             else:
                 print(f"⚠️  File path not found in Supabase or unsupported file type. Proceeding with regular query.")
         
@@ -352,7 +403,8 @@ async def query_endpoint(request: QueryRequest):
                     response_generator = query_with_instructions_stream(
                         query=request.query,
                         workspace_id=request.workspace_id,
-                        conversation_history=request.conversation_history
+                        conversation_history=request.conversation_history,
+                        selected_file_ids=request.selected_file_ids
                     )
                 else:
                     # Get streaming response without workspace instructions
@@ -360,7 +412,8 @@ async def query_endpoint(request: QueryRequest):
                         request.query, 
                         conversation_history=request.conversation_history,
                         stream=True,
-                        workspace_id=request.workspace_id
+                        workspace_id=request.workspace_id,
+                        selected_file_ids=request.selected_file_ids
                     )
                 
                 # Check if generator is async-aware
@@ -479,9 +532,9 @@ async def ingest_endpoint(request: IngestRequest):
     """
     try:
         # Check file size limit
-        max_size = 50 * 1024 * 1024  # 50MB
+        max_size = 30 * 1024 * 1024  # 30MB
         if request.file_size > max_size:
-            raise HTTPException(status_code=400, detail="File size too large (max 50MB)")
+            raise HTTPException(status_code=400, detail="File size too large (max 30MB)")
         
         # Call fast_mcp_client function with base64_content directly
         # This avoids cross-container filesystem issues

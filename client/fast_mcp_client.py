@@ -237,7 +237,7 @@ async def clear_instruction_cache(workspace_id: str = None):
         return response
 
 
-async def query_csv_with_context(query: str, file_name: str, file_path: str = None, conversation_history: list = None, workspace_id: str = None):
+async def query_csv_with_context(query: str, file_name: str, file_path: str = None, conversation_history: list = None, workspace_id: str = None, selected_file_ids: list = None):
     """
     Query CSV data using keyword filtering and LLM reasoning with conversation context
     
@@ -247,6 +247,7 @@ async def query_csv_with_context(query: str, file_name: str, file_path: str = No
         file_path: Path to the CSV file (local or Supabase storage reference)
         conversation_history: List of previous messages for context (optional)
         workspace_id: Optional workspace ID filter
+        selected_file_ids: List of selected file IDs for context (optional)
     
     Returns:
         LLM-generated answer based on the CSV data with relevant rows
@@ -272,6 +273,12 @@ async def query_csv_with_context(query: str, file_name: str, file_path: str = No
         if workspace_id:
             tool_params["workspace_id"] = workspace_id
         
+        # Add selected_file_ids if provided
+        if selected_file_ids:
+            tool_params["selected_file_ids"] = json.dumps(selected_file_ids)
+        else:
+            tool_params["selected_file_ids"] = "[]"
+        
         result = await client.call_tool("query_csv_with_context_tool", tool_params)
         
         # Extract response from MCP result
@@ -285,7 +292,7 @@ async def query_csv_with_context(query: str, file_name: str, file_path: str = No
         return response
 
 
-async def query_excel_with_context(query: str, file_name: str, file_path: str = None, conversation_history: list = None, workspace_id: str = None):
+async def query_excel_with_context(query: str, file_name: str, file_path: str = None, conversation_history: list = None, workspace_id: str = None, selected_file_ids: list = None):
     """
     Query Excel data using keyword filtering and LLM reasoning with conversation context
     
@@ -295,6 +302,7 @@ async def query_excel_with_context(query: str, file_name: str, file_path: str = 
         file_path: Path to the Excel file (local or Supabase storage reference)
         conversation_history: List of previous messages for context (optional)
         workspace_id: Optional workspace ID filter
+        selected_file_ids: List of selected file IDs for context (optional)
     
     Returns:
         LLM-generated answer based on the Excel data with relevant rows
@@ -319,6 +327,12 @@ async def query_excel_with_context(query: str, file_name: str, file_path: str = 
         # Add workspace_id if provided
         if workspace_id:
             tool_params["workspace_id"] = workspace_id
+        
+        # Add selected_file_ids if provided
+        if selected_file_ids:
+            tool_params["selected_file_ids"] = json.dumps(selected_file_ids)
+        else:
+            tool_params["selected_file_ids"] = "[]"
         
         result = await client.call_tool("query_excel_with_context_tool", tool_params)
         
