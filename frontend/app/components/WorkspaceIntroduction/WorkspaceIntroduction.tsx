@@ -73,7 +73,7 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
 
   // Get chat title from session (first user message or default)
   const getChatTitle = (session: ChatSession): string => {
-    const firstUserMessage = session.messages.find(m => m.role === 'user')
+    const firstUserMessage = session.messages?.find(m => m.role === 'user')
     if (firstUserMessage) {
       const title = firstUserMessage.content.slice(0, 30)
       return title.length < firstUserMessage.content.length ? `${title}...` : title
@@ -754,7 +754,7 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
               <div className="mt-8">
                 <div className="space-y-1">
                   {chatSessions
-                    .filter(session => session.messages.length > 0)
+                    .filter(session => (session.messages?.length ?? 0) > 0)
                     .map((session) => (
                       <button
                         key={session.id}
@@ -766,7 +766,7 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                           {getChatTitle(session)}
                         </div>
                         <div className="text-sm mt-1" style={{ color: theme.textMuted }}>
-                          Last message {getRelativeTimeString(session.updatedAt)}
+                          Last message {getRelativeTimeString(new Date(session.updated_at))}
                         </div>
                       </button>
                     ))
