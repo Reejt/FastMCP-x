@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { flushSync } from 'react-dom'  // ✅ ADD THIS for immediate updates
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace, WorkspaceInstruction, Chat } from '@/app/types'
@@ -30,6 +31,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState<Message[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [chatSessions, setChatSessions] = useState<Record<string, ChatSession>>({})
   const [currentWorkspaceName, setCurrentWorkspaceName] = useState<string>('')
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
@@ -275,6 +278,42 @@ export default function DashboardPage() {
     router.refresh()
   }
 
+  const handleCancelStreaming = () => {
+    if (abortController) {
+      try {
+        abortController.abort()
+      } catch (error) {
+        // Ignore abort errors - they're expected
+        console.log('Stream aborted by user')
+      }
+      setAbortController(null)
+      setIsStreaming(false)
+      setIsProcessing(false)
+      
+      // Update the last message to show it was cancelled
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+          const updatedMessages = prev.map((msg) =>
+            msg.id === lastMsg.id ? { ...msg, isStreaming: false } : msg
+          )
+          
+          // Add system message to indicate cancellation
+          const systemMessage: Message = {
+            id: (Date.now() + 2).toString(),
+            content: 'You stopped this response',
+            role: 'system',
+            timestamp: new Date(),
+            isStreaming: false
+          }
+          
+          return [...updatedMessages, systemMessage]
+        }
+        return prev
+      })
+    }
+  }
+
   const handleSendMessage = async (content: string, selected_file_ids?: string[]) => {
     if (!content.trim() || isProcessing) return
 
@@ -317,6 +356,11 @@ export default function DashboardPage() {
     }
 
     setMessages((prev) => [...prev, assistantMessage])
+    setIsStreaming(true)
+
+    // Create a new AbortController for this request
+    const controller = new AbortController()
+    setAbortController(controller)
 
     try {
       // Prepare conversation history from existing messages (limit to last 10 messages for context)
@@ -325,7 +369,7 @@ export default function DashboardPage() {
         content: msg.content
       }))
 
-      // Call Next.js API route with streaming support
+      // Call Next.js API route with streaming support and abort signal
       const response = await fetch('/api/chat/query', {
         method: 'POST',
         headers: {
@@ -337,6 +381,7 @@ export default function DashboardPage() {
             workspace_id: workspaceId,  // Pass workspace ID for instruction application
             selected_file_ids
         }),
+        signal: controller.signal
       })
 
       if (!response.ok) {
@@ -386,14 +431,16 @@ export default function DashboardPage() {
                       // Append chunk to accumulated content
                       accumulatedContent += data.chunk
 
-                      // Update the assistant message with new content
-                      setMessages((prev) =>
-                        prev.map((msg) =>
-                          msg.id === assistantMessageId
-                            ? { ...msg, content: accumulatedContent, isStreaming: true }
-                            : msg
+                      // ✅ FORCE IMMEDIATE UPDATE - Don't batch with React
+                      flushSync(() => {
+                        setMessages((prev) =>
+                          prev.map((msg) =>
+                            msg.id === assistantMessageId
+                              ? { ...msg, content: accumulatedContent, isStreaming: true }
+                              : msg
+                          )
                         )
-                      )
+                      })
                     } else if (data.done) {
                       // Streaming complete - save assistant response to database via API
                       if (accumulatedContent && !streamError) {
@@ -421,6 +468,8 @@ export default function DashboardPage() {
                             : msg
                         )
                       )
+                      setIsStreaming(false)
+                      setAbortController(null)
                       setIsProcessing(false)
                       return
                     } else if (data.error) {
@@ -443,19 +492,29 @@ export default function DashboardPage() {
             }
           } catch (readerError) {
             console.error('🛑 Stream reading error:', readerError)
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { 
-                      ...msg, 
-                      content: accumulatedContent || `Error: ${readerError instanceof Error ? readerError.message : 'Stream failed'}`,
-                      isStreaming: false 
-                    }
-                  : msg
+            
+            // Check if this is an abort error (from user cancellation)
+            const isAborted = readerError instanceof Error && readerError.name === 'AbortError'
+            
+            if (!isAborted) {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? { 
+                        ...msg, 
+                        content: accumulatedContent || `Error: ${readerError instanceof Error ? readerError.message : 'Stream failed'}`,
+                        isStreaming: false 
+                      }
+                    : msg
+                )
               )
-            )
+            }
+            setIsStreaming(false)
+            setAbortController(null)
             setIsProcessing(false)
-            throw readerError
+            if (!isAborted) {
+              throw readerError
+            }
           }
         }
       } else {
@@ -469,8 +528,26 @@ export default function DashboardPage() {
               : msg
           )
         )
+        setIsStreaming(false)
+        setAbortController(null)
       }
     } catch (error) {
+      // Check if this is an abort error (from user cancellation)
+      if (
+        (error instanceof Error && error.name === 'AbortError') ||
+        (error instanceof DOMException && error.name === 'AbortError') ||
+        (error instanceof Error && error.message?.includes('BodyStreamBuffer was aborted')) ||
+        (error instanceof Error && error.message?.includes('aborted')) ||
+        (error instanceof Error && error.message === 'User cancelled the request') ||
+        (typeof error === 'string' && error === 'User cancelled the request')
+      ) {
+        console.log('Request was cancelled by user')
+        setIsStreaming(false)
+        setAbortController(null)
+        setIsProcessing(false)
+        return
+      }
+      
       console.error('❌ Error sending message:', error)
       
       let errorContent = 'Sorry, I encountered an error processing your request.'
@@ -478,7 +555,7 @@ export default function DashboardPage() {
       if (error instanceof Error) {
         console.error('   Error type:', error.name)
         console.error('   Error message:', error.message)
-        
+      
         if (error.message.includes('Bridge server is not running')) {
           errorContent = `❌ **Bridge Server Not Running**\n\n${error.message}`
         } else if (error.message.includes('Failed to connect')) {
@@ -506,6 +583,8 @@ export default function DashboardPage() {
         )
       )
     } finally {
+      setIsStreaming(false)
+      setAbortController(null)
       setIsProcessing(false)
     }
   }
@@ -618,7 +697,9 @@ export default function DashboardPage() {
         {/* Chat Input */}
         <ChatInput
           onSendMessage={handleSendMessage}
+          onCancel={handleCancelStreaming}
           disabled={isProcessing}
+          isStreaming={isStreaming}
           hasMessages={messages.length > 0}
           workspaceName={currentWorkspaceName}
           workspaceId={workspaceId || undefined}

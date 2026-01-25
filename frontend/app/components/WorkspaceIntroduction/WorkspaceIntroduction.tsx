@@ -11,7 +11,9 @@ interface WorkspaceIntroductionProps {
   workspace: Workspace
   messages: Message[]
   isProcessing: boolean
+  isStreaming?: boolean
   onSendMessage: (message: string, selectedFileIds?: string[]) => void
+  onCancel?: () => void
   isWorkspaceSidebarCollapsed?: boolean
   onExpandWorkspaceSidebar?: () => void
   chatSessions?: ChatSession[]
@@ -19,7 +21,7 @@ interface WorkspaceIntroductionProps {
   currentChatId?: string
 }
 
-export default function WorkspaceIntroduction({ workspace, messages, isProcessing, onSendMessage, isWorkspaceSidebarCollapsed, onExpandWorkspaceSidebar, chatSessions = [], onChatSelect, currentChatId }: WorkspaceIntroductionProps) {
+export default function WorkspaceIntroduction({ workspace, messages, isProcessing, isStreaming, onSendMessage, onCancel, isWorkspaceSidebarCollapsed, onExpandWorkspaceSidebar, chatSessions = [], onChatSelect, currentChatId }: WorkspaceIntroductionProps) {
   const router = useRouter()
   const [message, setMessage] = useState('')
   const chatHistoryRef = useRef<HTMLDivElement>(null)
@@ -554,29 +556,47 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                     </svg>
                   </button>
 
-                  {/* Send Button */}
-                  <button
-                    type="submit"
-                    disabled={!message.trim() || isProcessing}
-                    className="p-2 rounded-full transition-all"
-                    style={{
-                      backgroundColor: message.trim() && !isProcessing ? '#1a1a1a' : theme.hoverBg,
-                      color: message.trim() && !isProcessing ? '#ffffff' : theme.textMuted,
-                      cursor: !message.trim() || isProcessing ? 'not-allowed' : 'pointer'
-                    }}
-                    aria-label="Send message"
-                  >
-                    {isProcessing ? (
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  {/* Send/Cancel Button */}
+                  {isStreaming ? (
+                    <button
+                      type="button"
+                      onClick={onCancel}
+                      className="p-2 rounded-full transition-all"
+                      style={{
+                        backgroundColor: '#dc2626',
+                        color: '#ffffff',
+                        cursor: 'pointer'
+                      }}
+                      aria-label="Cancel message"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 4h12v2H6z" />
                       </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                      </svg>
-                    )}
-                  </button>
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={!message.trim() || isProcessing}
+                      className="p-2 rounded-full transition-all"
+                      style={{
+                        backgroundColor: message.trim() && !isProcessing ? '#1a1a1a' : theme.hoverBg,
+                        color: message.trim() && !isProcessing ? '#ffffff' : theme.textMuted,
+                        cursor: !message.trim() || isProcessing ? 'not-allowed' : 'pointer'
+                      }}
+                      aria-label="Send message"
+                    >
+                      {isProcessing ? (
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             </form>

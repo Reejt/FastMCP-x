@@ -28,13 +28,14 @@ export async function POST(request: NextRequest) {
     // All requests use the same /api/query endpoint
     const endpoint = '/api/query';
 
-    // Call the bridge server - streaming response
+    // Call the bridge server - streaming response with abort signal
     const response = await fetch(`${BRIDGE_SERVER_URL}${endpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
+      signal: request.signal
     });
 
     if (!response.ok) {
@@ -67,6 +68,12 @@ export async function POST(request: NextRequest) {
           const reader = response.body?.getReader();
 
           try {
+            // Listen for abort signal
+            request.signal.addEventListener('abort', () => {
+              reader?.cancel();
+              controller.close();
+            });
+
             while (true) {
               const { done, value } = await reader!.read();
 
@@ -79,8 +86,14 @@ export async function POST(request: NextRequest) {
               controller.enqueue(value);
             }
           } catch (error) {
-            console.error('Stream error:', error);
-            controller.error(error);
+            // Check if it's an abort error
+            if (error instanceof Error && error.name === 'AbortError') {
+              console.log('Stream aborted by client');
+              controller.close();
+            } else {
+              console.error('Stream error:', error);
+              controller.error(error);
+            }
           }
         }
       });

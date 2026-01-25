@@ -141,7 +141,7 @@ async def root():
     }
 
 @app.post("/api/query")
-async def query_endpoint(request: QueryRequest):
+async def query_endpoint(query_request: QueryRequest, request: Request):
     """
     Main query endpoint with intelligent routing using metadata-aware semantic search.
     
@@ -153,23 +153,23 @@ async def query_endpoint(request: QueryRequest):
     This eliminates ~200 lines of file detection/routing code.
     """
     try:
-        print(f"📥 Received query: {request.query}")
-        if request.conversation_history:
-            print(f"📜 With conversation history: {len(request.conversation_history)} messages")
-        if request.workspace_id:
-            print(f"🏢 Workspace ID: {request.workspace_id}")
+        print(f"📥 Received query: {query_request.query}")
+        if query_request.conversation_history:
+            print(f"📜 With conversation history: {len(query_request.conversation_history)} messages")
+        if query_request.workspace_id:
+            print(f"🏢 Workspace ID: {query_request.workspace_id}")
         
         import re
         
         # Check if query is for agentic task execution
-        if "agent" in request.query.lower():
+        if "agent" in query_request.query.lower():
             print(f"🤖 Agentic task detected in query")
             
             async def agent_event_generator():
                 try:
                     response = await mcp_agentic_task(
-                        goal=request.query,
-                        context=f"Workspace: {request.workspace_id}" if request.workspace_id else "",
+                        goal=query_request.query,
+                        context=f"Workspace: {query_request.workspace_id}" if query_request.workspace_id else "",
                         max_iterations=10
                     )
                     
@@ -201,7 +201,7 @@ async def query_endpoint(request: QueryRequest):
         
         # Detect if query contains a URL - route to link query handler
         url_pattern = r'https?://[^\s]+'
-        url_match = re.search(url_pattern, request.query)
+        url_match = re.search(url_pattern, query_request.query)
         
         if url_match:
             detected_url = url_match.group(0)
@@ -211,14 +211,14 @@ async def query_endpoint(request: QueryRequest):
                 print("🔗 Web link detected")
                 
                 # Extract the question part (everything except the URL)
-                question = re.sub(url_pattern, '', request.query).strip()
+                question = re.sub(url_pattern, '', query_request.query).strip()
                 if not question:
                     question = "Summarize the content of this link"
                 
                 print(f"❓ Question: {question}")
                 
                 # Call link query handler
-                response = await mcp_answer_link_query(detected_url, question, conversation_history=request.conversation_history, workspace_id=request.workspace_id)
+                response = await mcp_answer_link_query(detected_url, question, conversation_history=query_request.conversation_history, workspace_id=query_request.workspace_id)
                 
                 def event_generator():
                     yield f"data: {json.dumps({'chunk': response})}\n\n"
@@ -326,30 +326,44 @@ async def query_endpoint(request: QueryRequest):
                 from server.query_handler import answer_query
                 from server.instructions import query_with_instructions_stream
                 
+                # ✅ CREATE ABORT EVENT for cancellation support
+                import threading
+                abort_event = threading.Event()
+                
                 if request.workspace_id:
                     print(f"🎯 Using workspace instructions for workspace: {request.workspace_id}")
                     response_generator = query_with_instructions_stream(
-                        query=request.query,
-                        workspace_id=request.workspace_id,
-                        conversation_history=request.conversation_history,
-                        selected_file_ids=request.selected_file_ids
+                        query=query_request.query,
+                        workspace_id=query_request.workspace_id,
+                        conversation_history=query_request.conversation_history,
+                        selected_file_ids=query_request.selected_file_ids,
+                        abort_event=abort_event  # ✅ Pass abort event
                     )
                 else:
                     response_generator = answer_query(
                         request.query,
                         conversation_history=request.conversation_history,
                         stream=True,
-                        workspace_id=request.workspace_id,
-                        selected_file_ids=request.selected_file_ids
+                        workspace_id=query_request.workspace_id,
+                        selected_file_ids=query_request.selected_file_ids,
+                        abort_event=abort_event  # ✅ Pass abort event
                     )
                 
                 # Check if generator is async
                 is_async_gen = inspect.isasyncgen(response_generator)
+                print(f"📡 Generator type: {'async' if is_async_gen else 'sync'}")  # Debug log
                 
                 full_response = ""
+                chunk_count = 0
                 try:
                     if is_async_gen:
                         async for chunk in response_generator:
+                            # ✅ CHECK FOR CLIENT DISCONNECT
+                            if await request.is_disconnected():
+                                print("🛑 Client disconnected - aborting Ollama request")
+                                abort_event.set()  # Signal abort to query_model
+                                break
+                            
                             if isinstance(chunk, dict) and 'response' in chunk:
                                 chunk_text = chunk['response']
                                 full_response += chunk_text
@@ -386,9 +400,9 @@ async def query_endpoint(request: QueryRequest):
                     try:
                         web_response = await asyncio.wait_for(
                             mcp_web_search(
-                                request.query,
-                                conversation_history=request.conversation_history,
-                                workspace_id=request.workspace_id
+                                query_request.query,
+                                conversation_history=query_request.conversation_history,
+                                workspace_id=query_request.workspace_id
                             ),
                             timeout=15.0
                         )

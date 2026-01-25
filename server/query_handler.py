@@ -348,15 +348,16 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
         return query_model(error_msg, conversation_history=conversation_history)
 
 
-def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, conversation_history: list = None):
+def query_model(query: str, model_name: str = 'llama3:8b', stream: bool = False, conversation_history: list = None, abort_event=None):
     """
     Query the Ollama model via HTTP API with optional conversation history
     
     Args:
         query: The current user query
-        model_name: Name of the Ollama model to use
+        model_name: Name of the Ollama model to use (default: llama3:8b)
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
+        abort_event: threading.Event to signal cancellation (optional)
     """
     try:
         # Build full prompt with conversation history if provided
@@ -365,31 +366,43 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = Fals
             history_text = "\n\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in conversation_history[-5:]])  # Last 5 messages for context
             full_prompt = f"Conversation History:\n{history_text}\n\nCurrent Query: {query}"
         
-        # Query the LLM
+        # Query the LLM with streaming enabled when requested
         response = requests.post(
             f'{OLLAMA_BASE_URL}/api/generate',
             json={
                 'model': model_name,
                 'prompt': full_prompt,
-                'stream': False
+                'stream': stream  # ✅ FIXED: Use actual stream parameter
             },
-            timeout=120,  # Increased timeout for large content summarization
+            timeout=120,
             stream=stream  # Enable streaming at requests level
         )
         response.raise_for_status()
         
         if stream:
-            # Return generator that yields JSON chunks
+            # Return generator that yields JSON chunks with abort support
             def generate():
                 import json
-                for line in response.iter_lines():
-                    if line:
-                        try:
-                            chunk = json.loads(line)
-                            if 'response' in chunk:
-                                yield chunk
-                        except json.JSONDecodeError:
-                            continue
+                try:
+                    for line in response.iter_lines():
+                        # Check abort signal before processing each line
+                        if abort_event and abort_event.is_set():
+                            response.close()  # Close connection to stop Ollama
+                            break
+                        
+                        if line:
+                            try:
+                                chunk = json.loads(line)
+                                if 'response' in chunk:
+                                    yield chunk
+                                # Stop when Ollama signals completion
+                                if chunk.get('done', False):
+                                    break
+                            except json.JSONDecodeError:
+                                continue
+                finally:
+                    # Ensure connection is closed
+                    response.close()
             return generate()
         else:
             # Return full response as before
@@ -399,7 +412,7 @@ def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = Fals
             
    
 
-def answer_query(query: str, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None):
+def answer_query(query: str, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None, abort_event=None):
     """
     Answer queries using pgvector database-side semantic search
     Database performs similarity matching - no application-level computation
@@ -410,10 +423,11 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
         stream: Whether to stream the response (default: False)
         workspace_id: Optional workspace filter for search results
         selected_file_ids: Optional list of file IDs to filter search results
+        abort_event: threading.Event to signal cancellation (optional)
     """
     try:
         # Use document context for enhanced response
-        return query_with_context(query, max_chunks=5, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
+        return query_with_context(query, max_chunks=5, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id, selected_file_ids=selected_file_ids, abort_event=abort_event)
         
     except Exception as e:
         error_message = f"Error processing query: {str(e)}"
@@ -479,6 +493,7 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
         stream: Whether to stream the response (default: False)
         workspace_id: Optional workspace filter for search results
         selected_file_ids: Optional list of file IDs to filter search results
+        abort_event: threading.Event to signal cancellation (optional)
     """
     # Get relevant chunks using pgvector database-side search with metadata
     search_result = semantic_search_with_metadata(query, top_k=max_chunks, min_similarity=0.18, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
@@ -536,7 +551,8 @@ DOCUMENT CONTENT:
 """
     
     # Query the LLM with context and conversation history
-    return query_model(enhanced_query, conversation_history=conversation_history, stream=stream)
+    # Note: abort_event will be passed from bridge_server if needed
+    return query_model(enhanced_query, conversation_history=conversation_history, stream=stream, abort_event=abort_event)
 
 
 
@@ -615,13 +631,13 @@ def answer_link_query(link, question, conversation_history: list = None):
         return f"Error: {str(e)}"
 
 
-def generate_chat_title(first_message: str, model_name: str = 'llama3.2:1b') -> str:
+def generate_chat_title(first_message: str, model_name: str = 'llama3:8b') -> str:
     """
     Generate a concise, descriptive title for a chat session based on the first message.
     
     Args:
         first_message: The first user message in the chat session
-        model_name: Name of the Ollama model to use
+        model_name: Name of the Ollama model to use (default: llama3:8b)
         
     Returns:
         A short, descriptive title (max 6 words)

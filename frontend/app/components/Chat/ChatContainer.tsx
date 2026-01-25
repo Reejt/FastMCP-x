@@ -15,7 +15,9 @@ export default function ChatContainer({ messages }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // ✅ Use instant scroll during streaming for better performance
+    const isStreaming = messages.some(msg => msg.isStreaming)
+    messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'instant' : 'smooth' })
   }
 
   useEffect(() => {
@@ -51,14 +53,21 @@ export default function ChatContainer({ messages }: ChatContainerProps) {
               className="py-6"
             >
               {messages.map((message, index) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                >
-                  <ChatMessage message={message} />
-                </motion.div>
+                // ✅ No animation on streaming messages - allows instant updates
+                message.isStreaming ? (
+                  <div key={message.id}>
+                    <ChatMessage message={message} />
+                  </div>
+                ) : (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.5) }}
+                  >
+                    <ChatMessage message={message} />
+                  </motion.div>
+                )
               ))}
               <div ref={messagesEndRef} />
             </motion.div>
