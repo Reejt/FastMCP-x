@@ -67,7 +67,7 @@ docker compose up --build -d
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-See [DOCKER_SETUP.md](./DOCKER_SETUP.md) for full Docker documentation.
+See [BRIDGE_SERVER.md](./documentations/BRIDGE_SERVER.md) for full documentation.
 
 ### Option 2: Local Development
 
@@ -93,11 +93,6 @@ NEXT_PUBLIC_BRIDGE_SERVER_URL=http://localhost:3001
 ```
 
 ### 3. Start All Services
-**Automatic** (PowerShell):
-```powershell
-.\start_servers.ps1
-```
-
 **Manual** (4 terminals):
 ```bash
 # Terminal 1: Ollama
@@ -123,14 +118,17 @@ FastMCP-x/
 │   ├── main.py                    # MCP tools registration
 │   ├── query_handler.py          # pgvector semantic search
 │   ├── document_ingestion.py     # File processing + embeddings
-│   ├── excel_csv.py              # Structured data queries
-│   └── web_search_file.py        # Web search integration
+│   ├── csv_excel_processor.py    # Structured data queries
+│   ├── web_search_file.py        # Web search integration
+│   ├── agent.py                  # Agent orchestration
+│   └── instructions.py           # Instruction handling
 ├── frontend/
 │   ├── app/components/           # Chat, Sidebar, Auth UI
 │   ├── lib/supabase/             # Database service layer
 │   └── middleware.ts             # Auth middleware
 ├── bridge_server.py              # FastAPI bridge (MCP client)
 ├── utils/file_parser.py          # Document extraction
+├── client/fast_mcp_client.py     # CLI test client
 └── documentations/               # Guides + architecture
 ```
 
@@ -246,10 +244,10 @@ python client/fast_mcp_client.py  # Test CLI client
 
 ## 📚 Documentation
 
-| Document | Purpose |
-|----------|---------|
-| `PGVECTOR_ENTERPRISE_MIGRATION.md` | pgvector setup + performance tuning |
-| `PGVECTOR_SETUP_GUIDE.md` | Quick start + troubleshooting |
+| DBRIDGE_SERVER.md` | Bridge server architecture |
+| `ARCHITECTURE.md` | Full system architecture overview |
+| `.github/copilot-instructions.md` | AI coding guidelines |
+| `WORKSPACE_SCHEMA_GUIDE.md` | Database schema detailng |
 | `SETUP.md` | Detailed setup for developers |
 | `BRIDGE_SERVER.md` | Bridge server architecture |
 | `.github/copilot-instructions.md` | AI coding guidelines |
