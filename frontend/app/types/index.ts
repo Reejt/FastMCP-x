@@ -128,7 +128,7 @@ export interface StructuredData {
 export interface Message {
   id: string
   content: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   timestamp: Date
   session_id?: string           // Optional: Links message to session for proper scoping
   isStreaming?: boolean

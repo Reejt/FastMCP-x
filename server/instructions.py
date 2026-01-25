@@ -192,7 +192,8 @@ def query_with_instructions_stream(
     model_name: str = "llama3.2:1b",
     base_system_prompt: str = "",
     conversation_history: list = None,
-    selected_file_ids: list = None
+    selected_file_ids: list = None,
+    abort_event=None
 ):
     """
     Query LLM with workspace-specific instructions (streaming version)
@@ -204,6 +205,7 @@ def query_with_instructions_stream(
         base_system_prompt: Optional base system prompt
         conversation_history: Optional conversation history
         selected_file_ids: Optional list of file IDs to filter search results
+        abort_event: threading.Event to signal cancellation (optional)
     
     Returns:
         Generator yielding response chunks
@@ -220,24 +222,30 @@ def query_with_instructions_stream(
             full_query = query
         
         # Use answer_query from query_handler with streaming enabled
+        # ✅ Pass abort_event for cancellation support
         response = answer_query(
             full_query,
             conversation_history=conversation_history,
             stream=True,
             workspace_id=workspace_id,
-            selected_file_ids=selected_file_ids
+            selected_file_ids=selected_file_ids,
+            abort_event=abort_event
         )
         
-        # If response is a generator, yield from it
+        # ✅ FIX: Directly return the inner generator to avoid double-wrapping
+        # This allows the bridge_server to iterate it directly with asyncio.to_thread
         if hasattr(response, '__iter__') and not isinstance(response, str):
-            for chunk in response:
-                yield chunk
+            return response
         else:
-            # If not streaming, yield as single response
-            yield {"response": response}
+            # If not streaming, wrap as single-item generator
+            def single_response():
+                yield {"response": response}
+            return single_response()
         
     except Exception as e:
-        yield {"response": f"Error querying with instructions: {str(e)}"}
+        def error_response():
+            yield {"response": f"Error querying with instructions: {str(e)}"}
+        return error_response()
 
 
 def get_instruction_preview(workspace_id: str) -> str:

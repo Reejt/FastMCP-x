@@ -362,7 +362,7 @@ export default function Sidebar({
                     <p className="text-sm px-4 py-2" style={{ color: theme.textSecondary }}>No workspaces yet</p>
                   ) : (
                     <>
-                      {workspaces.slice(0, 5).map((workspace) => (
+                      {workspaces.slice(0, 4).map((workspace) => (
                         <div
                           key={workspace.id}
                           className="relative group"
@@ -433,9 +433,12 @@ export default function Sidebar({
                           )}
                         </div>
                       ))}
-                      {workspaces.length > 5 && (
+                      {workspaces.length > 4 && (
                         <button
-                          onClick={() => router.push('/workspaces')}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push('/workspaces')
+                          }}
                           className="w-full text-left px-4 py-2 text-sm rounded-lg transition-colors"
                           style={{ color: theme.textSecondary }}
                           onMouseEnter={(e) => {
@@ -447,29 +450,11 @@ export default function Sidebar({
                             e.currentTarget.style.color = theme.textSecondary
                           }}
                         >
-                          See all ({workspaces.length})
+                          See all
                         </button>
                       )}
                     </>
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      router.push('/workspaces')
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm rounded-lg transition-colors"
-                    style={{ color: theme.textSecondary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = theme.hoverBg
-                      e.currentTarget.style.color = theme.text
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent'
-                      e.currentTarget.style.color = theme.textSecondary
-                    }}
-                  >
-                    See all
-                  </button>
                 </motion.div>
               )}
             </AnimatePresence>

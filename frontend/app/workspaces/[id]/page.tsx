@@ -2,6 +2,7 @@
 
 import { useRouter, useParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { flushSync } from 'react-dom'  // ✅ ADD THIS for immediate updates
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace } from '@/app/types'
@@ -34,6 +35,8 @@ export default function WorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState<Message[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [chatSessions, setChatSessions] = useState<Record<string, ChatSession>>({})
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
   const [workspaceChatSessions, setWorkspaceChatSessions] = useState<ChatSession[]>([])
@@ -211,6 +214,42 @@ export default function WorkspacePage() {
     } catch (error) {
       console.error('Error loading session messages:', error)
       setMessages([])
+    }
+  }
+
+  const handleCancelStreaming = () => {
+    if (abortController) {
+      try {
+        abortController.abort()
+      } catch (error) {
+        // Ignore abort errors - they're expected
+        console.log('Stream aborted by user')
+      }
+      setAbortController(null)
+      setIsStreaming(false)
+      setIsProcessing(false)
+      
+      // Update the last message to show it was cancelled
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+          const updatedMessages = prev.map((msg) =>
+            msg.id === lastMsg.id ? { ...msg, isStreaming: false } : msg
+          )
+          
+          // Add system message to indicate cancellation
+          const systemMessage: Message = {
+            id: (Date.now() + 2).toString(),
+            content: 'You stopped this response',
+            role: 'system',
+            timestamp: new Date(),
+            isStreaming: false
+          }
+          
+          return [...updatedMessages, systemMessage]
+        }
+        return prev
+      })
     }
   }
 
@@ -481,6 +520,15 @@ export default function WorkspacePage() {
     }
 
     setMessages((prev) => [...prev, assistantMessage])
+    setIsStreaming(true)
+
+    // Cancel any previous streaming request
+    if (abortController) {
+      abortController.abort('New request started')
+    }
+
+    const newAbortController = new AbortController()
+    setAbortController(newAbortController)
 
     try {
       // Prepare conversation history from current session messages (limit to last 10 for context)
@@ -503,6 +551,7 @@ export default function WorkspacePage() {
             workspace_id: workspaceId,
             selected_file_ids
         }),
+        signal: newAbortController.signal
       })
 
       if (!response.ok) {
@@ -553,14 +602,16 @@ export default function WorkspacePage() {
                       // Append chunk to accumulated content
                       accumulatedContent += data.chunk
 
-                      // Update the assistant message with new content
-                      setMessages((prev) =>
-                        prev.map((msg) =>
-                          msg.id === assistantMessageId
-                            ? { ...msg, content: accumulatedContent, isStreaming: true }
-                            : msg
+                      // ✅ FORCE IMMEDIATE UPDATE - Don't batch with React
+                      flushSync(() => {
+                        setMessages((prev) =>
+                          prev.map((msg) =>
+                            msg.id === assistantMessageId
+                              ? { ...msg, content: accumulatedContent, isStreaming: true }
+                              : msg
+                          )
                         )
-                      )
+                      })
                     } else if (data.done) {
                       // Streaming complete - save assistant response to Supabase
                       if (accumulatedContent && !streamError) {
@@ -628,6 +679,20 @@ export default function WorkspacePage() {
         )
       }
     } catch (error) {
+      // Check if this is an abort error (user cancelled) first
+      if (
+        (error instanceof Error && error.name === 'AbortError') ||
+        (error instanceof DOMException && error.name === 'AbortError') ||
+        (error instanceof Error && error.message?.includes('BodyStreamBuffer was aborted')) ||
+        (error instanceof Error && error.message?.includes('aborted'))
+      ) {
+        console.log('Request was cancelled by user')
+        setIsStreaming(false)
+        setIsProcessing(false)
+        setAbortController(null)
+        return
+      }
+      
       console.error('❌ Error sending message:', error)
       
       // Create a more informative error message
@@ -665,6 +730,8 @@ export default function WorkspacePage() {
         )
       )
     } finally {
+      setIsStreaming(false)
+      setAbortController(null)
       setIsProcessing(false)
     }
   }
@@ -724,7 +791,9 @@ export default function WorkspacePage() {
           workspace={currentWorkspace}
           messages={messages}
           isProcessing={isProcessing}
+          isStreaming={isStreaming}
           onSendMessage={handleSendMessage}
+          onCancel={handleCancelStreaming}
           isWorkspaceSidebarCollapsed={isWorkspaceSidebarCollapsed}
           onExpandWorkspaceSidebar={handleExpandWorkspaceSidebar}
           chatSessions={workspaceChatSessions}
