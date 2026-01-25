@@ -90,297 +90,129 @@ def get_semantic_model():
     return _semantic_model if _semantic_model is not False else None
 
 
-def extract_document_name(query: str, workspace_id: str = None):
+def semantic_search_with_metadata(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, selected_file_ids: list = None):
     """
-    Extract document name from query if user mentions a specific file.
+    ENHANCED: Semantic search with rich metadata for intelligent routing.
     
-    Patterns detected:
-    - "in document_name" / "in file document_name"
-    - "from document_name"
-    - "search document_name"
-    - Exact filename mentions (case-insensitive matching)
-    
-    Args:
-        query: The user's query
-        workspace_id: Optional workspace to search for matching files
-    
-    Returns:
-        Tuple of (cleaned_query, detected_filename) where filename is None if not found
-    """
-    import re
-    
-    if not supabase_client:
-        return query, None
-    
-    try:
-        # Get list of available files in workspace
-        files_query = supabase_client.table('file_upload').select('file_name')
-        
-        if workspace_id:
-            files_query = files_query.eq('workspace_id', workspace_id)
-        
-        files_result = files_query.execute()
-        available_files = [f['file_name'] for f in files_result.data] if files_result.data else []
-        
-        if not available_files:
-            return query, None
-        
-        # Check for explicit document references
-        query_lower = query.lower()
-        detected_file = None
-        
-        # Pattern 1: "in [document_name]" or "in file [document_name]"
-        match = re.search(r'(?:in\s+(?:file|document)?\s*)([a-zA-Z0-9\-_.]+(?:\.\w+)?)', query_lower)
-        if match:
-            potential_file = match.group(1)
-            # Fuzzy match against available files
-            detected_file = _fuzzy_match_filename(potential_file, available_files)
-        
-        # Pattern 2: "from [document_name]"
-        if not detected_file:
-            match = re.search(r'(?:from\s+)([a-zA-Z0-9\-_.]+(?:\.\w+)?)', query_lower)
-            if match:
-                potential_file = match.group(1)
-                detected_file = _fuzzy_match_filename(potential_file, available_files)
-        
-        # Pattern 3: Fuzzy match on direct filename mentions (fallback with strict threshold)
-        if not detected_file:
-            # Extract potential filenames from query (word by word)
-            query_words = query_lower.split()
-            for word in query_words:
-                # Fuzzy match each word against available files with strict 85% threshold
-                # Avoids false positives from casual word mentions
-                match = _fuzzy_match_filename(word, available_files, threshold=0.85)
-                if match:
-                    detected_file = match
-                    break
-        
-        if detected_file:
-            # Remove the detected file reference from query for cleaner semantic search
-            cleaned_query = re.sub(
-                rf'(?:in\s+(?:file|document)?\s*)?{re.escape(detected_file)}',
-                '',
-                query,
-                flags=re.IGNORECASE
-            ).strip()
-            cleaned_query = re.sub(r'from\s+', '', cleaned_query, flags=re.IGNORECASE).strip()
-            
-            print(f"📄 Document detected in query: {detected_file}")
-            print(f"   Cleaned query: {cleaned_query}")
-            
-            return cleaned_query, detected_file
-        
-        return query, None
-        
-    except Exception as e:
-        print(f"⚠️  Error extracting document name: {e}")
-        return query, None
-
-
-def _fuzzy_match_filename(potential: str, available_files: list, threshold: float = 0.7) -> str:
-    """
-    Fuzzy match a potential filename against available files using similarity.
-    
-    Args:
-        potential: The potential filename to match
-        available_files: List of actual filenames in the system
-        threshold: Similarity threshold (0.0-1.0)
-    
-    Returns:
-        Best matching filename or None if no match found
-    """
-    from difflib import SequenceMatcher
-    
-    if not available_files:
-        return None
-    
-    best_match = None
-    best_ratio = 0
-    
-    for file_name in available_files:
-        # Compare filenames (case-insensitive)
-        ratio = SequenceMatcher(None, potential.lower(), file_name.lower()).ratio()
-        
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_match = file_name
-    
-    return best_match if best_ratio >= threshold else None
-
-
-def get_all_file_embeddings(file_name: str = None, workspace_id: str = None, selected_file_ids: list = None):
-    """
-    Retrieve ALL embeddings for specific file(s) (fallback when similarity is too low)
-    Handles both single file (by name) and multiple files (by IDs)
-    
-    Args:
-        file_name: The name of the file to fetch all embeddings for (optional, used if selected_file_ids not provided)
-        workspace_id: Optional workspace filter
-        selected_file_ids: Optional list of file IDs to filter search results (takes precedence over file_name)
-    
-    Returns:
-        List of (chunk_text, dummy_similarity, file_name, file_path) tuples
-    """
-    if not supabase_client:
-        print("⚠️  Supabase not configured - cannot fetch file embeddings")
-        return []
-    
-    try:
-        # Query document_embeddings and join with file_upload to get file_name and file_path
-        query_builder = supabase_client.table('document_embeddings').select(
-            'chunk_text, chunk_index, file_id, file_upload(file_name, file_path, workspace_id)'
-        )
-        
-        # Filter by file_ids if selected_file_ids provided (handles multiple files)
-        if selected_file_ids:
-            query_builder = query_builder.in_('file_id', selected_file_ids)
-            filter_desc = f"{len(selected_file_ids)} selected files"
-        elif file_name:
-            # Filter by file_name only if no file_ids provided
-            query_builder = query_builder.eq('file_upload.file_name', file_name)
-            filter_desc = f"file '{file_name}'"
-        else:
-            return []
-        
-        # Filter by workspace if provided
-        if workspace_id:
-            query_builder = query_builder.eq('file_upload.workspace_id', workspace_id)
-        
-        response = query_builder.order('chunk_index', desc=False).execute()
-        
-        if hasattr(response, 'data') and response.data:
-            results = []
-            for row in response.data:
-                # Extract file info from joined table
-                file_info = row.get('file_upload')
-                if isinstance(file_info, list) and len(file_info) > 0:
-                    file_info = file_info[0]
-                elif not isinstance(file_info, dict):
-                    file_info = {}
-                
-                file_name_result = file_info.get('file_name', file_name)
-                file_path = file_info.get('file_path')
-                
-                # Use 0.0 as dummy similarity since we're returning all chunks
-                results.append((
-                    row['chunk_text'],
-                    0.0,  # Placeholder - all chunks from file(s)
-                    file_name_result,
-                    file_path
-                ))
-            
-            print(f"✅ Retrieved {len(results)} chunks from {filter_desc} as fallback")
-            return results
-        else:
-            print(f"⚠️  No embeddings found for {filter_desc}")
-            return []
-            
-    except Exception as e:
-        print(f"⚠️  Error fetching file embeddings: {e}")
-        return []
-
-
-def semantic_search_pgvector(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, file_name: str = None, selected_file_ids: list = None):
-    """
-    Perform semantic search using pgvector database-side similarity search
-    
-    Uses PostgreSQL pgvector extension with cosine distance operator (<=>)
-    Similarity calculated at DATABASE LEVEL - no application-level computation
-    
-    Features:
-    - Detects and filters by document name if mentioned in query
-    - Searches document embeddings using semantic similarity
-    - Returns results sorted by similarity score
-    - FALLBACK: If file_name exists but similarity is too low, returns ALL embeddings from that file
+    Performs pgvector similarity search AND returns metadata (file_type, workspace_id, uploaded_at, etc.)
+    automatically populates detected_files for ALL selected files, even if no semantic matches exist.
     
     Args:
         query: The search query text
         top_k: Number of top results to return (default: 5)
         min_similarity: Minimum similarity threshold (0.0-1.0, default: 0.2)
-        workspace_id: Optional workspace filter for search results (default: None)
-        file_name: Optional specific document to search in (extracted if not provided)
-        selected_file_ids: Optional list of file IDs to filter search results
+        workspace_id: Optional workspace filter for search results
+        selected_file_ids: Optional list of file IDs to filter search
     
     Returns:
-        List of (content, similarity_score, filename, file_path) tuples
+        Dict with:
+        - 'results': List of (content, similarity, filename, file_path, uploaded_at) tuples
+        - 'detected_files': Dict mapping file_id -> {file_name, file_type, file_path, workspace_id, uploaded_at}
+          (includes metadata for ALL selected files, not just semantic matches)
+        - 'file_types': List of detected file types ('csv', 'xlsx', 'txt', etc.)
     """
     if not supabase_client or not EMBEDDING_AVAILABLE:
-        print("⚠️  pgvector search not available - Supabase or embeddings not configured")
-        return []
+        print("⚠️  pgvector search not available")
+        return {'results': [], 'detected_files': {}, 'file_types': []}
     
     model = get_semantic_model()
     if not model:
-        print("⚠️  Embedding model not available")
-        return []
+        return {'results': [], 'detected_files': {}, 'file_types': []}
     
-    # Extract document name from query if not explicitly provided
-    if not file_name:
-        cleaned_query, extracted_file = extract_document_name(query, workspace_id)
-        file_name = extracted_file
-        query = cleaned_query  # Use cleaned query for embedding
+    # Generate embedding directly from query
+    query_embedding = model.encode([query])[0].tolist()
     
-    # Generate embedding for the query using same model as stored embeddings
-    query_embedding = model.encode([query])[0]
-    query_embedding_list = query_embedding.tolist()
+    print(f"🔍 Metadata-aware search (top_k={top_k}, min_similarity={min_similarity})")
     
-    search_context = f"top_k={top_k}, min_similarity={min_similarity}"
-    if file_name:
-        search_context += f", document={file_name}"
-    
-    print(f"🔍 Searching with pgvector ({search_context})")
-        
-
-    # Use RPC function for database-side similarity search
-    # This is the proper way to do pgvector queries without SQL injection
     try:
-        # Always pass all parameters to avoid PostgreSQL function overloading ambiguity
-        # Use None for optional parameters that aren't needed
-        # Directly use selected_file_ids if provided
-        
+        # RPC call with metadata enrichment
         rpc_params = {
-            'query_embedding': query_embedding_list,
+            'query_embedding': query_embedding,
             'match_threshold': min_similarity,
             'match_count': top_k,
-            'file_filter': file_name,  # None if not filtering, string if filtering by filename
-            'file_ids': selected_file_ids  # Pass file_ids directly for precise filtering
+            'file_ids': selected_file_ids
         }
         
         response = supabase_client.rpc('search_embeddings', rpc_params).execute()
-
+        
+        results = []
+        detected_files = {}
+        file_types_found = set()
+        
         if hasattr(response, 'data') and response.data:
-            results = []
             for row in response.data:
                 results.append((
                     row['chunk_text'],
                     float(row['similarity_score']),
                     row['file_name'],
-                    row.get('file_path')
+                    row.get('file_path'),
+                    row.get('uploaded_at')  # Include timestamp for time-based queries
                 ))
-
-            result_count = len(results)
-            doc_context = f" in {file_name}" if file_name else ""
-            print(f"✅ Found {result_count} similar chunks{doc_context} via pgvector RPC")
-            return results
+                
+                # Extract metadata
+                file_id = row.get('file_id')
+                file_name = row['file_name']
+                
+                # Determine file type from extension
+                if file_name:
+                    ext = file_name.lower().split('.')[-1] if '.' in file_name else None
+                    file_type = 'csv' if ext == 'csv' else ('xlsx' if ext in ['xlsx', 'xls'] else 'txt')
+                    file_types_found.add(file_type)
+                    
+                    if file_id not in detected_files:
+                        detected_files[file_id] = {
+                            'file_name': file_name,
+                            'file_type': file_type,
+                            'file_path': row.get('file_path'),
+                            'workspace_id': row.get('workspace_id'),
+                            'uploaded_at': row.get('uploaded_at')  # Include timestamp metadata
+                        }
+            
+            print(f"✅ Found {len(results)} chunks from {len(detected_files)} file(s)")
+            print(f"   File types: {file_types_found}")
         else:
-            # FALLBACK: If file(s) exist and no results from semantic search, fetch all embeddings from those files
-            if selected_file_ids:
-                print(f"📋 Semantic search returned no results for {len(selected_file_ids)} selected file(s) - falling back to all embeddings")
-                return get_all_file_embeddings(file_name=None, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
-            elif file_name:
-                print(f"📋 Semantic search returned no results for '{file_name}' - falling back to all embeddings")
-                return get_all_file_embeddings(file_name=file_name, workspace_id=workspace_id, selected_file_ids=None)
-            print("⚠️  RPC returned no data - may not be configured correctly")
-
-    except Exception as rpc_error:
-        print(f"⚠️  RPC call failed: {rpc_error}")
-        # FALLBACK: If file(s) exist and RPC fails, try to fetch all embeddings
-        if selected_file_ids:
-            print(f"🔄 RPC failed - attempting fallback to all embeddings from {len(selected_file_ids)} selected file(s)")
-            return get_all_file_embeddings(file_name=None, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
-        elif file_name:
-            print(f"🔄 RPC failed - attempting fallback to all embeddings from '{file_name}'")
-            return get_all_file_embeddings(file_name=file_name, workspace_id=workspace_id, selected_file_ids=None)
+            print("⚠️  No semantic matches found")
         
+        # Populate detected_files for ALL selected files (even if no semantic matches)
+        if selected_file_ids:
+            try:
+                # Fetch metadata for all selected files
+                file_records = supabase_client.table('file_upload').select(
+                    'id, file_name, file_type, file_path, workspace_id, uploaded_at'
+                ).in_('id', selected_file_ids).execute()
+                
+                if hasattr(file_records, 'data') and file_records.data:
+                    for file_record in file_records.data:
+                        file_id = file_record['id']
+                        if file_id not in detected_files:
+                            file_name = file_record.get('file_name', '')
+                            ext = file_name.lower().split('.')[-1] if '.' in file_name else None
+                            file_type = file_record.get('file_type', 'txt')
+                            if ext:
+                                file_type = 'csv' if ext == 'csv' else ('xlsx' if ext in ['xlsx', 'xls'] else file_type)
+                            
+                            detected_files[file_id] = {
+                                'file_name': file_name,
+                                'file_type': file_type,
+                                'file_path': file_record.get('file_path'),
+                                'workspace_id': file_record.get('workspace_id'),
+                                'uploaded_at': file_record.get('uploaded_at')
+                            }
+                            
+                            if file_type not in file_types_found:
+                                file_types_found.add(file_type)
+            except Exception as e:
+                print(f"⚠️  Could not fetch metadata for selected files: {e}")
+        
+        return {
+            'results': results,
+            'detected_files': detected_files,
+            'file_types': list(file_types_found)
+        }
+        
+    except Exception as rpc_error:
+        print(f"⚠️  RPC error: {rpc_error}")
+        return {'results': [], 'detected_files': {}, 'file_types': []}
 
 
 def chunk_text(text: str, chunk_size: int = 600, overlap: int = 50):
@@ -449,8 +281,6 @@ def query_csv_with_context(query: str, file_name: str, file_path: str = None, df
         # Use new sophisticated pipeline
         result = process_csv_excel_query(
             query=query,
-            file_path=path_to_load,
-            is_excel=False,
             conversation_history=conversation_history,
             selected_file_ids=selected_file_ids
         )
@@ -503,8 +333,6 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
         # Use new sophisticated pipeline
         result = process_csv_excel_query(
             query=query,
-            file_path=path_to_load,
-            is_excel=True,
             conversation_history=conversation_history,
             selected_file_ids=selected_file_ids
         )
@@ -512,6 +340,9 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
         return result
         
     except Exception as e:
+        print(f"Error querying Excel: {e}")
+        error_msg = f"Error processing Excel query: {str(e)}"
+        return query_model(error_msg, conversation_history=conversation_history)
         print(f"Error querying Excel: {e}")
         error_msg = f"Error processing Excel query: {str(e)}"
         return query_model(error_msg, conversation_history=conversation_history)
@@ -595,6 +426,41 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
 
 
 
+def fetch_full_document_by_file_id(file_id: str):
+    """
+    Fetch all document chunks for a specific file from the database
+    Used as fallback when semantic search yields weak similarity scores
+    
+    Args:
+        file_id: The file ID to fetch content for
+        
+    Returns:
+        String of all concatenated chunks from the file, or empty string if not found
+    """
+    if not supabase_client:
+        return ""
+    
+    try:
+        # Query all document content for this file, ordered by chunk_index
+        response = supabase_client.table('document_embeddings').select(
+            'chunk_text, chunk_index'
+        ).eq('file_id', file_id).order('chunk_index', desc=False).execute()
+        
+        if hasattr(response, 'data') and response.data:
+            # Sort by chunk_index to maintain proper document order
+            sorted_chunks = sorted(
+                [row for row in response.data if row.get('chunk_text')],
+                key=lambda x: x.get('chunk_index', 0)
+            )
+            # Concatenate all chunks in order
+            all_chunks = [row['chunk_text'] for row in sorted_chunks]
+            return "\n\n".join(all_chunks)
+        return ""
+    except Exception as e:
+        print(f"⚠️  Error fetching full document {file_id}: {e}")
+        return ""
+
+
 def query_with_context(query: str, max_chunks: int = 5, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None):
     """
     Query the LLM with relevant document chunks as context using pgvector semantic search
@@ -614,17 +480,52 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
         workspace_id: Optional workspace filter for search results
         selected_file_ids: Optional list of file IDs to filter search results
     """
-    # Get relevant chunks using pgvector database-side search
-    semantic_results = semantic_search_pgvector(query, top_k=max_chunks, min_similarity=0.18, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
+    # Get relevant chunks using pgvector database-side search with metadata
+    search_result = semantic_search_with_metadata(query, top_k=max_chunks, min_similarity=0.18, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
+    semantic_results = search_result.get('results', [])
+    detected_files = search_result.get('detected_files', {})
     
-    if not semantic_results:
+    # Check if semantic results have weak similarity scores
+    has_weak_matches = any(score < 0.25 for _, score, _, _, _ in semantic_results)
+    
+    # FALLBACK: If selected files exist but semantic search yields weak results, fetch full content
+    context_parts = []
+    
+    if semantic_results and not has_weak_matches:
+        # Build context from strong semantic search results (max 2000 chars per chunk)
+        context_parts = [
+            f"Document: {filename}\nScore:{score:.2f}\nContent: {content[:2000]}{'...' if len(content) > 2000 else ''}"
+            for content, score, filename, file_path, uploaded_at in semantic_results
+        ]
+    
+    # Fallback: If weak matches OR no results but files are selected, fetch full document content
+    if (not semantic_results or has_weak_matches) and selected_file_ids:
+        print(f"📌 Activating fallback: Fetching full content from {len(selected_file_ids)} selected file(s)")
+        
+        for file_id in selected_file_ids:
+            # Get file metadata from detected_files (now guaranteed to exist via semantic_search_with_metadata)
+            file_info = detected_files.get(file_id)
+            if not file_info:
+                print(f"   ⚠️  Could not find metadata for file {file_id}")
+                continue
+            
+            # Fetch full document content
+            full_content = fetch_full_document_by_file_id(file_id)
+            
+            if full_content:
+                # Truncate to reasonable length (5000 chars per file for fallback)
+                truncated = full_content[:5000]
+                context_parts.append(
+                    f"📄 Document: {file_info.get('file_name', 'Unknown')}\nContent (Full Context):\n{truncated}{'...' if len(full_content) > 5000 else ''}"
+                )
+                print(f"   ✅ Loaded {len(full_content)} chars from {file_info.get('file_name', 'Unknown')}")
+            else:
+                print(f"   ⚠️  No content found for file {file_info.get('file_name', file_id)}")
+    
+    # If still no context, return plain query
+    if not context_parts:
+        print("⚠️  No document context available, querying without context")
         return query_model(query, conversation_history=conversation_history, stream=stream)
-    
-    # Build context from search results (max 2000 chars per chunk)
-    context_parts = [
-        f"Document: {filename}\nScore:{score:.2f}\nContent: {content[:2000]}{'...' if len(content) > 2000 else ''}"
-        for content, score, filename, file_path in semantic_results
-    ]
     
     context = "\n\n---\n\n".join(context_parts)
     

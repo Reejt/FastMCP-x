@@ -35,8 +35,8 @@ from client.fast_mcp_client import (
     agentic_task as mcp_agentic_task,
 )
 
-# Import extract_document_name for robust file name detection
-from server.query_handler import extract_document_name
+# Import semantic search with metadata
+from server.query_handler import semantic_search_with_metadata
 
 # Import Supabase client for file metadata lookup
 try:
@@ -143,9 +143,14 @@ async def root():
 @app.post("/api/query")
 async def query_endpoint(request: QueryRequest):
     """
-    Main query endpoint - answers questions using document context via MCP
-    Supports conversation history for contextual follow-up questions
-    Returns Server-Sent Events (SSE) stream for real-time responses
+    Main query endpoint with intelligent routing using metadata-aware semantic search.
+    
+    Metadata-aware search automatically detects:
+    - CSV/Excel files (routes to specialized handlers)
+    - URLs (routes to link handler)
+    - Regular documents (routes to LLM query)
+    
+    This eliminates ~200 lines of file detection/routing code.
     """
     try:
         print(f"📥 Received query: {request.query}")
@@ -162,17 +167,14 @@ async def query_endpoint(request: QueryRequest):
             
             async def agent_event_generator():
                 try:
-                    # Call agentic task tool
                     response = await mcp_agentic_task(
                         goal=request.query,
                         context=f"Workspace: {request.workspace_id}" if request.workspace_id else "",
                         max_iterations=10
                     )
                     
-                    # Parse response and extract final result
                     try:
                         response_data = json.loads(response) if isinstance(response, str) else response
-                        # Only display the final result
                         final_result = response_data.get('final_result', 'No result')
                         yield f"data: {json.dumps({'chunk': final_result})}\n\n"
                     except json.JSONDecodeError:
@@ -197,172 +199,6 @@ async def query_endpoint(request: QueryRequest):
                 }
             )
         
-        # Helper function to route file queries (reduces redundancy)
-        async def route_file_query(file_info, source_label="file"):
-            """Route query to appropriate file handler (CSV/Excel)"""
-            print(f"🎯 Routing to {file_info['file_type'].upper()} handler ({source_label})")
-            
-            async def file_event_generator():
-                try:
-                    # If selected_file_ids provided, don't pass file_path to enable multi-file handling
-                    use_file_path = None if request.selected_file_ids else file_info.get('file_path')
-                    
-                    # Only use actual file_name when it exists, otherwise pass empty string for multi-file
-                    use_file_name = file_info.get('file_name', '')
-                    
-                    if file_info['file_type'] == 'csv':
-                        if request.selected_file_ids:
-                            print(f"📄 Querying CSV with {len(request.selected_file_ids)} selected files")
-                        else:
-                            print(f"📄 Querying CSV: {use_file_name}")
-                        response = await mcp_query_csv_with_context(
-                            query=request.query,
-                            file_name=use_file_name,
-                            file_path=use_file_path,
-                            conversation_history=request.conversation_history,
-                            workspace_id=request.workspace_id,
-                            selected_file_ids=request.selected_file_ids
-                        )
-                    else:  # xlsx or xls
-                        if request.selected_file_ids:
-                            print(f"📊 Querying Excel with {len(request.selected_file_ids)} selected files")
-                        else:
-                            print(f"📊 Querying Excel: {use_file_name}")
-                        response = await mcp_query_excel_with_context(
-                            query=request.query,
-                            file_name=use_file_name,
-                            file_path=use_file_path,
-                            conversation_history=request.conversation_history,
-                            workspace_id=request.workspace_id,
-                            selected_file_ids=request.selected_file_ids
-                        )
-                    
-                    yield f"data: {json.dumps({'chunk': response})}\n\n"
-                    yield f"data: {json.dumps({'done': True})}\n\n"
-                    print(f"✅ Query completed")
-                    
-                except Exception as e:
-                    print(f"❌ Query error: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            
-            return StreamingResponse(
-                file_event_generator(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no"
-                }
-            )
-        
-        # Helper function to determine file type from extension
-        def get_file_type(filename):
-            """Determine file type from extension"""
-            file_ext = filename.lower()
-            if file_ext.endswith('.csv'):
-                return 'csv'
-            elif file_ext.endswith(('.xlsx', '.xls')):
-                return 'xlsx' if file_ext.endswith('.xlsx') else 'xls'
-            return None
-        
-        # Check for explicitly selected files first (highest priority)
-        # If user has selected specific files, route directly to file handler
-        selected_file_info = None
-        if request.selected_file_ids and request.workspace_id and supabase_client:
-            try:
-                print(f"📋 Checking {len(request.selected_file_ids)} selected files")
-                # Look up the selected files in Supabase
-                file_records = supabase_client.table('file_upload').select('*').in_(
-                    'id', request.selected_file_ids
-                ).eq('workspace_id', request.workspace_id).execute()
-                
-                if file_records.data:
-                    # Check if ANY selected files are CSV/Excel types
-                    csv_excel_files = [f for f in file_records.data if get_file_type(f['file_name']) in ['csv', 'xlsx', 'xls']]
-                    
-                    if csv_excel_files:
-                        # Found CSV/Excel files - determine routing based on all files
-                        file_types_in_selection = set(get_file_type(f['file_name']) for f in csv_excel_files)
-                        has_mixed = len(file_types_in_selection) > 1
-                        
-                        # Route to CSV handler if ANY file is CSV, otherwise use Excel
-                        route_type = 'csv' if any(get_file_type(f['file_name']) == 'csv' for f in csv_excel_files) else 'xlsx'
-                        
-                        selected_file_info = {
-                            'file_type': route_type,
-                            'has_mixed': has_mixed
-                        }
-                        
-                        print(f"✅ Found {len(csv_excel_files)} CSV/Excel file(s) in selection")
-                        print(f"   File types: {file_types_in_selection}, Mixed: {has_mixed}")
-                        print(f"   Will process ALL {len(request.selected_file_ids)} selected files combined")
-                    else:
-                        # No CSV/Excel files in selection, will fall through to query detection
-                        print(f"⚠️  No CSV/Excel files in selection")
-                        
-            except Exception as db_error:
-                print(f"⚠️  Failed to load selected files: {str(db_error)}")
-        
-        # If selected file available, route to appropriate handler immediately
-        if selected_file_info and selected_file_info.get('file_type'):
-            return await route_file_query(selected_file_info, "selected file")
-        
-        # Detect file references in query using extract_document_name() for robust matching
-        # This handles various patterns like "in sales.csv", "from data.xlsx", "query data.csv", etc.
-        cleaned_query, detected_file_name = extract_document_name(request.query, request.workspace_id)
-        
-        if detected_file_name and request.workspace_id:
-            print(f"📊 File reference detected in query: {detected_file_name}")
-            
-            # Determine file type from detected filename
-            file_type = get_file_type(detected_file_name)
-            
-            # Query Supabase for actual files in this workspace to find the match
-            file_path = None
-            if supabase_client and file_type:
-                try:
-                    print(f"🔍 Searching Supabase for files in workspace: {request.workspace_id}")
-                    # Get all files in this workspace
-                    file_records = supabase_client.table('file_upload').select('*').eq(
-                        'workspace_id', request.workspace_id
-                    ).execute()
-                    
-                    if file_records.data:
-                        print(f"📂 Found {len(file_records.data)} files in workspace")
-                        
-                        # Find the exact matching file
-                        for record in file_records.data:
-                            actual_filename = record['file_name']
-                            # Check for exact match or close match
-                            if actual_filename.lower() == detected_file_name.lower() or \
-                               detected_file_name.lower() in actual_filename.lower():
-                                file_path = record['file_path']
-                                print(f"✅ Matched file: {actual_filename} -> {file_path}")
-                                detected_file_name = actual_filename  # Use actual filename
-                                break
-                        
-                        if not file_path:
-                            print(f"⚠️  No matching file found for: {detected_file_name}")
-                            print(f"   Available files: {[r['file_name'] for r in file_records.data]}")
-                    else:
-                        print(f"⚠️  No files found in workspace")
-                        
-                except Exception as db_error:
-                    print(f"⚠️  Database lookup failed: {str(db_error)}")
-            
-            # If file_path found, route to CSV/Excel handler
-            if file_path and file_type:
-                detected_file_info = {
-                    'file_name': detected_file_name,
-                    'file_path': file_path,
-                    'file_type': file_type
-                }
-                return await route_file_query(detected_file_info, "detected file")
-            else:
-                print(f"⚠️  File path not found in Supabase or unsupported file type. Proceeding with regular query.")
-        
         # Detect if query contains a URL - route to link query handler
         url_pattern = r'https?://[^\s]+'
         url_match = re.search(url_pattern, request.query)
@@ -371,7 +207,6 @@ async def query_endpoint(request: QueryRequest):
             detected_url = url_match.group(0)
             print(f"🔗 Detected URL in query: {detected_url}")
             
-            # Check if it's a supported web link
             if detected_url.startswith("http"):
                 print("🔗 Web link detected")
                 
@@ -399,27 +234,98 @@ async def query_endpoint(request: QueryRequest):
                     }
                 )
         
-        # Detect if query requires real-time/current information from web search
-        # Try regular query first, only route to web search if model indicates knowledge cutoff
+        # ============================================
+        # METADATA-AWARE INTELLIGENT ROUTING
+        # ============================================
+        # This replaces ~200 lines of file detection/routing code
         
-        # Check for explicit knowledge cutoff indicators
-        knowledge_cutoff_patterns = [
-            r"\b(knowledge cutoff|training data cutoff|cutoff date)\b",
-            r"\b(don't know|don't have|no information|no data)\b.*\b(about|on|regarding)\b",
-            r"\b(unable to|can't|cannot)\b.*\b(access|find|provide)\b",
-            r"\b(beyond.*knowledge|outside.*knowledge)\b",
-            r"\b(couldn't find|could not find|i couldn't find)\b.*\b(information)\b",
-            r"\b(there is some confusion|some confusion)\b",
-        ]
-        
-        # Call the streaming query handler first
         async def event_generator():
             try:
-                # Import streaming handler and instructions handler
+                csv_file_ids = []
+                excel_file_ids = []
+                if request.selected_file_ids:
+                    # Fetch file types from Supabase for selected files
+                    if supabase_client:
+                        try:
+                            print(f"🔍 Fetching file metadata from Supabase for {len(request.selected_file_ids)} files")
+                            
+                            # Query file_upload table for file types and names
+                            response = supabase_client.table('file_upload').select(
+                                'id, file_name, file_type'
+                            ).in_('id', request.selected_file_ids).execute()
+                            
+                            file_metadata = response.data if response.data else []
+                            print(f"📊 Retrieved metadata for {len(file_metadata)} files")
+                            
+                            # Filter CSV and Excel files by type
+                            csv_types = {'csv', 'text/csv'}
+                            excel_types = {'xlsx', 'xls', 'excel', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}
+                            
+                            for file_info in file_metadata:
+                                file_type = (file_info.get('file_type') or '').lower()
+                                file_id = file_info.get('id')
+                                file_name = file_info.get('file_name')
+                                
+                                # Determine file type from extension or MIME type
+                                if file_type in excel_types or file_name.lower().endswith(('.xlsx', '.xls')):
+                                    excel_file_ids.append(file_id)
+                                    print(f"   ✓ {file_name} ({file_type}) - Excel detected")
+                                elif file_type in csv_types or file_name.lower().endswith('.csv'):
+                                    csv_file_ids.append(file_id)
+                                    print(f"   ✓ {file_name} ({file_type}) - CSV detected")
+                                else:
+                                    print(f"   • {file_name} ({file_type}) - Regular document")
+                            
+                            print(f"📊 Identified {len(csv_file_ids)} CSV files and {len(excel_file_ids)} Excel files for specialized processing")
+                        
+                        except Exception as e:
+                            print(f"⚠️  Error fetching file metadata from Supabase: {str(e)}")
+                            # Fallback: assume CSV if fetch fails
+                            csv_file_ids = request.selected_file_ids
+                    else:
+                        print(f"⚠️  Supabase client not available, cannot fetch file metadata")
+                        csv_file_ids = request.selected_file_ids
+                
+                # Route 1: CSV file query (direct selection)
+                if csv_file_ids:
+                    print(f"📊 Routing to CSV handler (files explicitly selected)")
+                    
+                    response = await mcp_query_csv_with_context(
+                        query=request.query,
+                        file_name='',
+                        file_path=None,
+                        conversation_history=request.conversation_history,
+                        workspace_id=request.workspace_id,
+                        selected_file_ids=csv_file_ids
+                    )
+                    yield f"data: {json.dumps({'chunk': response})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                    print(f"✅ CSV query completed")
+                    return
+                
+                # Route 1b: Excel file query (direct selection)
+                if excel_file_ids:
+                    print(f"📊 Routing to Excel handler (files explicitly selected)")
+                    
+                    response = await mcp_query_excel_with_context(
+                        query=request.query,
+                        file_name='',
+                        file_path=None,
+                        conversation_history=request.conversation_history,
+                        workspace_id=request.workspace_id,
+                        selected_file_ids=excel_file_ids
+                    )
+                    yield f"data: {json.dumps({'chunk': response})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                    print(f"✅ Excel query completed")
+                    return
+                
+                # Route 2: Regular document/LLM query with semantic search
+                print(f"💬 Routing to regular document query with semantic search")
+                
                 from server.query_handler import answer_query
                 from server.instructions import query_with_instructions_stream
                 
-                # If workspace_id is provided, use instructions-aware query
                 if request.workspace_id:
                     print(f"🎯 Using workspace instructions for workspace: {request.workspace_id}")
                     response_generator = query_with_instructions_stream(
@@ -429,19 +335,17 @@ async def query_endpoint(request: QueryRequest):
                         selected_file_ids=request.selected_file_ids
                     )
                 else:
-                    # Get streaming response without workspace instructions
                     response_generator = answer_query(
-                        request.query, 
+                        request.query,
                         conversation_history=request.conversation_history,
                         stream=True,
                         workspace_id=request.workspace_id,
                         selected_file_ids=request.selected_file_ids
                     )
                 
-                # Check if generator is async-aware
+                # Check if generator is async
                 is_async_gen = inspect.isasyncgen(response_generator)
                 
-                # Collect response chunks
                 full_response = ""
                 try:
                     if is_async_gen:
@@ -449,15 +353,12 @@ async def query_endpoint(request: QueryRequest):
                             if isinstance(chunk, dict) and 'response' in chunk:
                                 chunk_text = chunk['response']
                                 full_response += chunk_text
-                                # Format as SSE
                                 yield f"data: {json.dumps({'chunk': chunk_text})}\n\n"
                     else:
-                        # Regular synchronous generator
                         for chunk in response_generator:
                             if isinstance(chunk, dict) and 'response' in chunk:
                                 chunk_text = chunk['response']
                                 full_response += chunk_text
-                                # Format as SSE
                                 yield f"data: {json.dumps({'chunk': chunk_text})}\n\n"
                 except Exception as chunk_error:
                     print(f"❌ Chunk processing error: {type(chunk_error).__name__}: {str(chunk_error)}")
@@ -465,23 +366,24 @@ async def query_endpoint(request: QueryRequest):
                     yield f"data: {json.dumps({'done': True})}\n\n"
                     return
                 
-                # Check if response indicates knowledge cutoff or is too short
+                # Check for knowledge cutoff and route to web search if needed
+                knowledge_cutoff_patterns = [
+                    r"\b(knowledge cutoff|training data cutoff|cutoff date)\b",
+                    r"\b(don't know|don't have|no information|no data)\b.*\b(about|on|regarding)\b",
+                    r"\b(unable to|can't|cannot)\b.*\b(access|find|provide)\b",
+                ]
+                
                 is_cutoff_response = any(
-                    re.search(pattern, full_response, re.IGNORECASE) 
+                    re.search(pattern, full_response, re.IGNORECASE)
                     for pattern in knowledge_cutoff_patterns
                 )
                 
-                # If response is empty, very short (< 20 chars), or indicates cutoff, try web search
                 if is_cutoff_response:
-                    print(f"⚠️ Inadequate response detected, routing to web_search for better results")
-                    print(f"   Response length: {len(full_response.strip())} chars, Cutoff indicator: {is_cutoff_response}")
-                    
-                    # Yield separator and web search response with timeout protection
+                    print(f"⚠️  Knowledge cutoff detected, routing to web search")
                     web_search_message = "\n\n🔍 Searching the web for more current information...\n\n"
                     yield f"data: {json.dumps({'chunk': web_search_message})}\n\n"
                     
                     try:
-                        # Wrap web search with timeout to prevent hanging
                         web_response = await asyncio.wait_for(
                             mcp_web_search(
                                 request.query,
@@ -492,28 +394,20 @@ async def query_endpoint(request: QueryRequest):
                         )
                         yield f"data: {json.dumps({'chunk': web_response})}\n\n"
                     except asyncio.TimeoutError:
-                        print(f"⏱️ Web search timed out after 15s")
+                        print(f"⏱️ Web search timed out")
                         yield f"data: {json.dumps({'error': 'Web search timed out'})}\n\n"
-                        yield f"data: {json.dumps({'done': True})}\n\n"
-                        return
                     except Exception as web_error:
-                        print(f"❌ Web search error: {type(web_error).__name__}: {str(web_error)}")
-                        yield f"data: {json.dumps({'error': f'Web search failed: {str(web_error)}'})} \n\n"
-                        yield f"data: {json.dumps({'done': True})}\n\n"
-                        return
+                        print(f"❌ Web search error: {str(web_error)}")
                 
-                # Send completion signal
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 print(f"✅ Query completed")
                 
             except Exception as e:
-                # Never raise in generator - always yield error
                 print(f"❌ Error: {type(e).__name__}: {str(e)}")
                 import traceback
                 traceback.print_exc()
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 yield f"data: {json.dumps({'done': True})}\n\n"
-        
         
         return StreamingResponse(
             event_generator(),
@@ -521,29 +415,23 @@ async def query_endpoint(request: QueryRequest):
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"  # Disable nginx buffering
+                "X-Accel-Buffering": "no"
             }
         )
         
     except Exception as e:
-        # This catch-all should rarely execute since errors are handled in generator
-        # But if it does, return SSE stream error
-        print(f"❌ Query failed with error: {type(e).__name__}: {str(e)}")
+        print(f"❌ Query failed: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
         
         async def error_stream():
-            yield f"data: {json.dumps({'error': str(e), 'type': type(e).__name__})}\n\n"
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
         
         return StreamingResponse(
             error_stream(),
             media_type="text/event-stream",
-            status_code=500,
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            }
+            status_code=500
         )
 
 
