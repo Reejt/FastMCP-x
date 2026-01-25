@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { flushSync } from 'react-dom'  // ✅ ADD THIS for immediate updates
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace, WorkspaceInstruction, Chat } from '@/app/types'
@@ -279,7 +280,12 @@ export default function DashboardPage() {
 
   const handleCancelStreaming = () => {
     if (abortController) {
-      abortController.abort()
+      try {
+        abortController.abort()
+      } catch (error) {
+        // Ignore abort errors - they're expected
+        console.log('Stream aborted by user')
+      }
       setAbortController(null)
       setIsStreaming(false)
       setIsProcessing(false)
@@ -425,14 +431,16 @@ export default function DashboardPage() {
                       // Append chunk to accumulated content
                       accumulatedContent += data.chunk
 
-                      // Update the assistant message with new content
-                      setMessages((prev) =>
-                        prev.map((msg) =>
-                          msg.id === assistantMessageId
-                            ? { ...msg, content: accumulatedContent, isStreaming: true }
-                            : msg
+                      // ✅ FORCE IMMEDIATE UPDATE - Don't batch with React
+                      flushSync(() => {
+                        setMessages((prev) =>
+                          prev.map((msg) =>
+                            msg.id === assistantMessageId
+                              ? { ...msg, content: accumulatedContent, isStreaming: true }
+                              : msg
+                          )
                         )
-                      )
+                      })
                     } else if (data.done) {
                       // Streaming complete - save assistant response to database via API
                       if (accumulatedContent && !streamError) {
@@ -528,6 +536,8 @@ export default function DashboardPage() {
       if (
         (error instanceof Error && error.name === 'AbortError') ||
         (error instanceof DOMException && error.name === 'AbortError') ||
+        (error instanceof Error && error.message?.includes('BodyStreamBuffer was aborted')) ||
+        (error instanceof Error && error.message?.includes('aborted')) ||
         (error instanceof Error && error.message === 'User cancelled the request') ||
         (typeof error === 'string' && error === 'User cancelled the request')
       ) {

@@ -2,6 +2,7 @@
 
 import { useRouter, useParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { flushSync } from 'react-dom'  // ✅ ADD THIS for immediate updates
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace } from '@/app/types'
@@ -218,7 +219,12 @@ export default function WorkspacePage() {
 
   const handleCancelStreaming = () => {
     if (abortController) {
-      abortController.abort()
+      try {
+        abortController.abort()
+      } catch (error) {
+        // Ignore abort errors - they're expected
+        console.log('Stream aborted by user')
+      }
       setAbortController(null)
       setIsStreaming(false)
       setIsProcessing(false)
@@ -596,14 +602,16 @@ export default function WorkspacePage() {
                       // Append chunk to accumulated content
                       accumulatedContent += data.chunk
 
-                      // Update the assistant message with new content
-                      setMessages((prev) =>
-                        prev.map((msg) =>
-                          msg.id === assistantMessageId
-                            ? { ...msg, content: accumulatedContent, isStreaming: true }
-                            : msg
+                      // ✅ FORCE IMMEDIATE UPDATE - Don't batch with React
+                      flushSync(() => {
+                        setMessages((prev) =>
+                          prev.map((msg) =>
+                            msg.id === assistantMessageId
+                              ? { ...msg, content: accumulatedContent, isStreaming: true }
+                              : msg
+                          )
                         )
-                      )
+                      })
                     } else if (data.done) {
                       // Streaming complete - save assistant response to Supabase
                       if (accumulatedContent && !streamError) {
@@ -674,10 +682,14 @@ export default function WorkspacePage() {
       // Check if this is an abort error (user cancelled) first
       if (
         (error instanceof Error && error.name === 'AbortError') ||
-        (error instanceof DOMException && error.name === 'AbortError')
+        (error instanceof DOMException && error.name === 'AbortError') ||
+        (error instanceof Error && error.message?.includes('BodyStreamBuffer was aborted')) ||
+        (error instanceof Error && error.message?.includes('aborted'))
       ) {
         console.log('Request was cancelled by user')
         setIsStreaming(false)
+        setIsProcessing(false)
+        setAbortController(null)
         return
       }
       
