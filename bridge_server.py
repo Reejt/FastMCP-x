@@ -31,8 +31,7 @@ from client.fast_mcp_client import (
     web_search as mcp_web_search,
     answer_link_query as mcp_answer_link_query,
     query_csv_with_context as mcp_query_csv_with_context,
-    query_excel_with_context as mcp_query_excel_with_context,
-    agentic_task as mcp_agentic_task,
+    query_excel_with_context as mcp_query_excel_with_context
 )
 
 # Import semantic search with metadata
