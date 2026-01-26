@@ -243,16 +243,16 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
             try:
                 csv_file_ids = []
                 excel_file_ids = []
-                if request.selected_file_ids:
+                if query_request.selected_file_ids:
                     # Fetch file types from Supabase for selected files
                     if supabase_client:
                         try:
-                            print(f"🔍 Fetching file metadata from Supabase for {len(request.selected_file_ids)} files")
+                            print(f"🔍 Fetching file metadata from Supabase for {len(query_request.selected_file_ids)} files")
                             
                             # Query file_upload table for file types and names
                             response = supabase_client.table('file_upload').select(
                                 'id, file_name, file_type'
-                            ).in_('id', request.selected_file_ids).execute()
+                            ).in_('id', query_request.selected_file_ids).execute()
                             
                             file_metadata = response.data if response.data else []
                             print(f"📊 Retrieved metadata for {len(file_metadata)} files")
@@ -281,21 +281,21 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                         except Exception as e:
                             print(f"⚠️  Error fetching file metadata from Supabase: {str(e)}")
                             # Fallback: assume CSV if fetch fails
-                            csv_file_ids = request.selected_file_ids
+                            csv_file_ids = query_request.selected_file_ids
                     else:
                         print(f"⚠️  Supabase client not available, cannot fetch file metadata")
-                        csv_file_ids = request.selected_file_ids
+                        csv_file_ids = query_request.selected_file_ids
                 
                 # Route 1: CSV file query (direct selection)
                 if csv_file_ids:
                     print(f"📊 Routing to CSV handler (files explicitly selected)")
                     
                     response = await mcp_query_csv_with_context(
-                        query=request.query,
+                        query=query_request.query,
                         file_name='',
                         file_path=None,
-                        conversation_history=request.conversation_history,
-                        workspace_id=request.workspace_id,
+                        conversation_history=query_request.conversation_history,
+                        workspace_id=query_request.workspace_id,
                         selected_file_ids=csv_file_ids
                     )
                     yield f"data: {json.dumps({'chunk': response})}\n\n"
@@ -308,11 +308,11 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                     print(f"📊 Routing to Excel handler (files explicitly selected)")
                     
                     response = await mcp_query_excel_with_context(
-                        query=request.query,
+                        query=query_request.query,
                         file_name='',
                         file_path=None,
-                        conversation_history=request.conversation_history,
-                        workspace_id=request.workspace_id,
+                        conversation_history=query_request.conversation_history,
+                        workspace_id=query_request.workspace_id,
                         selected_file_ids=excel_file_ids
                     )
                     yield f"data: {json.dumps({'chunk': response})}\n\n"
@@ -330,9 +330,9 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                 import threading
                 abort_event = threading.Event()
                 
-                if request.workspace_id:
-                    print(f"🎯 Using workspace instructions for workspace: {request.workspace_id}")
-                    response_generator = query_with_instructions_stream(
+                if query_request.workspace_id:
+                    print(f"🎯 Using workspace instructions for workspace: {query_request.workspace_id}")
+                    response_generator = await query_with_instructions_stream(
                         query=query_request.query,
                         workspace_id=query_request.workspace_id,
                         conversation_history=query_request.conversation_history,
@@ -340,9 +340,9 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                         abort_event=abort_event  # ✅ Pass abort event
                     )
                 else:
-                    response_generator = answer_query(
-                        request.query,
-                        conversation_history=request.conversation_history,
+                    response_generator = await answer_query(
+                        query_request.query,
+                        conversation_history=query_request.conversation_history,
                         stream=True,
                         workspace_id=query_request.workspace_id,
                         selected_file_ids=query_request.selected_file_ids,

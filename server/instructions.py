@@ -186,7 +186,7 @@ def query_with_instructions(
         return f"Error querying with instructions: {str(e)}"
 
 
-def query_with_instructions_stream(
+async def query_with_instructions_stream(
     query: str,
     workspace_id: str,
     model_name: str = "llama3.2:1b",
@@ -196,7 +196,7 @@ def query_with_instructions_stream(
     abort_event=None
 ):
     """
-    Query LLM with workspace-specific instructions (streaming version)
+    Query LLM with workspace-specific instructions (async streaming version)
     
     Args:
         query: The user's query
@@ -208,7 +208,7 @@ def query_with_instructions_stream(
         abort_event: threading.Event to signal cancellation (optional)
     
     Returns:
-        Generator yielding response chunks
+        Async generator yielding response chunks
     """
     try:
         # Build system prompt with instructions
@@ -221,9 +221,9 @@ def query_with_instructions_stream(
             # No instructions - pass query through unchanged
             full_query = query
         
-        # Use answer_query from query_handler with streaming enabled
+        # Use answer_query from query_handler with streaming enabled (async)
         # ✅ Pass abort_event for cancellation support
-        response = answer_query(
+        response = await answer_query(
             full_query,
             conversation_history=conversation_history,
             stream=True,
@@ -234,16 +234,16 @@ def query_with_instructions_stream(
         
         # ✅ FIX: Directly return the inner generator to avoid double-wrapping
         # This allows the bridge_server to iterate it directly with asyncio.to_thread
-        if hasattr(response, '__iter__') and not isinstance(response, str):
+        if hasattr(response, '__aiter__'):
             return response
         else:
-            # If not streaming, wrap as single-item generator
-            def single_response():
+            # If not streaming, wrap as single-item async generator
+            async def single_response():
                 yield {"response": response}
             return single_response()
         
     except Exception as e:
-        def error_response():
+        async def error_response():
             yield {"response": f"Error querying with instructions: {str(e)}"}
         return error_response()
 

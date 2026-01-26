@@ -6,6 +6,11 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 });
 
 const nextConfig: NextConfig = {
+  // Specify turbopack root to avoid multiple lockfiles warning
+  turbopack: {
+    root: '.',
+  },
+
   // Enable React strict mode for better performance
   reactStrictMode: true,
 

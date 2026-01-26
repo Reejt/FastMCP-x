@@ -26,6 +26,7 @@ import requests
 import os
 import pandas as pd
 import tempfile
+import asyncio
 from typing import List, Tuple, Dict, Any
 from server.document_ingestion import documents
 from server.csv_excel_processor import process_csv_excel_query
@@ -348,13 +349,13 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
         return query_model(error_msg, conversation_history=conversation_history)
 
 
-def query_model(query: str, model_name: str = 'llama3:8b', stream: bool = False, conversation_history: list = None, abort_event=None):
+async def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, conversation_history: list = None, abort_event=None):
     """
-    Query the Ollama model via HTTP API with optional conversation history
+    Query the Ollama model via HTTP API with optional conversation history (async version)
     
     Args:
         query: The current user query
-        model_name: Name of the Ollama model to use (default: llama3:8b)
+        model_name: Name of the Ollama model to use (default: llama3.2:1b)
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
         abort_event: threading.Event to signal cancellation (optional)
@@ -380,8 +381,8 @@ def query_model(query: str, model_name: str = 'llama3:8b', stream: bool = False,
         response.raise_for_status()
         
         if stream:
-            # Return generator that yields JSON chunks with abort support
-            def generate():
+            # Return async generator that yields JSON chunks with abort support
+            async def generate():
                 import json
                 try:
                     for line in response.iter_lines():
@@ -389,6 +390,9 @@ def query_model(query: str, model_name: str = 'llama3:8b', stream: bool = False,
                         if abort_event and abort_event.is_set():
                             response.close()  # Close connection to stop Ollama
                             break
+                        
+                        # Yield to event loop to allow cancellation
+                        await asyncio.sleep(0)
                         
                         if line:
                             try:
@@ -412,9 +416,9 @@ def query_model(query: str, model_name: str = 'llama3:8b', stream: bool = False,
             
    
 
-def answer_query(query: str, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None, abort_event=None):
+async def answer_query(query: str, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None, abort_event=None):
     """
-    Answer queries using pgvector database-side semantic search
+    Answer queries using pgvector database-side semantic search (async version)
     Database performs similarity matching - no application-level computation
     
     Args:
@@ -427,12 +431,12 @@ def answer_query(query: str, conversation_history: list = None, stream: bool = F
     """
     try:
         # Use document context for enhanced response
-        return query_with_context(query, max_chunks=5, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id, selected_file_ids=selected_file_ids, abort_event=abort_event)
+        return await query_with_context(query, max_chunks=5, conversation_history=conversation_history, stream=stream, workspace_id=workspace_id, selected_file_ids=selected_file_ids, abort_event=abort_event)
         
     except Exception as e:
         error_message = f"Error processing query: {str(e)}"
         if stream:
-            def error_generator():
+            async def error_generator():
                 yield {"response": error_message}
             return error_generator()
         return error_message
@@ -475,9 +479,9 @@ def fetch_full_document_by_file_id(file_id: str):
         return ""
 
 
-def query_with_context(query: str, max_chunks: int = 5, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None):
+async def query_with_context(query: str, max_chunks: int = 5, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None, abort_event=None):
     """
-    Query the LLM with relevant document chunks as context using pgvector semantic search
+    Query the LLM with relevant document chunks as context using pgvector semantic search (async version)
     Text documents only - CSV/Excel files are handled separately via their dedicated functions
     
     FALLBACK MECHANISM:
@@ -496,7 +500,7 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
         abort_event: threading.Event to signal cancellation (optional)
     """
     # Get relevant chunks using pgvector database-side search with metadata
-    search_result = semantic_search_with_metadata(query, top_k=max_chunks, min_similarity=0.18, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
+    search_result = semantic_search_with_metadata(query, top_k=max_chunks, min_similarity=0.2, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
     semantic_results = search_result.get('results', [])
     detected_files = search_result.get('detected_files', {})
     
@@ -540,19 +544,23 @@ def query_with_context(query: str, max_chunks: int = 5, include_context_preview:
     # If still no context, return plain query
     if not context_parts:
         print("⚠️  No document context available, querying without context")
-        return query_model(query, conversation_history=conversation_history, stream=stream)
+        return await query_model(query, conversation_history=conversation_history, stream=stream, abort_event=abort_event)
     
     context = "\n\n---\n\n".join(context_parts)
     
-    enhanced_query = f"""Answer this question using the document content provided below: {query}
+    # Build enhanced query - if context is empty, use query directly
+    if not context.strip():
+        enhanced_query = query
+    else:
+        enhanced_query = f"""Answer this question using the document content provided below: {query}
 
 DOCUMENT CONTENT:
 {context}
 """
     
-    # Query the LLM with context and conversation history
-    # Note: abort_event will be passed from bridge_server if needed
-    return query_model(enhanced_query, conversation_history=conversation_history, stream=stream, abort_event=abort_event)
+    # Query the LLM with context and conversation history (async)
+    # ✅ Pass abort_event for cancellation support
+    return await query_model(enhanced_query, conversation_history=conversation_history, stream=stream, abort_event=abort_event)
 
 
 
@@ -631,13 +639,13 @@ def answer_link_query(link, question, conversation_history: list = None):
         return f"Error: {str(e)}"
 
 
-def generate_chat_title(first_message: str, model_name: str = 'llama3:8b') -> str:
+def generate_chat_title(first_message: str, model_name: str = 'llama3.2:1b') -> str:
     """
     Generate a concise, descriptive title for a chat session based on the first message.
     
     Args:
         first_message: The first user message in the chat session
-        model_name: Name of the Ollama model to use (default: llama3:8b)
+        model_name: Name of the Ollama model to use (default: llama3.2:1b)
         
     Returns:
         A short, descriptive title (max 6 words)

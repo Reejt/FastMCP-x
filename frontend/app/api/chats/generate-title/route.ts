@@ -8,7 +8,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-const BRIDGE_SERVER_URL = process.env.NEXT_PUBLIC_BRIDGE_SERVER_URL || 'http://localhost:3001'
+// Server-side env variable (no NEXT_PUBLIC_ prefix needed in API routes)
+// Defaults to localhost:3001 for local development (npm run dev)
+// Set BRIDGE_SERVER_URL env variable for Docker or custom deployments
+const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://localhost:3001'
 
 /**
  * POST /api/chats/generate-title
