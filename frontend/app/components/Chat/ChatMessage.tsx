@@ -28,10 +28,17 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           // AI message - Left-aligned with ChatGPT-style markdown rendering
           <div className="py-2">
             {message.isStreaming ? (
-              // ✅ Plain text during streaming for instant updates
-              <div className="text-[15px] whitespace-pre-wrap">
-                {message.content}
-                <span className="inline-block w-2 h-5 bg-gray-400 animate-pulse ml-0.5"></span>
+              // Assistant message - Inline text, no bubble
+              <div style={{ color: '#1a1a1a' }}>
+                <div className="text-[15px]">
+                  <MarkdownRenderer content={message.content || ''} />
+                  {message.isStreaming && !message.content && (
+                    <span style={{ color: '#666666' }}>Thinking...</span>
+                  )}
+                  {message.isStreaming && message.content && (
+                    <span className="inline-block w-2 h-5 animate-pulse ml-0.5" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}></span>
+                  )}
+                </div>
               </div>
             ) : (
               // Markdown rendering after streaming completes

@@ -34,8 +34,6 @@ from client.fast_mcp_client import (
     query_excel_with_context as mcp_query_excel_with_context
 )
 
-# Import semantic search with metadata
-from server.query_handler import semantic_search_with_metadata
 
 # Import Supabase client for file metadata lookup
 try:
