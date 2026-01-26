@@ -160,45 +160,6 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
             print(f"🏢 Workspace ID: {query_request.workspace_id}")
         
         import re
-        
-        # Check if query is for agentic task execution
-        if "agent" in query_request.query.lower():
-            print(f"🤖 Agentic task detected in query")
-            
-            async def agent_event_generator():
-                try:
-                    response = await mcp_agentic_task(
-                        goal=query_request.query,
-                        context=f"Workspace: {query_request.workspace_id}" if query_request.workspace_id else "",
-                        max_iterations=10
-                    )
-                    
-                    try:
-                        response_data = json.loads(response) if isinstance(response, str) else response
-                        final_result = response_data.get('final_result', 'No result')
-                        yield f"data: {json.dumps({'chunk': final_result})}\n\n"
-                    except json.JSONDecodeError:
-                        yield f"data: {json.dumps({'chunk': response})}\n\n"
-                    
-                    yield f"data: {json.dumps({'done': True})}\n\n"
-                    print(f"✅ Agent task completed")
-                    
-                except Exception as e:
-                    print(f"❌ Agent task error: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            
-            return StreamingResponse(
-                agent_event_generator(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no"
-                }
-            )
-        
         # Detect if query contains a URL - route to link query handler
         url_pattern = r'https?://[^\s]+'
         url_match = re.search(url_pattern, query_request.query)

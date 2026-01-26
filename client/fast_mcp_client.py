@@ -347,47 +347,6 @@ async def query_excel_with_context(query: str, file_name: str, file_path: str = 
         return response
 
 
-async def agentic_task(goal: str, context: str = "", max_iterations: int = 10):
-    """
-    Execute a complex task using autonomous agentic reasoning
-    
-    The agent will:
-    1. Analyze the goal and plan a sequence of tool calls
-    2. Execute tools autonomously based on reasoning
-    3. Evaluate results and iterate if needed
-    4. Return final outcome and execution history
-    
-    Args:
-        goal: The objective or task to accomplish (e.g., "Find Q3 sales by region from our data and compare with Q2")
-        context: Optional background information or constraints (default: "")
-        max_iterations: Maximum number of tool calls (default: 10, prevents infinite loops)
-    
-    Returns:
-        JSON string containing:
-        - success: Whether the goal was achieved
-        - final_result: The final output
-        - iterations: Number of tool calls made
-        - history: Detailed execution log of all actions taken
-    """
-    import json
-    async with Client(FASTMCP_SERVER_URL) as client:
-        tool_params = {
-            "goal": goal,
-            "context": context,
-            "max_iterations": max_iterations
-        }
-        
-        result = await client.call_tool("agentic_task_tool", tool_params)
-        
-        # Extract response from MCP result
-        if hasattr(result, 'content') and result.content:
-            response = result.content[0].text
-        elif hasattr(result, 'data') and result.data:
-            response = result.data
-        else:
-            response = str(result)
-        
-        return response
 
 
 

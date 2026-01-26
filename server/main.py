@@ -22,7 +22,7 @@ from server.query_handler import (
     query_excel_with_context
 )
 from server.web_search_file import tavily_web_search
-from server.agent import FastMCPAgent
+
 
 
 # pgvector Enterprise Mode Active
@@ -209,45 +209,6 @@ def query_excel_with_context_tool(query: str, file_name: str, file_path: str = N
         print(error_msg)
         return error_msg
 
-
-@mcp.tool
-def agentic_task_tool(goal: str, context: str = "", max_iterations: int = 10) -> str:
-    """
-    Execute a complex task using autonomous agentic reasoning
-    
-    The agent will:
-    1. Analyze the goal and plan a sequence of tool calls
-    2. Execute tools autonomously based on reasoning
-    3. Evaluate results and iterate if needed
-    4. Return final outcome and execution history
-    
-    Args:
-        goal: The objective or task to accomplish (e.g., "Find Q3 sales by region from our data and compare with Q2")
-        context: Optional background information or constraints
-        max_iterations: Maximum number of tool calls (default: 10, prevents infinite loops)
-    
-    Returns:
-        JSON string containing:
-        - success: Whether the goal was achieved
-        - final_result: The final output
-        - iterations: Number of tool calls made
-        - history: Detailed execution log of all actions taken
-    """
-    try:
-        print(f"🤖 Agentic Task Execution: {goal}")
-        agent = FastMCPAgent()
-        result = agent.run(goal=goal, context=context, max_iterations=max_iterations)
-        
-        # Return as JSON string for compatibility
-        return json.dumps(result, indent=2, default=str)
-    except Exception as e:
-        error_msg = f"Error in agentic_task_tool: {str(e)}"
-        print(error_msg)
-        return json.dumps({
-            "success": False,
-            "error": error_msg,
-            "history": []
-        })
 
 
 if __name__ == "__main__":
