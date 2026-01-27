@@ -344,9 +344,7 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
         print(f"Error querying Excel: {e}")
         error_msg = f"Error processing Excel query: {str(e)}"
         return query_model(error_msg, conversation_history=conversation_history)
-        print(f"Error querying Excel: {e}")
-        error_msg = f"Error processing Excel query: {str(e)}"
-        return query_model(error_msg, conversation_history=conversation_history)
+
 
 
 async def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, conversation_history: list = None, abort_event=None):

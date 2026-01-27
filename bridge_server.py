@@ -339,19 +339,90 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                     return
                 
                 # Check for knowledge cutoff and route to web search if needed
-                knowledge_cutoff_patterns = [
-                    r"\b(knowledge cutoff|training data cutoff|cutoff date)\b",
-                    r"\b(don't know|don't have|no information|no data)\b.*\b(about|on|regarding)\b",
-                    r"\b(unable to|can't|cannot)\b.*\b(access|find|provide)\b",
-                ]
-                
-                is_cutoff_response = any(
-                    re.search(pattern, full_response, re.IGNORECASE)
-                    for pattern in knowledge_cutoff_patterns
+                STABLE_PREFIXES = (
+                    "what is", "who is", "define", "explain", "describe", "how to", "how do", "how does", "history of", "background of"
                 )
+
+                TIME_PATTERNS = [
+                    "today", "latest", "current", "now", "right now",
+                    "recent", "recently", "updated", "update",
+                    "this week", "this month", "this year",
+                    "as of", "at present", "currently"
+                ]
+                VOLATILE_PATTERNS = [
+                    "price", "cost", "rate", "fees",
+                    "stock", "share price", "market cap",
+                    "news", "headline", "announcement",
+                    "availability", "open", "closed",
+                    "release date", "launch date",
+                    "version", "update"
+                ]
+                EVENT_PATTERNS = [
+                    "won", "lost", "result", "score",
+                    "match", "game", "tournament",
+                    "election", "results", "verdict",
+                    "launched", "released", "announced"
+                ]
+                EXPLICIT_FRESHNESS_PATTERNS = [
+                    "most recent",
+                    "up to date",
+                    "latest update",
+                    "current status",
+                    "real time",
+                    "live"
+                ]
+                LOCATION_PATTERNS = [
+                    "near me",
+                    "nearby",
+                    "in my area",
+                    "open now",
+                    "timings",
+                    "hours",
+                    "location"
+                ]
+                COMPARISON_PATTERNS = [
+                    "best", "top", "cheapest", "most expensive",
+                    "compare", "vs", "ranking", "ranked"
+                ]
+                REGULATORY_PATTERNS = [
+                    "law", "rule", "policy", "guidelines",
+                    "eligibility", "requirements",
+                    "deadline", "last date"
+                ]
+
+                def fast_web_search_gate(query: str):
+                    q = query.lower().strip()
+
+                    if q.startswith(STABLE_PREFIXES):
+                        return False
+
+                    if any(p in q for p in EXPLICIT_FRESHNESS_PATTERNS):
+                        return True
+
+                    if any(p in q for p in TIME_PATTERNS):
+                        return True
+
+                    if any(p in q for p in VOLATILE_PATTERNS):
+                        return True
+
+                    if any(p in q for p in EVENT_PATTERNS):
+                        return True
+
+                    if any(p in q for p in LOCATION_PATTERNS):
+                        return True
+
+                    if any(p in q for p in COMPARISON_PATTERNS):
+                        return True
+
+                    if any(p in q for p in REGULATORY_PATTERNS):
+                        return True
+
+                    return False
                 
-                if is_cutoff_response:
-                    print(f"⚠️  Knowledge cutoff detected, routing to web search")
+                
+                # Web search trigger: knowledge cutoff or query matches fast_web_search_gate
+                if fast_web_search_gate(query_request.query):
+                    print(f"⚠️ volatile query detected, routing to web search")
                     web_search_message = "\n\n🔍 Searching the web for more current information...\n\n"
                     yield f"data: {json.dumps({'chunk': web_search_message})}\n\n"
                     
