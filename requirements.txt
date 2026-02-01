@@ -29,6 +29,7 @@ beautifulsoup4
 
 # Data Visualization
 plotly
+pymermaid
 
 # Supabase Client
 supabase

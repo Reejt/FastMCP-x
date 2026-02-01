@@ -347,6 +347,45 @@ async def query_excel_with_context(query: str, file_name: str, file_path: str = 
         return response
 
 
+async def generate_diagram(query_result: str, diagram_type: str = "auto"):
+    """
+    Generate a Mermaid diagram from query results
+    
+    Args:
+        query_result: The query result/data to visualize (JSON string or plain text)
+        diagram_type: Type of diagram - 'auto', 'flowchart', 'pie', 'gantt', 'sequence', 'class'
+    
+    Returns:
+        Dictionary with diagram markdown and metadata
+    """
+    import json
+    async with Client(FASTMCP_SERVER_URL) as client:
+        tool_params = {
+            "query_result": query_result,
+            "diagram_type": diagram_type
+        }
+        
+        result = await client.call_tool("generate_diagram_tool", tool_params)
+        
+        # Extract response from MCP result
+        if hasattr(result, 'content') and result.content:
+            response_text = result.content[0].text
+        elif hasattr(result, 'data') and result.data:
+            response_text = result.data
+        else:
+            response_text = str(result)
+        
+        # Parse JSON response
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            return {
+                "success": False,
+                "error": "Failed to parse diagram response",
+                "raw_response": response_text
+            }
+
+
 
 
 

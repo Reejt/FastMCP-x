@@ -22,6 +22,7 @@ from server.query_handler import (
     query_excel_with_context
 )
 from server.web_search_file import tavily_web_search
+from server.mermaid_converter import convert_query_to_mermaid_markdown
 
 
 
@@ -208,6 +209,45 @@ def query_excel_with_context_tool(query: str, file_name: str, file_path: str = N
         error_msg = f"Error in query_excel_with_context_tool: {str(e)}"
         print(error_msg)
         return error_msg
+
+
+@mcp.tool
+def generate_diagram_tool(query_result: str, diagram_type: str = "auto") -> str:
+    """
+    Generate a Mermaid diagram from query results or data
+    
+    Args:
+        query_result: The query result/data to visualize (JSON string or plain text)
+        diagram_type: Type of diagram - 'auto', 'flowchart', 'pie', 'gantt', 'sequence', 'class'
+    
+    Returns:
+        JSON string with markdown diagram and metadata
+    """
+    try:
+        import json as json_lib
+        
+        print(f"📊 Generating Mermaid diagram (type: {diagram_type})")
+        
+        diagram_output = convert_query_to_mermaid_markdown(
+            query_result=query_result,
+            include_diagram=True,
+            diagram_type=diagram_type
+        )
+        
+        print(f"✅ Diagram generated successfully (type: {diagram_output.get('diagram_type')})")
+        
+        # Return as JSON string
+        return json_lib.dumps(diagram_output)
+    except Exception as e:
+        error_msg = f"Error in generate_diagram_tool: {str(e)}"
+        print(error_msg)
+        import json as json_lib
+        return json_lib.dumps({
+            "success": False,
+            "error": error_msg,
+            "diagram": "",
+            "diagram_type": "error"
+        })
 
 
 

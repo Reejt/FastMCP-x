@@ -31,8 +31,17 @@ from client.fast_mcp_client import (
     web_search as mcp_web_search,
     answer_link_query as mcp_answer_link_query,
     query_csv_with_context as mcp_query_csv_with_context,
-    query_excel_with_context as mcp_query_excel_with_context
+    query_excel_with_context as mcp_query_excel_with_context,
+    generate_diagram as mcp_generate_diagram
 )
+
+# Import Mermaid converter for diagram generation
+try:
+    from server.mermaid_converter import convert_query_to_mermaid_markdown, create_analysis_markdown
+    MERMAID_AVAILABLE = True
+except ImportError:
+    print("⚠️  Mermaid converter not available")
+    MERMAID_AVAILABLE = False
 
 
 # Import Supabase client for file metadata lookup
@@ -146,6 +155,7 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
     - CSV/Excel files (routes to specialized handlers)
     - URLs (routes to link handler)
     - Regular documents (routes to LLM query)
+    - Diagram requests (if query contains "diagram" keyword)
     
     This eliminates ~200 lines of file detection/routing code.
     """
@@ -278,7 +288,42 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                     print(f"✅ Excel query completed")
                     return
                 
-                # Route 2: Regular document/LLM query with semantic search
+                # Route 3: Diagram generation - check query for diagram keywords
+                # Actual diagram generation happens after Route 4 produces response
+                DIAGRAM_KEYWORDS = ['diagram', 'chart', 'visualize', 'visualization', 'graph', 'flowchart', 'pie chart', 'gantt', 'sequence diagram', 'class diagram', 'draw', 'plot', 'mermaid']
+                DIAGRAMMATIC_DATA_PATTERNS = [
+                    # Numeric/statistical patterns that could be visualized
+                    'percent', '%', 'total', 'count', 'sum', 'average', 'mean',
+                    # Structural patterns
+                    'step', 'phase', 'stage', 'process', 'workflow', 'flow',
+                    # Relationship patterns
+                    'hierarchy', 'tree', 'branch', 'parent', 'child', 'depends on',
+                    # Timeline patterns
+                    'timeline', 'schedule', 'duration', 'start', 'end', 'deadline',
+                    # Comparison patterns
+                    'vs', 'versus', 'compare', 'comparison', 'difference',
+                    # List/category patterns
+                    'category', 'categories', 'breakdown', 'distribution'
+                ]
+                
+                query_lower = query_request.query.lower()
+                is_diagram_request_from_query = any(keyword in query_lower for keyword in DIAGRAM_KEYWORDS)
+                
+                # Determine diagram type from query (used later if diagram generation triggered)
+                diagram_type = "auto"
+                if is_diagram_request_from_query:
+                    if "pie" in query_lower:
+                        diagram_type = "pie"
+                    elif "flowchart" in query_lower or "flow" in query_lower:
+                        diagram_type = "flowchart"
+                    elif "gantt" in query_lower:
+                        diagram_type = "gantt"
+                    elif "sequence" in query_lower:
+                        diagram_type = "sequence"
+                    elif "class" in query_lower:
+                        diagram_type = "class"
+                
+                # Route 4: Regular document/LLM query with semantic search
                 print(f"💬 Routing to regular document query with semantic search")
                 
                 from server.query_handler import answer_query
@@ -338,109 +383,39 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                     yield f"data: {json.dumps({'done': True})}\n\n"
                     return
                 
-                # Check for knowledge cutoff and route to web search if needed
-                STABLE_PREFIXES = (
-                    "what is", "who is", "define", "explain", "describe", "how to", "how do", "how does", "history of", "background of"
-                )
-
-                TIME_PATTERNS = [
-                    "today", "latest", "current", "now", "right now",
-                    "recent", "recently", "updated", "update",
-                    "this week", "this month", "this year",
-                    "as of", "at present", "currently"
-                ]
-                VOLATILE_PATTERNS = [
-                    "price", "cost", "rate", "fees",
-                    "stock", "share price", "market cap",
-                    "news", "headline", "announcement",
-                    "availability", "open", "closed",
-                    "release date", "launch date",
-                    "version", "update"
-                ]
-                EVENT_PATTERNS = [
-                    "won", "lost", "result", "score",
-                    "match", "game", "tournament",
-                    "election", "results", "verdict",
-                    "launched", "released", "announced"
-                ]
-                EXPLICIT_FRESHNESS_PATTERNS = [
-                    "most recent",
-                    "up to date",
-                    "latest update",
-                    "current status",
-                    "real time",
-                    "live"
-                ]
-                LOCATION_PATTERNS = [
-                    "near me",
-                    "nearby",
-                    "in my area",
-                    "open now",
-                    "timings",
-                    "hours",
-                    "location"
-                ]
-                COMPARISON_PATTERNS = [
-                    "best", "top", "cheapest", "most expensive",
-                    "compare", "vs", "ranking", "ranked"
-                ]
-                REGULATORY_PATTERNS = [
-                    "law", "rule", "policy", "guidelines",
-                    "eligibility", "requirements",
-                    "deadline", "last date"
-                ]
-
-                def fast_web_search_gate(query: str):
-                    q = query.lower().strip()
-
-                    if q.startswith(STABLE_PREFIXES):
-                        return False
-
-                    if any(p in q for p in EXPLICIT_FRESHNESS_PATTERNS):
-                        return True
-
-                    if any(p in q for p in TIME_PATTERNS):
-                        return True
-
-                    if any(p in q for p in VOLATILE_PATTERNS):
-                        return True
-
-                    if any(p in q for p in EVENT_PATTERNS):
-                        return True
-
-                    if any(p in q for p in LOCATION_PATTERNS):
-                        return True
-
-                    if any(p in q for p in COMPARISON_PATTERNS):
-                        return True
-
-                    if any(p in q for p in REGULATORY_PATTERNS):
-                        return True
-
-                    return False
-                
-                
-                # Web search trigger: knowledge cutoff or query matches fast_web_search_gate
-                if fast_web_search_gate(query_request.query):
-                    print(f"⚠️ volatile query detected, routing to web search")
-                    web_search_message = "\n\n🔍 Searching the web for more current information...\n\n"
-                    yield f"data: {json.dumps({'chunk': web_search_message})}\n\n"
+                # Route 3 (continued): Generate diagram from response if needed
+                full_response_lower = full_response.lower()
+                has_diagrammatic_data = any(pattern in full_response_lower for pattern in DIAGRAMMATIC_DATA_PATTERNS)
                     
+                if has_diagrammatic_data or is_diagram_request_from_query:
+                    print(f"📊 Diagrammatic data detected, generating diagram from text")
                     try:
-                        web_response = await asyncio.wait_for(
-                            mcp_web_search(
-                                query_request.query,
-                                conversation_history=query_request.conversation_history,
-                                workspace_id=query_request.workspace_id
+                        # Generate diagram with timeout to prevent streaming from hanging
+                        diagram_result = await asyncio.wait_for(
+                            mcp_generate_diagram(
+                                query_result=full_response,
+                                diagram_type=diagram_type
                             ),
-                            timeout=15.0
+                            timeout=10.0  # 10 second timeout for diagram generation
                         )
-                        yield f"data: {json.dumps({'chunk': web_response})}\n\n"
+                        
+                        # Append diagram to response
+                        if diagram_result.get('success', False):
+                            diagram_markdown = diagram_result.get('diagram', '')
+                            # Only append if we got a valid mermaid diagram
+                            if diagram_markdown and '```mermaid' in diagram_markdown:
+                                chunk_content = '\n\n' + diagram_markdown
+                                yield f"data: {json.dumps({'chunk': chunk_content})}\n\n"
+                                print(f"✅ Diagram appended to response")
+                            else:
+                                print(f"⚠️ Generated diagram was not valid mermaid")
+                        else:
+                            error_msg = diagram_result.get('error', 'Failed to generate diagram')
+                            print(f"⚠️ Diagram generation failed: {error_msg}")
                     except asyncio.TimeoutError:
-                        print(f"⏱️ Web search timed out")
-                        yield f"data: {json.dumps({'error': 'Web search timed out'})}\n\n"
-                    except Exception as web_error:
-                        print(f"❌ Web search error: {str(web_error)}")
+                        print(f"⏱️ Diagram generation timed out (10s)")
+                    except Exception as diagram_error:
+                        print(f"❌ Diagram generation error: {str(diagram_error)}")
                 
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 print(f"✅ Query completed")

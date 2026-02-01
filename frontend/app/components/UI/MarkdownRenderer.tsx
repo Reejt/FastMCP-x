@@ -5,6 +5,23 @@ import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { useState, useCallback, ComponentPropsWithoutRef } from 'react'
+import dynamic from 'next/dynamic'
+
+// Dynamically import MermaidDiagram to avoid SSR issues
+const MermaidDiagram = dynamic(() => import('./MermaidDiagram'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center p-8 bg-gray-50 rounded-lg">
+      <div className="flex items-center gap-2 text-gray-500">
+        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span>Loading diagram...</span>
+      </div>
+    </div>
+  ),
+})
 
 interface MarkdownRendererProps {
   content: string
@@ -163,6 +180,15 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
 
             // Code block with syntax highlighting
             const language = match ? match[1] : 'text'
+            
+            // Handle Mermaid diagrams - render as interactive diagram
+            if (language === 'mermaid') {
+              return (
+                <div className="my-4">
+                  <MermaidDiagram chart={codeString} />
+                </div>
+              )
+            }
             
             return (
               <div className="relative group">

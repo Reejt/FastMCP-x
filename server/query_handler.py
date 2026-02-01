@@ -27,9 +27,11 @@ import os
 import pandas as pd
 import tempfile
 import asyncio
-from typing import List, Tuple, Dict, Any
+import json
+from typing import List, Tuple, Dict, Any, Optional
 from server.document_ingestion import documents
 from server.csv_excel_processor import process_csv_excel_query
+
 
 
 # Try to import embedding model
@@ -708,5 +710,5 @@ Now generate the title:"""
         if len(fallback_title) > 50:
             fallback_title = fallback_title[:47] + '...'
         return fallback_title
-    except Exception as e:
-        return 'New Chat'
+
+    
