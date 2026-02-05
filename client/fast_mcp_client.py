@@ -117,7 +117,7 @@ async def web_search(search_query: str, conversation_history: list = None, works
         return response
     
 
-async def answer_link_query(url: str, question: str, conversation_history: list = None, workspace_id: str = None):
+async def answer_link_query(url: str, question: str, conversation_history: list = None):
     """
     Answer a question based on the content of a provided link URL.
     
@@ -125,7 +125,6 @@ async def answer_link_query(url: str, question: str, conversation_history: list 
         url: The URL of the link to analyze
         question: The question to answer based on the link content
         conversation_history: List of previous messages for context (optional)
-        workspace_id: Workspace identifier (optional)
     """
     import json
     async with Client(FASTMCP_SERVER_URL) as client:
@@ -139,10 +138,6 @@ async def answer_link_query(url: str, question: str, conversation_history: list 
             tool_params["conversation_history"] = json.dumps(conversation_history)
         else:
             tool_params["conversation_history"] = "[]"
-        
-        # Add workspace_id if provided
-        if workspace_id:
-            tool_params["workspace_id"] = workspace_id
         
         result = await client.call_tool("answer_link_query_tool", tool_params)
                         
@@ -347,12 +342,12 @@ async def query_excel_with_context(query: str, file_name: str, file_path: str = 
         return response
 
 
-async def generate_diagram(query_result: str, diagram_type: str = "auto"):
+async def generate_diagram(query: str, diagram_type: str = "auto"):
     """
-    Generate a Mermaid diagram from query results
+    Generate a Mermaid diagram from user query
     
     Args:
-        query_result: The query result/data to visualize (JSON string or plain text)
+        query: The user query to visualize (text)
         diagram_type: Type of diagram - 'auto', 'flowchart', 'pie', 'gantt', 'sequence', 'class'
     
     Returns:
@@ -361,7 +356,7 @@ async def generate_diagram(query_result: str, diagram_type: str = "auto"):
     import json
     async with Client(FASTMCP_SERVER_URL) as client:
         tool_params = {
-            "query_result": query_result,
+            "query": query,
             "diagram_type": diagram_type
         }
         

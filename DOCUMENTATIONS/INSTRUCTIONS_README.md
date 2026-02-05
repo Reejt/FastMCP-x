@@ -61,7 +61,7 @@ from server.instructions import query_with_instructions
 response = query_with_instructions(
     query="What is Python?",
     workspace_id="123-456-789",
-    model_name="llama3.2:1b"
+    model_name="llama3.2:3b"
 )
 ```
 

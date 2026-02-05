@@ -9,9 +9,10 @@ interface ChatContainerProps {
   messages: Message[]
   workspaceName?: string
   activeInstruction?: WorkspaceInstruction | null
+  onShowDiagram?: (diagramId: string) => void
 }
 
-export default function ChatContainer({ messages }: ChatContainerProps) {
+export default function ChatContainer({ messages, onShowDiagram }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -56,7 +57,7 @@ export default function ChatContainer({ messages }: ChatContainerProps) {
                 // ✅ No animation on streaming messages - allows instant updates
                 message.isStreaming ? (
                   <div key={message.id}>
-                    <ChatMessage message={message} />
+                    <ChatMessage message={message} onShowDiagram={onShowDiagram} />
                   </div>
                 ) : (
                   <motion.div
@@ -65,7 +66,7 @@ export default function ChatContainer({ messages }: ChatContainerProps) {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.5) }}
                   >
-                    <ChatMessage message={message} />
+                    <ChatMessage message={message} onShowDiagram={onShowDiagram} />
                   </motion.div>
                 )
               ))}

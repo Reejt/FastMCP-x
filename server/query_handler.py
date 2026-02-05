@@ -349,23 +349,49 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
 
 
 
-async def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool = False, conversation_history: list = None, abort_event=None):
+async def query_model(query: str = None, model_name: str = 'llama3.2:3b', stream: bool = False, conversation_history: list = None, abort_event=None, system_prompt: str = None, user_prompt: str = None, timeout: int = 120):
     """
-    Query the Ollama model via HTTP API with optional conversation history (async version)
+    Query the Ollama model via HTTP API with optional conversation history and system prompt (async version)
     
     Args:
-        query: The current user query
-        model_name: Name of the Ollama model to use (default: llama3.2:1b)
+        query: The current user query (alternative to user_prompt)
+        model_name: Name of the Ollama model to use (default: llama3.2:3b)
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
         abort_event: threading.Event to signal cancellation (optional)
+        system_prompt: Optional system prompt for the LLM
+        user_prompt: Optional explicit user prompt (takes precedence over query)
+        timeout: Request timeout in seconds (default: 120)
     """
     try:
-        # Build full prompt with conversation history if provided
-        full_prompt = query
+        # Use user_prompt if provided, otherwise use query
+        actual_query = user_prompt if user_prompt else query
+        if not actual_query:
+            raise ValueError("Either 'query', 'user_prompt', or 'user_prompt' must be provided")
+        
+        # Build full prompt with system prompt if provided
+        full_prompt = actual_query
+        if system_prompt:
+            full_prompt = f"{system_prompt}\n\n{actual_query}"
+        
+        # Append conversation history if provided
         if conversation_history and len(conversation_history) > 0:
-            history_text = "\n\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in conversation_history[-5:]])  # Last 5 messages for context
-            full_prompt = f"Conversation History:\n{history_text}\n\nCurrent Query: {query}"
+            # Filter out system metadata messages (like link caches) - only include real chat messages
+            chat_messages = [
+                msg for msg in conversation_history 
+                if isinstance(msg, dict) and msg.get('role') not in ['system'] and msg.get('content')
+            ]
+            if chat_messages:
+                # Format conversation history without explicit role prefixes to avoid LLM mimicking "ASSISTANT:" pattern
+                history_parts = []
+                for msg in chat_messages[-5:]:  # Last 5 messages for context
+                    content = msg.get('content', '').strip()
+                    if content:
+                        history_parts.append(content)
+                
+                if history_parts:
+                    history_text = "\n\n".join(history_parts)
+                    full_prompt = f"Conversation Context:\n{history_text}\n\n{full_prompt}"
         
         # Query the LLM with streaming enabled when requested
         response = requests.post(
@@ -375,7 +401,7 @@ async def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool 
                 'prompt': full_prompt,
                 'stream': stream  # ✅ FIXED: Use actual stream parameter
             },
-            timeout=120,
+            timeout=timeout,
             stream=stream  # Enable streaming at requests level
         )
         response.raise_for_status()
@@ -384,20 +410,31 @@ async def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool 
             # Return async generator that yields JSON chunks with abort support
             async def generate():
                 import json
+                loop = asyncio.get_event_loop()
+                line_iterator = iter(response.iter_lines())
+                
                 try:
-                    for line in response.iter_lines():
+                    while True:
                         # Check abort signal before processing each line
                         if abort_event and abort_event.is_set():
                             response.close()  # Close connection to stop Ollama
                             break
                         
-                        # Yield to event loop to allow cancellation
-                        await asyncio.sleep(0)
+                        # Run blocking iter_lines() call in thread pool to avoid blocking event loop
+                        try:
+                            line = await loop.run_in_executor(None, next, line_iterator)
+                        except StopIteration:
+                            break
                         
                         if line:
                             try:
                                 chunk = json.loads(line)
                                 if 'response' in chunk:
+                                    # Strip "ASSISTANT:" prefix if present at the beginning
+                                    response_text = chunk['response']
+                                    if response_text.startswith('ASSISTANT:'):
+                                        response_text = response_text[10:].lstrip()
+                                        chunk['response'] = response_text
                                     yield chunk
                                 # Stop when Ollama signals completion
                                 if chunk.get('done', False):
@@ -410,7 +447,11 @@ async def query_model(query: str, model_name: str = 'llama3.2:1b', stream: bool 
             return generate()
         else:
             # Return full response as before
-            return response.json().get('response', '')
+            response_text = response.json().get('response', '')
+            # Strip "ASSISTANT:" prefix if present at the beginning
+            if response_text.startswith('ASSISTANT:'):
+                response_text = response_text[10:].lstrip()
+            return response_text
     except requests.RequestException as e:
         raise Exception(f"Ollama API failed: {e}")
             
@@ -569,8 +610,11 @@ def answer_link_query(link, question, conversation_history: list = None):
     Answer a question based on the content of a given link (web or social media)
     Works with any URL by extracting available content through multiple strategies
     
+    NOTE: Link caching logic is handled in bridge_server.py at the routing layer
+    This function just fetches the link and answers the question.
+    
     Args:
-        link: The URL to fetch and analyze
+        link: The URL to fetch and analyze (REQUIRED - must be provided by caller)
         question: The question to answer based on the link content
         conversation_history: List of previous messages for conversation context
     """
@@ -578,14 +622,29 @@ def answer_link_query(link, question, conversation_history: list = None):
         import requests
         from bs4 import BeautifulSoup
         
-        if not link.startswith("http"):
-            return "Unsupported link type. Please provide a valid HTTP/HTTPS URL."
+        # Initialize conversation_history if needed
+        if conversation_history is None:
+            conversation_history = []
+        
+        # Link MUST be provided (cache detection happens in bridge_server.py)
+        actual_link = link
+        
+        # Validate link
+        if not actual_link or not isinstance(actual_link, str) or not actual_link.startswith("http"):
+            return "Invalid link provided. Please provide a valid HTTP/HTTPS URL."
+        
+        # Fetch content from the URL
+        content = None
         
         # Fetch the web page
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        resp = requests.get(link, timeout=30, headers=headers)
+        resp = requests.get(actual_link, timeout=30, headers=headers)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
+        
+        # Remove script, style, and nav elements that clutter content
+        for element in soup.find_all(['script', 'style', 'nav', 'footer', 'header']):
+            element.decompose()
         
         # Multi-strategy content extraction - works for any platform
         content = ""
@@ -599,53 +658,147 @@ def answer_link_query(link, question, conversation_history: list = None):
         if og_description and og_description.get("content"):
             content += f"Description: {og_description['content']}\n\n"
         
-        # Strategy 2: Extract from article tags (good for articles, social media posts)
+        # Strategy 2: Extract from article tags (good for articles, blog posts)
         articles = soup.find_all("article")
         if articles:
-            for article in articles[:2]:  # Limit to first 2 articles
+            for article in articles:
                 article_text = article.get_text(separator="\n", strip=True)
-                if article_text:
-                    content += f"Article Content:\n{article_text[:1500]}\n\n"
+                if article_text and len(article_text) > 100:
+                    content += f"Article Content:\n{article_text[:5000]}\n\n"
                     break
         
-        # Strategy 3: Extract from main content area
-        if not content.strip() or len(content) < 100:
-            main_content = soup.find("main")
-            if main_content:
-                main_text = main_content.get_text(separator="\n", strip=True)
-                if main_text:
-                    content += main_text[:2000]
+        # Strategy 3: Extract from main content area (div with id="main", class="content", etc.)
+        if not content.strip() or len(content) < 200:
+            main_selectors = ['main', '[role="main"]', '.main-content', '.content', '#content', 'article', '.post', '.article']
+            for selector in main_selectors:
+                if selector.startswith('.'):
+                    main_content = soup.find(class_=selector[1:])
+                elif selector.startswith('#'):
+                    main_content = soup.find(id=selector[1:])
+                elif selector.startswith('['):
+                    main_content = soup.find(attrs={'role': 'main'})
+                else:
+                    main_content = soup.find(selector)
+                
+                if main_content:
+                    main_text = main_content.get_text(separator="\n", strip=True)
+                    if main_text and len(main_text) > 150:
+                        content += f"Main Content:\n{main_text[:6000]}\n\n"
+                        break
         
-        # Strategy 4: Extract markdown body (GitHub, wikis, etc.)
-        if not content.strip() or len(content) < 100:
+        # Strategy 4: Extract from markdown body (GitHub, wikis, etc.)
+        if not content.strip() or len(content) < 200:
             markdown_body = soup.find("div", {"class": "markdown-body"})
             if markdown_body:
                 md_text = markdown_body.get_text(separator="\n", strip=True)
-                if md_text:
-                    content += md_text[:2000]
+                if md_text and len(md_text) > 150:
+                    content += f"Markdown Content:\n{md_text[:6000]}\n\n"
         
-        # Strategy 5: Fallback to all visible text
-        if not content.strip() or len(content) < 100:
-            content = soup.get_text(separator="\n", strip=True)[:3000]
+        # Strategy 5: Extract all paragraphs and list items (deep dive into structure)
+        if not content.strip() or len(content) < 200:
+            paragraphs = []
+            for p in soup.find_all(['p', 'li', 'span']):
+                text = p.get_text(separator=" ", strip=True)
+                if text and len(text) > 20 and len(text) < 1000:  # Filter out noise
+                    paragraphs.append(text)
+            
+            if paragraphs:
+                content += "Page Content:\n" + "\n".join(paragraphs[:100])  # Get up to 100 paragraphs
+        
+        # Strategy 6: Fallback to all visible text (for minimal pages)
+        if not content.strip() or len(content) < 200:
+            full_text = soup.get_text(separator="\n", strip=True)
+            if full_text:
+                content += full_text[:10000]  # Get up to 10k chars
         
         # Clean up excessive whitespace
         content = "\n".join(line.strip() for line in content.split("\n") if line.strip())
         
-        # Build prompt for LLM
-        prompt = f"Answer this question using the content below:\nQuestion: {question}\n\nContent:\n{content[:4000]}"
+        # Deduplicate consecutive lines
+        lines = content.split("\n")
+        unique_lines = [lines[0]] if lines else []
+        for line in lines[1:]:
+            if line != unique_lines[-1]:
+                unique_lines.append(line)
+        content = "\n".join(unique_lines)
         
-        return query_model(prompt, conversation_history=conversation_history)
+        # Ensure content is a string
+        if content is None:
+            content = ""
+        elif not isinstance(content, str):
+            content = str(content)
+        
+        # Cache the link in conversation history for follow-up questions
+        if content and actual_link:  # Only cache if both are valid
+            try:
+                link_cache_entry = {
+                    "role": "system",
+                    "type": "link_cache",
+                    "link_url": actual_link,
+                    "link_content": content,
+                    "timestamp": pd.Timestamp.now().isoformat()
+                }
+                conversation_history.append(link_cache_entry)
+                print(f"✅ Cached link in conversation history: {actual_link}")
+                print(f"   History now has {len(conversation_history)} messages")
+            except Exception as e:
+                print(f"⚠️  Error caching link: {e}")
+        else:
+            print(f"⚠️  Not caching: content empty? {not content}, actual_link empty? {not actual_link}")
+        
+        # Build prompt for LLM - use full content for deep context
+        prompt = f"Answer this question using the content below:\nQuestion: {question}\n\nContent:\n{content}"
+        
+        # Call async query_model from sync context (MCP tool)
+        # This is a workaround for sync MCP tools calling async functions
+        loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        
+        if loop is None:
+            # No running loop, safe to use asyncio.run()
+            return asyncio.run(query_model(prompt, conversation_history=conversation_history, stream=False))
+        else:
+            # Loop is running, we need to handle this differently
+            # This shouldn't happen from MCP tools, but if it does, create a coroutine that can be awaited
+            import threading
+            result = [None]
+            exception = [None]
+            
+            def run_in_thread():
+                try:
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    result[0] = new_loop.run_until_complete(
+                        query_model(prompt, conversation_history=conversation_history, stream=False)
+                    )
+                    new_loop.close()
+                except Exception as e:
+                    exception[0] = e
+            
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()
+            
+            if exception[0]:
+                raise exception[0]
+            return result[0]
     except Exception as e:
-        return f"Error: {str(e)}"
+        print(f"❌ Error in answer_link_query: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"Error processing link: {str(e)}"
 
 
-def generate_chat_title(first_message: str, model_name: str = 'llama3.2:1b') -> str:
+def generate_chat_title(first_message: str, model_name: str = 'llama3.2:3b'):
     """
     Generate a concise, descriptive title for a chat session based on the first message.
     
     Args:
         first_message: The first user message in the chat session
-        model_name: Name of the Ollama model to use (default: llama3.2:1b)
+        model_name: Name of the Ollama model to use (default: llama3.2:3b)
         
     Returns:
         A short, descriptive title (max 6 words)

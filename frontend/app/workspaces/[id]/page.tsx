@@ -531,10 +531,10 @@ export default function WorkspacePage() {
     setAbortController(newAbortController)
 
     try {
-      // Prepare conversation history from current session messages (limit to last 10 for context)
-      // Include the new user message that was just added
-      const currentSessionMessages = [...messages, userMessage]
-      const conversation_history = currentSessionMessages.slice(-10).map(msg => ({
+      // Prepare conversation history from CURRENT SESSION MESSAGES ONLY (limit to last 10 for context)
+      // Do NOT include the new userMessage - it's sent separately as the 'query' parameter
+      // Including it would duplicate the current query in the prompt
+      const conversation_history = messages.slice(-10).map(msg => ({
         role: msg.role,
         content: msg.content
       }))

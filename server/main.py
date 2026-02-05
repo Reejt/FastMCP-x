@@ -121,7 +121,7 @@ def web_search_tool(query: str, conversation_history: str = "[]", workspace_id: 
         return error_msg
     
 @mcp.tool
-def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]", workspace_id: str = None) -> str:
+def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]") -> str:
     """
     Answer a query based on the content of a specific URL
     
@@ -134,7 +134,7 @@ def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]
     """
     try:
         history = json.loads(conversation_history) if conversation_history else []
-        result = answer_link_query(url, query, conversation_history=history, workspace_id=workspace_id)
+        result = answer_link_query(url, query, conversation_history=history)
         print(f"Link query result: {result}")
         return result
     except Exception as e:
@@ -212,26 +212,36 @@ def query_excel_with_context_tool(query: str, file_name: str, file_path: str = N
 
 
 @mcp.tool
-def generate_diagram_tool(query_result: str, diagram_type: str = "auto") -> str:
+async def generate_diagram_tool(query: str, diagram_type: str = "auto") -> str:
     """
-    Generate a Mermaid diagram from query results or data
+    Generate a Mermaid diagram from user query
     
     Args:
-        query_result: The query result/data to visualize (JSON string or plain text)
+        query: The user query to visualize (text)
         diagram_type: Type of diagram - 'auto', 'flowchart', 'pie', 'gantt', 'sequence', 'class'
     
     Returns:
-        JSON string with markdown diagram and metadata
+        JSON string with diagram markdown and metadata
     """
     try:
         import json as json_lib
         
+        # Validate input
+        if not query or (isinstance(query, str) and not query.strip()):
+            return json.dumps({
+                "success": False,
+                "error": "query is required and cannot be empty",
+                "diagram": "",
+                "diagram_type": "error"
+            })
+        
         print(f"📊 Generating Mermaid diagram (type: {diagram_type})")
         
-        diagram_output = convert_query_to_mermaid_markdown(
-            query_result=query_result,
+        # Call async convert_query_to_mermaid_markdown
+        diagram_output = await convert_query_to_mermaid_markdown(
             include_diagram=True,
-            diagram_type=diagram_type
+            diagram_type=diagram_type,
+            query=query
         )
         
         print(f"✅ Diagram generated successfully (type: {diagram_output.get('diagram_type')})")

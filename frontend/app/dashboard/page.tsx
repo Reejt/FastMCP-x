@@ -1,12 +1,15 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { flushSync } from 'react-dom'  // ✅ ADD THIS for immediate updates
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace, WorkspaceInstruction, Chat } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
+import DiagramPreviewPanel from '@/app/components/UI/DiagramPreviewPanel'
+import { generateDiagram, extractMermaidCode, isDiagramQuery as checkDiagramQuery } from '@/app/lib/diagram-client'
+import { useMermaidDetector } from '@/app/hooks/useMermaidDetector'
 
 // Dynamic imports for heavy components
 const WorkspaceSidebar = dynamic(() => import('@/app/components/WorkspaceSidebar'), {
@@ -43,6 +46,22 @@ export default function DashboardPage() {
   const [activeInstruction, setActiveInstruction] = useState<WorkspaceInstruction | null>(null)
   const [showInstructionBanner, setShowInstructionBanner] = useState(false)
   const [isGeneralChat, setIsGeneralChat] = useState(!workspaceId)
+
+  // Check if the query is diagram-related - memoized to avoid infinite loops
+  // ✅ Uses diagram-client utility for consistent detection
+  const hasDiagramQuery = useMemo(() => {
+    if (messages.length === 0) return false
+    
+    // Check last up to 3 user messages for diagram keywords
+    const relevantMessages = messages
+      .filter(msg => msg.role === 'user')
+      .slice(-3)
+    
+    return relevantMessages.some(msg => checkDiagramQuery(msg.content))
+  }, [messages])
+
+  // Mermaid diagram detection - only enabled for diagram queries
+  const { currentDiagram, showDiagram, addDynamicDiagram, closeDiagram, hasDiagrams } = useMermaidDetector(messages, hasDiagramQuery)
 
   // Load workspace sidebar collapse state from localStorage on mount
   useEffect(() => {
@@ -278,6 +297,144 @@ export default function DashboardPage() {
     router.refresh()
   }
 
+  // ✅ Helper function for safe diagram generation using diagram-client (Issues 2, 3, 4, 7)
+  const generateDiagramFromResponse = async (userQuery: string, messageId: string) => {
+    try {
+      console.log('📊 Generating diagram using diagram-client...')
+      
+      // Use diagram-client for consistent, tested diagram generation logic
+      const diagramResult = await generateDiagram(userQuery, 'auto', undefined, abortController?.signal)
+      
+      if (diagramResult.success && diagramResult.diagram) {
+        console.log('✅ Diagram generated:', diagramResult.diagram_type)
+        
+        // Extract mermaid code safely using diagram-client utility
+        const mermaidCode = extractMermaidCode(diagramResult.diagram).trim()
+        
+        // Validate before adding
+        if (mermaidCode && typeof mermaidCode === 'string' && mermaidCode) {
+          const success = addDynamicDiagram({
+            id: messageId,
+            type: diagramResult.diagram_type || 'unknown',
+            title: `Generated ${diagramResult.diagram_type || 'Diagram'}`,
+            mermaidCode: mermaidCode,
+            createdAt: new Date()
+          })
+          if (!success) {
+            console.warn('Failed to add diagram to state')
+          }
+        } else {
+          console.warn('Extracted mermaid code is empty')
+        }
+      } else if (diagramResult.error) {
+        console.warn('Diagram generation error:', diagramResult.error)
+      }
+    } catch (diagramError) {
+      console.error('⚠️ Diagram generation failed:', diagramError)
+      // Don't fail the main query if diagram generation fails
+    }
+  }
+
+  // ✅ NEW: Generate diagram directly from user query (diagram-only mode)
+  // Bypasses text response - shows only diagram
+  const generateDiagramDirectly = async (
+    query: string,
+    messageId: string,
+    diagramType: string = 'auto'
+  ) => {
+    try {
+      console.log('📊 Generating diagram directly from query (diagram-only mode)...')
+      
+      // Import the new function
+      const { generateDiagramFromQuery, detectDiagramType } = await import('@/app/lib/diagram-client')
+      
+      // Detect diagram type from query if not specified
+      const detectedType = diagramType === 'auto' ? detectDiagramType(query) : diagramType
+      console.log('   Detected diagram type:', detectedType)
+      
+      // Call diagram generation with direct query
+      const diagramResult = await generateDiagramFromQuery(
+        query,
+        detectedType,
+        workspaceId || undefined,
+        undefined,
+        abortController?.signal
+      )
+      
+      if (diagramResult.success && diagramResult.diagram) {
+        console.log('✅ Diagram generated:', diagramResult.diagram_type)
+        
+        // Extract mermaid code safely
+        const mermaidCode = extractMermaidCode(diagramResult.diagram).trim()
+        
+        // Validate before adding
+        if (mermaidCode && typeof mermaidCode === 'string' && mermaidCode) {
+          const success = addDynamicDiagram({
+            id: messageId,
+            type: diagramResult.diagram_type || detectedType || 'unknown',
+            title: `Generated ${diagramResult.diagram_type || detectedType || 'Diagram'}`,
+            mermaidCode: mermaidCode,
+            createdAt: new Date()
+          })
+          
+          if (success) {
+            // Show the diagram panel
+            showDiagram(messageId)
+            
+            // Add optional system message indicating diagram was generated
+            const systemMsg: Message = {
+              id: (Date.now() + 1).toString(),
+              content: `📊 Generated ${diagramResult.diagram_type || detectedType} diagram`,
+              role: 'system',
+              timestamp: new Date(),
+              isStreaming: false
+            }
+            setMessages(prev => [...prev, systemMsg])
+          } else {
+            console.warn('Failed to add diagram to state')
+          }
+        } else {
+          console.warn('Extracted mermaid code is empty')
+        }
+      } else if (diagramResult.error) {
+        console.warn('Diagram generation error:', diagramResult.error)
+        // Show error message in chat
+        const errorMessage: Message = {
+          id: messageId,
+          content: `❌ **Diagram Generation Failed**\n\n${diagramResult.error}`,
+          role: 'assistant',
+          timestamp: new Date(),
+          isStreaming: false
+        }
+        setMessages(prev =>
+          prev.map((msg) =>
+            msg.id === messageId ? errorMessage : msg
+          )
+        )
+      }
+    } catch (diagramError) {
+      console.error('⚠️ Direct diagram generation failed:', diagramError)
+      
+      // Show error message
+      const errorMessage: Message = {
+        id: messageId,
+        content: `❌ **Diagram Generation Error**\n\n${diagramError instanceof Error ? diagramError.message : 'Unknown error'}`,
+        role: 'assistant',
+        timestamp: new Date(),
+        isStreaming: false
+      }
+      setMessages(prev =>
+        prev.map((msg) =>
+          msg.id === messageId ? errorMessage : msg
+        )
+      )
+    } finally {
+      setIsStreaming(false)
+      setIsProcessing(false)
+      setAbortController(null)
+    }
+  }
+
   const handleCancelStreaming = () => {
     if (abortController) {
       try {
@@ -345,6 +502,37 @@ export default function DashboardPage() {
       }
     }
 
+    // ✅ NEW: Check if this is a diagram-only query
+    const { detectDiagramType } = await import('@/app/lib/diagram-client')
+    const isDiagramOnly = checkDiagramQuery(content)
+    
+    if (isDiagramOnly) {
+      console.log('🎨 Diagram-only query detected - skipping text response')
+      
+      // Create placeholder for diagram
+      const assistantMessageId = (Date.now() + 1).toString()
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        content: '📊 Generating diagram...',
+        role: 'assistant',
+        timestamp: new Date(),
+        isStreaming: true
+      }
+      
+      setMessages((prev) => [...prev, assistantMessage])
+      
+      // Create AbortController for this request
+      const controller = new AbortController()
+      setAbortController(controller)
+      
+      // Generate diagram directly (diagram-only mode)
+      const diagramType = detectDiagramType(content)
+      await generateDiagramDirectly(content, assistantMessageId, diagramType)
+      
+      return  // Exit here - don't process normal chat flow
+    }
+
+    // ✅ Normal chat flow (existing code)
     // Create a placeholder assistant message for streaming
     const assistantMessageId = (Date.now() + 1).toString()
     const assistantMessage: Message = {
@@ -363,7 +551,9 @@ export default function DashboardPage() {
     setAbortController(controller)
 
     try {
-      // Prepare conversation history from existing messages (limit to last 10 messages for context)
+      // Prepare conversation history from EXISTING messages ONLY (limit to last 10 messages for context)
+      // Do NOT include the current userMessage - it's sent separately as the 'query' parameter
+      // Including it would duplicate the current query in the prompt
       const conversation_history = messages.slice(-10).map(msg => ({
         role: msg.role,
         content: msg.content
@@ -408,6 +598,9 @@ export default function DashboardPage() {
         const decoder = new TextDecoder()
         let accumulatedContent = ''
         let streamError = false
+        let updateTimeout: NodeJS.Timeout | null = null
+        let lastUpdateTime = 0
+        const UPDATE_INTERVAL = 16  // ~60fps, update every 16ms max
 
         if (reader) {
           try {
@@ -431,43 +624,83 @@ export default function DashboardPage() {
                       // Append chunk to accumulated content
                       accumulatedContent += data.chunk
 
-                      // ✅ FORCE IMMEDIATE UPDATE - Don't batch with React
+                      // Smart throttling: update immediately if enough time has passed, otherwise debounce
+                      const now = Date.now()
+                      const timeSinceLastUpdate = now - lastUpdateTime
+                      
+                      if (timeSinceLastUpdate > UPDATE_INTERVAL) {
+                        // Enough time has passed - update immediately
+                        lastUpdateTime = now
+                        if (updateTimeout) clearTimeout(updateTimeout)
+                        updateTimeout = null
+                        
+                        flushSync(() => {
+                          setMessages((prev) =>
+                            prev.map((msg) =>
+                              msg.id === assistantMessageId
+                                ? { ...msg, content: accumulatedContent, isStreaming: true }
+                                : msg
+                            )
+                          )
+                        })
+                      } else if (!updateTimeout) {
+                        // Not enough time passed and no pending update - schedule one
+                        updateTimeout = setTimeout(() => {
+                          lastUpdateTime = Date.now()
+                          updateTimeout = null
+                          
+                          flushSync(() => {
+                            setMessages((prev) =>
+                              prev.map((msg) =>
+                                msg.id === assistantMessageId
+                                  ? { ...msg, content: accumulatedContent, isStreaming: true }
+                                  : msg
+                              )
+                            )
+                          })
+                        }, UPDATE_INTERVAL - timeSinceLastUpdate)
+                      }
+                    } else if (data.done) {
+                      // Clear any pending timeout
+                      if (updateTimeout) {
+                        clearTimeout(updateTimeout)
+                        updateTimeout = null
+                      }
+
+                      // Final update with complete content
                       flushSync(() => {
                         setMessages((prev) =>
                           prev.map((msg) =>
                             msg.id === assistantMessageId
-                              ? { ...msg, content: accumulatedContent, isStreaming: true }
+                              ? { ...msg, content: accumulatedContent, isStreaming: false }
                               : msg
                           )
                         )
                       })
-                    } else if (data.done) {
-                      // Streaming complete - save assistant response to database via API
-                      if (accumulatedContent && !streamError) {
-                        // Save message via API to database
-                        if (workspaceId) {
-                          try {
-                            await fetch('/api/chats', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                workspaceId,
-                                role: 'assistant',
-                                message: accumulatedContent
-                              })
+
+                      // Save message via API to database
+                      if (workspaceId) {
+                        try {
+                          await fetch('/api/chats', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              workspaceId,
+                              role: 'assistant',
+                              message: accumulatedContent
                             })
-                          } catch (error) {
-                            console.error('Error saving assistant message:', error)
-                          }
+                          })
+                        } catch (error) {
+                          console.error('Error saving assistant message:', error)
                         }
                       }
-                      setMessages((prev) =>
-                        prev.map((msg) =>
-                          msg.id === assistantMessageId
-                            ? { ...msg, isStreaming: false }
-                            : msg
-                        )
-                      )
+
+                      // ✅ Issue 2, 4: Generate diagram immediately after streaming ends (no race condition)
+                      if (hasDiagramQuery && accumulatedContent) {
+                        console.log('📊 Generating diagram from response...')
+                        // Fire diagram generation without blocking message completion
+                        generateDiagramFromResponse(accumulatedContent, assistantMessageId)
+                      }
                       setIsStreaming(false)
                       setAbortController(null)
                       setIsProcessing(false)
@@ -692,7 +925,7 @@ export default function DashboardPage() {
         )}
 
         {/* Chat Messages */}
-        <ChatContainer messages={messages} workspaceName={currentWorkspaceName} activeInstruction={activeInstruction} />
+        <ChatContainer messages={messages} workspaceName={currentWorkspaceName} activeInstruction={activeInstruction} onShowDiagram={showDiagram} />
 
         {/* Chat Input */}
         <ChatInput
@@ -705,6 +938,13 @@ export default function DashboardPage() {
           workspaceId={workspaceId || undefined}
         />
       </div>
+
+      {/* Mermaid Diagram Preview Panel */}
+      <DiagramPreviewPanel
+        isOpen={!!currentDiagram}
+        diagram={currentDiagram}
+        onClose={closeDiagram}
+      />
     </div>
   )
 }

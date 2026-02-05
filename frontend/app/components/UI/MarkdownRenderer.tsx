@@ -6,6 +6,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { useState, useCallback, ComponentPropsWithoutRef } from 'react'
 import dynamic from 'next/dynamic'
+import { useMermaidDetector } from '../../hooks/useMermaidDetector'
+import DiagramPreviewPanel from './DiagramPreviewPanel'
 
 // Dynamically import MermaidDiagram to avoid SSR issues
 const MermaidDiagram = dynamic(() => import('./MermaidDiagram'), {
@@ -49,6 +51,12 @@ const customCodeTheme = {
 
 export default function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+
+  // Create a fake message for diagram detection
+  const messages = [{ content, role: 'assistant' as const, id: 'markdown-content' }]
+  
+  // Use the mermaid detector hook
+  const { detectedDiagrams, currentDiagram, showDiagram, closeDiagram, hasDiagrams } = useMermaidDetector(messages, true)
 
   const copyToClipboard = useCallback(async (code: string) => {
     try {
@@ -181,11 +189,36 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
             // Code block with syntax highlighting
             const language = match ? match[1] : 'text'
             
-            // Handle Mermaid diagrams - render as interactive diagram
+            // Handle Mermaid diagrams - show preview button instead of inline rendering
             if (language === 'mermaid') {
+              // Find the corresponding detected diagram
+              const diagram = detectedDiagrams.find(d => d.mermaidCode.trim() === codeString.trim())
+              
               return (
                 <div className="my-4">
-                  <MermaidDiagram chart={codeString} />
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        <span className="text-sm font-medium text-gray-700">
+                          {diagram ? `${diagram.type.charAt(0).toUpperCase() + diagram.type.slice(1)} Diagram` : 'Mermaid Diagram'}
+                        </span>
+                      </div>
+                      {diagram && (
+                        <button
+                          onClick={() => showDiagram(diagram.id)}
+                          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        >
+                          View Diagram
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      Click "View Diagram" to open in preview panel
+                    </div>
+                  </div>
                 </div>
               )
             }
@@ -298,6 +331,13 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
       >
         {content}
       </ReactMarkdown>
+
+      {/* Diagram Preview Panel */}
+      <DiagramPreviewPanel
+        isOpen={!!currentDiagram}
+        diagram={currentDiagram}
+        onClose={closeDiagram}
+      />
     </div>
   )
 }

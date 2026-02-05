@@ -144,7 +144,7 @@ def build_system_prompt(workspace_id: str, base_prompt: str = ""):
 def query_with_instructions(
     query: str,
     workspace_id: str,
-    model_name: str = "llama3.2:1b",
+    model_name: str = "llama3.2:3b",
     base_system_prompt: str = "",
     conversation_history: list = None
 ) -> str:
@@ -189,7 +189,7 @@ def query_with_instructions(
 async def query_with_instructions_stream(
     query: str,
     workspace_id: str,
-    model_name: str = "llama3.2:1b",
+    model_name: str = "llama3.2:3b",
     base_system_prompt: str = "",
     conversation_history: list = None,
     selected_file_ids: list = None,

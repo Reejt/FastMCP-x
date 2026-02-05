@@ -49,16 +49,18 @@ export default function MermaidDiagram({ chart, className = '' }: MermaidDiagram
         // Clean the chart string - remove any extra backticks or mermaid markers
         let cleanChart = chart.trim()
         
-        // Remove markdown code block markers if present
-        if (cleanChart.startsWith('```mermaid')) {
-          cleanChart = cleanChart.slice(10)
+        // Remove markdown code block markers if present (handle multiple levels)
+        while (cleanChart.startsWith('```mermaid')) {
+          cleanChart = cleanChart.slice(10).trim()
         }
-        if (cleanChart.startsWith('```')) {
-          cleanChart = cleanChart.slice(3)
+        while (cleanChart.startsWith('```')) {
+          cleanChart = cleanChart.slice(3).trim()
         }
-        if (cleanChart.endsWith('```')) {
-          cleanChart = cleanChart.slice(0, -3)
+        while (cleanChart.endsWith('```')) {
+          cleanChart = cleanChart.slice(0, -3).trim()
         }
+        
+        // Final trim
         cleanChart = cleanChart.trim()
 
         // Skip empty charts

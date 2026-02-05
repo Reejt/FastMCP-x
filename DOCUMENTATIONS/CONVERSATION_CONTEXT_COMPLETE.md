@@ -107,7 +107,7 @@ All layers of the application have conversation context support:
 #### Backend Query Handler (`server/query_handler.py`)
 
 ```python
-def query_model(query: str, model_name: str = 'llama3.2:1b', conversation_history: list = None) -> str:
+def query_model(query: str, model_name: str = 'llama3.2:3b', conversation_history: list = None) -> str:
     """
     Query the Ollama model via HTTP API with optional conversation history
     
@@ -525,7 +525,7 @@ Result:  LLM provides Next.js code example
 │                                                                      │
 │  Step 3: Send to LLM                                                │
 │    - POST to http://localhost:11434/api/generate                   │
-│    - Model: llama3.2:1b                                            │
+│    - Model: llama3.2:3b                                            │
 │    - Prompt: enhanced_query (with context)                         │
 └──────────────────────────────┬──────────────────────────────────────┘
                                ↓
@@ -1021,7 +1021,7 @@ for msg in conversation_history[-6:]:  # Last 6 messages
 
 In `server/query_handler.py`:
 ```python
-def query_model(query: str, model_name: str = 'llama3.2:1b', ...):
+def query_model(query: str, model_name: str = 'llama3.2:3b', ...):
     # Change default model here
 ```
 
