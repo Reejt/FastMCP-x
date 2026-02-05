@@ -117,39 +117,7 @@ async def web_search(search_query: str, conversation_history: list = None, works
         return response
     
 
-async def answer_link_query(url: str, question: str, conversation_history: list = None):
-    """
-    Answer a question based on the content of a provided link URL.
-    
-    Args:
-        url: The URL of the link to analyze
-        question: The question to answer based on the link content
-        conversation_history: List of previous messages for context (optional)
-    """
-    import json
-    async with Client(FASTMCP_SERVER_URL) as client:
-        tool_params = {
-            "url": url,
-            "query": question
-        }
-        
-        # Add conversation history if provided
-        if conversation_history:
-            tool_params["conversation_history"] = json.dumps(conversation_history)
-        else:
-            tool_params["conversation_history"] = "[]"
-        
-        result = await client.call_tool("answer_link_query_tool", tool_params)
-                        
-        # Extract response from MCP result
-        if hasattr(result, 'content') and result.content:
-            response = result.content[0].text
-        elif hasattr(result, 'data') and result.data:
-            response = result.data
-        else:
-            response = str(result)
-                        
-        return response
+
 
 
 async def get_active_instruction(workspace_id: str):

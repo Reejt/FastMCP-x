@@ -29,11 +29,13 @@ from client.fast_mcp_client import (
     answer_query as mcp_answer_query,
     ingest_file as mcp_ingest_file,
     web_search as mcp_web_search,
-    answer_link_query as mcp_answer_link_query,
     query_csv_with_context as mcp_query_csv_with_context,
     query_excel_with_context as mcp_query_excel_with_context,
     generate_diagram as mcp_generate_diagram
 )
+
+# Import enhanced web search
+from server.enhanced_web_search import get_enhanced_search
 
 # Import Mermaid converter for diagram generation
 try:
@@ -113,6 +115,7 @@ class QueryRequest(BaseModel):
     conversation_history: Optional[list] = []
     workspace_id: Optional[str] = None  # For workspace-specific instructions
     selected_file_ids: Optional[List[str]] = None  # For filtering search to specific files
+    force_web_search: Optional[bool] = False  # ✅ NEW: Force web search even if decision says no
 
 class IngestRequest(BaseModel):
     file_name: str
@@ -173,57 +176,10 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
         if query_request.workspace_id:
             print(f"🏢 Workspace ID: {query_request.workspace_id}")
         
-        import re
-        
-        # ============================================
-        # LINK CACHE DETECTION & ROUTING
-        # ============================================
-        # Check if this is a followup to a cached link (no URL in query)
-        url_pattern = r'https?://[^\s]+'
-        url_match = re.search(url_pattern, query_request.query)
-        detected_url = None
-        
-        if url_match:
-            # Explicit URL in query - use it directly
-            detected_url = url_match.group(0)
-            print(f"🔗 Detected URL in query: {detected_url}")
-        else:
-            # No URL in query
-            detected_url = None
-        
-        # Route to link handler if URL found (explicit or cached)
-        if detected_url: 
-                print("🔗 Web link detected - routing to link handler")
-                
-                # Extract the question part (everything except the URL)
-                question = re.sub(url_pattern, '', query_request.query).strip()
-                if not question:
-                    question = "Summarize the content of this link"
-                
-                print(f"❓ Question: {question}")
-                
-                # Call link query handler with explicit URL
-                # (cache detection already happened above)
-                response = await mcp_answer_link_query(detected_url, question, conversation_history=query_request.conversation_history)
-                
-                async def event_generator():
-                    yield f"data: {json.dumps({'chunk': response})}\n\n"
-                    yield f"data: {json.dumps({'done': True})}\n\n"
-                
-                return StreamingResponse(
-                    event_generator(),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                        "X-Accel-Buffering": "no"
-                    }
-                )
-        
         # ============================================
         # METADATA-AWARE INTELLIGENT ROUTING
         # ============================================
-        # This replaces ~200 lines of file detection/routing code
+        # Note: URL detection is handled by enhanced_web_search system
         
         async def event_generator():
             csv_file_ids = []
@@ -311,7 +267,59 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                 print(f"✅ Excel query completed")
                 return
             
-            # Route 4: Regular document/LLM query with semantic search
+            # Route 4: Check if web search is needed (automatic decision)
+            print(f"🤔 Evaluating if web search is needed...")
+
+            # Initialize enhanced search
+            enhanced_search = get_enhanced_search()
+
+            # Make search decision (but don't execute search yet)
+            # ✅ NEW: Pass force_web_search parameter
+            if query_request.force_web_search:
+                print(f"🔒 Force web search requested by user")
+                search_decision = {
+                    'needs_search': True,
+                    'reasoning': 'User explicitly requested web search',
+                    'confidence': 1.0,
+                    'method': 'forced'
+                }
+            else:
+                search_decision = await enhanced_search.decision_engine.should_search(
+                    query_request.query,
+                    query_request.conversation_history
+                )
+
+            print(f"📊 Search decision: {search_decision['needs_search']} - {search_decision['reasoning']}")
+
+            # If web search is needed, execute it
+            if search_decision['needs_search'] and not query_request.selected_file_ids:
+                print(f"🌐 Executing web search (confidence: {search_decision['confidence']:.2f})")
+
+                try:
+                    # Execute web search via MCP client
+                    search_result = await mcp_web_search(
+                        search_query=query_request.query,
+                        conversation_history=query_request.conversation_history,
+                        workspace_id=query_request.workspace_id
+                    )
+
+                    # Check if search produced a response
+                    if search_result and search_result.strip():
+                        print(f"✅ Web search completed - streaming response")
+
+                        # Stream the web search response
+                        yield f"data: {json.dumps({'chunk': search_result})}\n\n"
+                        yield f"data: {json.dumps({'done': True})}\n\n"
+                        return
+                    else:
+                        print(f"ℹ️  Web search returned no results, falling back to document search")
+
+                except Exception as search_error:
+                    print(f"⚠️  Web search error: {str(search_error)}")
+                    print(f"   Falling back to document search")
+                    # Fall through to document search
+
+            # Route 5: Regular document/LLM query with semantic search (fallback)
             print(f"💬 Routing to regular document query with semantic search")
             
             from server.query_handler import answer_query

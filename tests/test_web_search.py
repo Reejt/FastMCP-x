@@ -102,66 +102,138 @@ class TestTavilyWebSearch:
         assert result is not None
 
 
-class TestExtractTopResultContent:
-    """Tests for content extraction from search results."""
-    
+class TestExtractTopResultsContent:
+    """Tests for content extraction from top 3 search results."""
+
     def test_extract_with_valid_results(self):
-        """Test extraction from valid search response."""
-        from server.web_search_file import extract_top_result_content
-        
+        """Test extraction from valid search response with multiple results."""
+        from server.web_search_file import extract_top_results_content
+
         search_response = {
             "results": [
                 {
-                    "title": "Test Page",
-                    "url": "https://example.com/page",
-                    "content": "This is the snippet content from the search result."
+                    "title": "Test Page 1",
+                    "url": "https://example.com/page1",
+                    "content": "This is the snippet content from the first search result."
+                },
+                {
+                    "title": "Test Page 2",
+                    "url": "https://example.com/page2",
+                    "content": "This is the snippet content from the second search result."
+                },
+                {
+                    "title": "Test Page 3",
+                    "url": "https://example.com/page3",
+                    "content": "This is the snippet content from the third search result."
                 }
             ]
         }
-        
-        # Note: This would normally try to fetch the URL
-        # The function has fallback behavior
-        result = extract_top_result_content(search_response)
-        
+
+        # Note: This would normally try to fetch the URLs
+        # The function has fallback behavior to Tavily snippets
+        result = extract_top_results_content(search_response)
+
         assert result is not None
-    
+        # Should contain indicators of multiple results
+        assert "Result 1:" in result or "Result 2:" in result
+
     def test_extract_no_results(self):
         """Test extraction with empty results."""
-        from server.web_search_file import extract_top_result_content
-        
+        from server.web_search_file import extract_top_results_content
+
         search_response = {"results": []}
-        
-        result = extract_top_result_content(search_response)
-        
+
+        result = extract_top_results_content(search_response)
+
         assert "No search results" in result or result is not None
-    
+
     def test_extract_no_results_key(self):
         """Test extraction with missing results key."""
-        from server.web_search_file import extract_top_result_content
-        
+        from server.web_search_file import extract_top_results_content
+
         search_response = {}
-        
-        result = extract_top_result_content(search_response)
-        
+
+        result = extract_top_results_content(search_response)
+
         assert "No results" in result or result is not None
-    
+
     def test_extract_missing_url(self):
         """Test extraction when URL is missing from result."""
-        from server.web_search_file import extract_top_result_content
-        
+        from server.web_search_file import extract_top_results_content
+
         search_response = {
             "results": [
                 {
-                    "title": "Test",
-                    "content": "Some content"
+                    "title": "Test 1",
+                    "content": "Some content 1"
                     # No URL
+                },
+                {
+                    "title": "Test 2",
+                    "url": "https://example.com/page2",
+                    "content": "Some content 2"
                 }
             ]
         }
-        
-        result = extract_top_result_content(search_response)
-        
+
+        result = extract_top_results_content(search_response)
+
         assert result is not None
+
+    def test_extract_fewer_than_three_results(self):
+        """Test extraction when fewer than 3 results are available."""
+        from server.web_search_file import extract_top_results_content
+
+        search_response = {
+            "results": [
+                {
+                    "title": "Test Page 1",
+                    "url": "https://example.com/page1",
+                    "content": "Content from first result."
+                },
+                {
+                    "title": "Test Page 2",
+                    "url": "https://example.com/page2",
+                    "content": "Content from second result."
+                }
+            ]
+        }
+
+        result = extract_top_results_content(search_response)
+
+        assert result is not None
+        assert "Result 1:" in result or "Result 2:" in result
+
+    def test_extract_multiple_sources_formatting(self):
+        """Test that multiple sources are properly formatted with source attribution."""
+        from server.web_search_file import extract_top_results_content
+
+        search_response = {
+            "results": [
+                {
+                    "title": "First Result",
+                    "url": "https://example.com/1",
+                    "content": "Content 1"
+                },
+                {
+                    "title": "Second Result",
+                    "url": "https://example.com/2",
+                    "content": "Content 2"
+                },
+                {
+                    "title": "Third Result",
+                    "url": "https://example.com/3",
+                    "content": "Content 3"
+                }
+            ]
+        }
+
+        result = extract_top_results_content(search_response)
+
+        assert result is not None
+        # Verify content includes multiple results with proper formatting
+        assert "---" in result  # Result separator
+        assert "URL:" in result  # URL attribution
 
 
 class TestWebSearchErrorHandling:

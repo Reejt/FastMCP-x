@@ -17,12 +17,11 @@ from server.query_handler import (
     answer_query, 
     query_model, 
     get_semantic_model,
-    answer_link_query,
     query_csv_with_context,
     query_excel_with_context
 )
-from server.web_search_file import tavily_web_search
 from server.mermaid_converter import convert_query_to_mermaid_markdown
+from server.enhanced_web_search import enhanced_web_search
 
 
 
@@ -99,48 +98,35 @@ def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id
 
 
 @mcp.tool
-def web_search_tool(query: str, conversation_history: str = "[]", workspace_id: str = None) -> str:
+async def web_search_tool(query: str, conversation_history: str = "[]", workspace_id: str = None) -> str:
     """
-    Perform a web search using Tavily API and get LLM-generated answer based on top result content
+    Perform an enhanced web search with automatic decision-making.
+    Uses SearchDecisionEngine + Tavily API for optimized results.
     
     Args:
         query: The search query
+        conversation_history: JSON string of previous messages
+        workspace_id: Optional workspace ID for context
     
     Returns:
-        LLM-generated answer based on the extracted content from top search result
+        LLM-generated answer based on search results
     """
     try:
         history = json.loads(conversation_history) if conversation_history else []
-        # Perform web search and get extracted content from top result
-        top_result_content = tavily_web_search(query=query, conversation_history=history, workspace_id=workspace_id)
-        print(f"Query result: {top_result_content}")
-        return top_result_content
+        # Use enhanced web search with automatic decision-making
+        result = await enhanced_web_search(query=query, conversation_history=history)
+        
+        # If result is None, it means no web search was needed (regular query handler should be used)
+        if result is None:
+            return ""  # Return empty string so it doesn't get displayed
+        
+        print(f"Web search result: {result}")
+        return result
     except Exception as e:
         error_msg = f"Error in web_search_tool: {str(e)}"
         print(error_msg)
         return error_msg
     
-@mcp.tool
-def answer_link_query_tool(url: str, query: str, conversation_history: str = "[]") -> str:
-    """
-    Answer a query based on the content of a specific URL
-    
-    Args:
-        url: The URL to extract content from
-        query: The user's question related to the URL content
-    
-    Returns:
-        LLM-generated answer based on the extracted content from the URL
-    """
-    try:
-        history = json.loads(conversation_history) if conversation_history else []
-        result = answer_link_query(url, query, conversation_history=history)
-        print(f"Link query result: {result}")
-        return result
-    except Exception as e:
-        error_msg = f"Error in answer_link_query_tool: {str(e)}"
-        print(error_msg)
-        return error_msg
 
 
 @mcp.tool
