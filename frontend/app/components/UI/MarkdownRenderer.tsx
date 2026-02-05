@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { useState, useCallback, ComponentPropsWithoutRef } from 'react'
+import { useState, useCallback, useEffect, ComponentPropsWithoutRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useMermaidDetector } from '../../hooks/useMermaidDetector'
 import DiagramPreviewPanel from './DiagramPreviewPanel'
@@ -58,6 +58,18 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
   // Use the mermaid detector hook
   const { detectedDiagrams, currentDiagram, showDiagram, closeDiagram, hasDiagrams } = useMermaidDetector(messages, true)
 
+  // Debug logging
+  useEffect(() => {
+    if (content.includes('```mermaid')) {
+      console.log('🔍 MarkdownRenderer: Mermaid code block found in content')
+      console.log('📊 Detected diagrams:', detectedDiagrams?.length ?? 0)
+      console.log('🎯 Has diagrams:', hasDiagrams)
+      if (detectedDiagrams && detectedDiagrams.length > 0) {
+        console.log('✅ First diagram:', detectedDiagrams[0])
+      }
+    }
+  }, [content, detectedDiagrams, hasDiagrams])
+
   const copyToClipboard = useCallback(async (code: string) => {
     try {
       await navigator.clipboard.writeText(code)
@@ -75,46 +87,46 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
         components={{
           // Headings with proper spacing and typography
           h1: ({ children }) => (
-            <h1 className="text-3xl font-bold mt-8 mb-4 text-[#0d0d0d] leading-tight first:mt-0">
+            <h1 className="text-3xl font-bold mt-8 mb-4 leading-tight first:mt-0" style={{ color: 'var(--markdown-heading)' }}>
               {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="text-2xl font-bold mt-6 mb-3 text-[#0d0d0d] leading-tight">
+            <h2 className="text-2xl font-bold mt-6 mb-3 leading-tight" style={{ color: 'var(--markdown-heading)' }}>
               {children}
             </h2>
           ),
           h3: ({ children }) => (
-            <h3 className="text-xl font-semibold mt-5 mb-2 text-[#0d0d0d] leading-snug">
+            <h3 className="text-xl font-semibold mt-5 mb-2 leading-snug" style={{ color: 'var(--markdown-heading)' }}>
               {children}
             </h3>
           ),
           h4: ({ children }) => (
-            <h4 className="text-lg font-semibold mt-4 mb-2 text-[#0d0d0d]">
+            <h4 className="text-lg font-semibold mt-4 mb-2" style={{ color: 'var(--markdown-heading)' }}>
               {children}
             </h4>
           ),
           h5: ({ children }) => (
-            <h5 className="text-base font-semibold mt-4 mb-2 text-[#0d0d0d]">
+            <h5 className="text-base font-semibold mt-4 mb-2" style={{ color: 'var(--markdown-heading)' }}>
               {children}
             </h5>
           ),
           h6: ({ children }) => (
-            <h6 className="text-sm font-semibold mt-4 mb-2 text-[#0d0d0d]">
+            <h6 className="text-sm font-semibold mt-4 mb-2" style={{ color: 'var(--markdown-heading)' }}>
               {children}
             </h6>
           ),
 
           // Paragraphs with comfortable line height
           p: ({ children }) => (
-            <p className="mb-4 leading-7 text-[#0d0d0d] last:mb-0">
+            <p className="mb-4 leading-7 last:mb-0" style={{ color: 'var(--markdown-text)' }}>
               {children}
             </p>
           ),
 
           // Strong and emphasis
           strong: ({ children }) => (
-            <strong className="font-semibold text-[#0d0d0d]">{children}</strong>
+            <strong className="font-semibold" style={{ color: 'var(--markdown-text)' }}>{children}</strong>
           ),
           em: ({ children }) => (
             <em className="italic">{children}</em>
@@ -122,12 +134,12 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
 
           // Lists with proper indentation
           ul: ({ children }) => (
-            <ul className="mb-4 ml-6 list-disc space-y-2 text-[#0d0d0d]">
+            <ul className="mb-4 ml-6 list-disc space-y-2" style={{ color: 'var(--markdown-text)' }}>
               {children}
             </ul>
           ),
           ol: ({ children }) => (
-            <ol className="mb-4 ml-6 list-decimal space-y-2 text-[#0d0d0d]">
+            <ol className="mb-4 ml-6 list-decimal space-y-2" style={{ color: 'var(--markdown-text)' }}>
               {children}
             </ol>
           ),
@@ -141,7 +153,10 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
           a: ({ children, href }) => (
             <a 
               href={href} 
-              className="text-blue-600 hover:text-blue-800 underline underline-offset-2"
+              className="underline underline-offset-2"
+              style={{ color: 'var(--markdown-link)' }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--markdown-link-hover)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--markdown-link)'}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -151,14 +166,14 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
 
           // Blockquotes
           blockquote: ({ children }) => (
-            <blockquote className="border-l-4 border-gray-300 pl-4 my-4 italic text-gray-700">
+            <blockquote className="pl-4 my-4 italic" style={{ borderLeft: '4px solid var(--markdown-border)', color: 'var(--text-secondary)' }}>
               {children}
             </blockquote>
           ),
 
           // Horizontal rule
           hr: () => (
-            <hr className="my-6 border-t border-gray-200" />
+            <hr className="my-6" style={{ borderTop: '1px solid var(--markdown-border)' }} />
           ),
 
           // Code blocks with syntax highlighting and copy button
@@ -178,7 +193,8 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
             if (isInline && !codeString.includes('\n')) {
               return (
                 <code 
-                  className="bg-gray-100 px-1.5 py-0.5 text-sm font-mono rounded text-[#0d0d0d]"
+                  className="px-1.5 py-0.5 text-sm font-mono rounded"
+                  style={{ backgroundColor: 'var(--markdown-inline-code-bg)', color: 'var(--markdown-text)' }}
                   {...props}
                 >
                   {children}
@@ -189,36 +205,27 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
             // Code block with syntax highlighting
             const language = match ? match[1] : 'text'
             
-            // Handle Mermaid diagrams - show preview button instead of inline rendering
+            // Handle Mermaid diagrams - render inline directly
             if (language === 'mermaid') {
-              // Find the corresponding detected diagram
-              const diagram = detectedDiagrams.find(d => d.mermaidCode.trim() === codeString.trim())
-              
               return (
                 <div className="my-4">
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                        <span className="text-sm font-medium text-gray-700">
-                          {diagram ? `${diagram.type.charAt(0).toUpperCase() + diagram.type.slice(1)} Diagram` : 'Mermaid Diagram'}
-                        </span>
-                      </div>
-                      {diagram && (
-                        <button
-                          onClick={() => showDiagram(diagram.id)}
-                          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                        >
-                          View Diagram
-                        </button>
-                      )}
+                  {/* Render the diagram inline */}
+                  <MermaidDiagram chart={codeString} className="border border-gray-200 rounded-lg p-4 bg-white" />
+                  
+                  {/* Also show a button to open in preview panel */}
+                  {detectedDiagrams && detectedDiagrams.length > 0 && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const diagram = detectedDiagrams.find(d => d.mermaidCode.trim() === codeString.trim())
+                          if (diagram) showDiagram(diagram.id)
+                        }}
+                        className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 transition-colors"
+                      >
+                        Open in Preview Panel
+                      </button>
                     </div>
-                    <div className="mt-2 text-xs text-gray-500">
-                      Click "View Diagram" to open in preview panel
-                    </div>
-                  </div>
+                  )}
                 </div>
               )
             }
@@ -230,7 +237,10 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
                   <span className="font-medium uppercase">{language}</span>
                   <button
                     onClick={() => copyToClipboard(codeString)}
-                    className="flex items-center gap-1 hover:text-gray-900 transition-colors"
+                    className="flex items-center gap-1 transition-colors"
+                    style={{ color: 'var(--text-secondary)' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
                     aria-label="Copy code"
                   >
                     {copiedCode === codeString ? (

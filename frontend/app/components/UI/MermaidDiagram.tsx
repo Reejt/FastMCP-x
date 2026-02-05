@@ -60,6 +60,16 @@ export default function MermaidDiagram({ chart, className = '' }: MermaidDiagram
           cleanChart = cleanChart.slice(0, -3).trim()
         }
         
+        // ✅ FIX ARROW SYNTAX ERRORS (critical for LLM-generated diagrams)
+        // Fix broken arrows with spaces: "- ->" or "- >" or "-- >"
+        cleanChart = cleanChart.replace(/\]\s*-\s+->\s*\[/g, '] --> [')  // "] - -> [" -> "] --> ["
+        cleanChart = cleanChart.replace(/\]\s*-\s+>\s*\[/g, '] -> [')    // "] - > [" -> "] -> ["
+        cleanChart = cleanChart.replace(/-\s+-\s*>/g, '-->')             // "- ->" -> "-->"
+        cleanChart = cleanChart.replace(/-\s+>/g, '->')                  // "- >" -> "->"
+        cleanChart = cleanChart.replace(/- ->/g, '-->')                  // Exact: "- ->" -> "-->"
+        cleanChart = cleanChart.replace(/-- >/g, '-->')                  // Exact: "-- >" -> "-->"
+        cleanChart = cleanChart.replace(/- >/g, '->')                    // Exact: "- >" -> "->"
+        
         // Final trim
         cleanChart = cleanChart.trim()
 

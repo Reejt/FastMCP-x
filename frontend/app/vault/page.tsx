@@ -173,8 +173,8 @@ export default function VaultPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-app)' }}>
+        <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
       </div>
     )
   }
@@ -205,7 +205,7 @@ export default function VaultPage() {
           <div className="border-b border-gray-200">
             <div className="max-w-7xl mx-auto px-6 py-6">
               <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-semibold text-gray-900">Chats</h1>
+                <h1 className="text-3xl font-semibold" style={{ color: 'var(--text-primary)' }}>Chats</h1>
                 <button
                   onClick={triggerFileSelect}
                   disabled={uploading}
@@ -231,7 +231,7 @@ export default function VaultPage() {
             {uploadedFiles.length > 0 ? (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Uploaded Files ({uploadedFiles.length})</h2>
+                  <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Uploaded Files ({uploadedFiles.length})</h2>
                   <div className="space-y-3">
                     {uploadedFiles.map((file) => (
                       <div key={file.id} className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow">
@@ -248,7 +248,7 @@ export default function VaultPage() {
                           {/* File Info */}
                           <div className="flex-1 min-w-0">
                             <div>
-                              <h3 className="text-base font-medium text-gray-900 truncate">{file.name}</h3>
+                              <h3 className="text-base font-medium truncate" style={{ color: 'var(--text-primary)' }}>{file.name}</h3>
                               {file.extension && <p className="text-xs text-gray-400">{file.extension.toUpperCase()}</p>}
                             </div>
                             <div className="flex items-center gap-3 mt-1">
@@ -297,13 +297,13 @@ export default function VaultPage() {
               </div>
             ) : (
               <div className="text-center py-12">
-                <div className="text-gray-400 mb-4">
+                <div className="mb-4" style={{ color: 'var(--text-muted)' }}>
                   <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                   </svg>
                 </div>
-                <p className="text-gray-600 text-lg mb-2">Your Chats is Empty</p>
-                <p className="text-gray-500 text-sm mb-6">
+                <p className="text-lg mb-2" style={{ color: 'var(--text-primary)' }}>Your Chats is Empty</p>
+                <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
                   Upload documents, images, and other files to access them in your conversations
                 </p>
                 <button

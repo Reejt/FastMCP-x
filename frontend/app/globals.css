@@ -34,8 +34,33 @@
 }
 
 :root {
+  /* Legacy variables for compatibility */
   --background: #ffffff;
   --foreground: #171717;
+  
+  /* Core Background Tokens */
+  --bg-app: #ffffff;
+  --bg-surface: #f8f8f8;
+  --bg-elevated: #ffffff;
+  --bg-hover: #F4F4F5;
+  --bg-user-bubble: #f0f0f0;
+  
+  /* Text Tokens */
+  --text-primary: #171717;
+  --text-secondary: #525252;
+  --text-muted: #737373;
+  --text-inverse: #ffffff;
+  
+  /* Accent Tokens */
+  --accent-primary: #2563eb;
+  --accent-secondary: #22c55e;
+  --accent-warning: #f59e0b;
+  --accent-danger: #ef4444;
+  
+  /* Border Tokens */
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  
   /* ChatGPT-style markdown colors */
   --markdown-text: #0d0d0d;
   --markdown-heading: #0d0d0d;
@@ -47,6 +72,45 @@
   --markdown-link-hover: #1d4ed8;
 }
 
+[data-theme="dark"] {
+  /* Legacy variables */
+  --background: #212121;
+  --foreground: #ffffff;
+  
+  /* Core Background Tokens */
+  --bg-app: #212121;
+  --bg-surface: #181818;
+  --bg-elevated: #212121;
+  --bg-hover: #1F1F1F;
+  --bg-user-bubble: #303030;
+  
+  /* Text Tokens */
+  --text-primary: #ffffff;
+  --text-secondary: #ffffff;
+  --text-muted: #ffffff;
+  --text-inverse: #212121;
+  
+  /* Accent Tokens */
+  --accent-primary: #5B8CFF;
+  --accent-secondary: #22C55E;
+  --accent-warning: #F59E0B;
+  --accent-danger: #EF4444;
+  
+  /* Border Tokens */
+  --border-subtle: rgba(255, 255, 255, 0.15);
+  --border-strong: rgba(255, 255, 255, 0.25);
+  
+  /* Dark mode markdown colors */
+  --markdown-text: #ffffff;
+  --markdown-heading: #ffffff;
+  --markdown-code-bg: #1A1F26;
+  --markdown-code-header-bg: #1F2430;
+  --markdown-inline-code-bg: #1F2430;
+  --markdown-border: rgba(255, 255, 255, 0.1);
+  --markdown-link: #5B8CFF;
+  --markdown-link-hover: #7BA3FF;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -54,17 +118,42 @@
   --font-mono: 'Menlo', 'SFMono-Regular', 'Fira Code', 'Monaco', 'Consolas', monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: 'Chirp', Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: 'Chirp', Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+/* Sidebar glow divider (dark mode only) */
+.sidebar-divider::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(255, 255, 255, 0.7) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+  opacity: 0;
+  z-index: 2;
+}
+
+[data-theme="dark"] .sidebar-divider::after {
+  opacity: 1;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.3));
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
 }
 
 /* Markdown body styling - ChatGPT inspired */

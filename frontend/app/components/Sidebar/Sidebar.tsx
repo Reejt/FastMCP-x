@@ -4,10 +4,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter, usePathname } from 'next/navigation'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { User, Workspace } from '@/app/types'
 import SidebarItem from './SidebarItem'
 import ConfirmationModal from '../UI/ConfirmationModal'
 import { useWorkspacesStore } from '@/app/contexts/WorkspacesContext'
+import { useTheme } from '@/app/contexts/ThemeContext'
 
 
 interface SidebarProps {
@@ -40,17 +42,18 @@ export default function Sidebar({
   const sidebarRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const { theme: appTheme, toggleTheme } = useTheme()
 
-  // Light theme colors
+  // Theme colors using CSS variables
   const theme = {
-    bg: '#ffffff',
-    border: '#e5e5e5',
-    text: '#1a1a1a',
-    textSecondary: '#666666',
-    textMuted: '#999999',
-    hoverBg: 'rgba(0,0,0,0.05)',
-    activeBg: '#f0f0f0',
-    cardBg: '#ffffff',
+    bg: 'var(--bg-surface)',
+    border: 'var(--border-subtle)',
+    text: 'var(--text-primary)',
+    textSecondary: 'var(--text-secondary)',
+    textMuted: 'var(--text-muted)',
+    hoverBg: 'var(--bg-hover)',
+    activeBg: 'var(--bg-elevated)',
+    cardBg: 'var(--bg-elevated)',
   }
 
   // Update active section based on current pathname and extract workspace ID
@@ -217,8 +220,8 @@ export default function Sidebar({
           ease: 'easeInOut',
         }}
         onClick={isCollapsed ? toggleCollapse : undefined}
-        className={`h-screen flex flex-col shadow-sm relative border-r ${isCollapsed ? 'cursor-pointer' : ''}`}
-        style={{ backgroundColor: theme.bg, borderColor: theme.border }}
+        className={`h-screen flex flex-col shadow-sm relative border-r sidebar-divider ${isCollapsed ? 'cursor-pointer' : ''}`}
+        style={{ backgroundColor: theme.bg, borderColor: appTheme === 'dark' ? 'transparent' : theme.border }}
         role="navigation"
         aria-label="Main navigation"
       >
@@ -504,79 +507,194 @@ export default function Sidebar({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <div className="flex items-center space-x-3 mb-3 px-2">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)' }}>
-                  <span className="font-medium text-sm" style={{ color: '#16a34a' }}>
-                    {user.email.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <p className="text-sm font-medium truncate" style={{ color: theme.text }}>{user.email}</p>
-                  <p className="text-xs capitalize" style={{ color: theme.textSecondary }}>{user.role}</p>
-                </div>
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSignOutAction()
-                }}
-                className="w-full px-4 py-2 text-sm rounded-lg transition-colors text-left flex items-center space-x-2"
-                style={{ color: theme.textSecondary }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = theme.hoverBg
-                  e.currentTarget.style.color = theme.text
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent'
-                  e.currentTarget.style.color = theme.textSecondary
-                }}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                <span>Sign Out</span>
-              </button>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <button
+                    className="w-full flex items-center space-x-3 mb-2 px-2 py-2 rounded-lg transition-colors"
+                    style={{ color: theme.text }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = theme.hoverBg
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent'
+                    }}
+                  >
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)' }}>
+                      <span className="font-medium text-sm" style={{ color: '#16a34a' }}>
+                        {user.email.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0 overflow-hidden text-left">
+                      <p className="text-sm font-medium truncate" style={{ color: theme.text }}>{user.email}</p>
+                      <p className="text-xs capitalize" style={{ color: theme.textSecondary }}>{user.role}</p>
+                    </div>
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </DropdownMenu.Trigger>
+
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    className="min-w-[200px] rounded-xl shadow-xl border p-1"
+                    style={{ 
+                      backgroundColor: theme.cardBg, 
+                      borderColor: theme.border,
+                      zIndex: 9999
+                    }}
+                    sideOffset={5}
+                    align="end"
+                  >
+                    {/* Theme Toggle */}
+                    <DropdownMenu.Item
+                      className="flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors cursor-pointer outline-none"
+                      style={{ color: theme.text }}
+                      onSelect={(e) => {
+                        e.preventDefault()
+                        toggleTheme()
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = theme.hoverBg
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent'
+                      }}
+                    >
+                      <div className="flex items-center space-x-2">
+                        {appTheme === 'dark' ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                          </svg>
+                        )}
+                        <span>{appTheme === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
+                      </div>
+                      <span className="text-xs" style={{ color: theme.textSecondary }}>
+                        {appTheme === 'dark' ? '●' : '○'}
+                      </span>
+                    </DropdownMenu.Item>
+
+                    <DropdownMenu.Separator className="my-1" style={{ height: '1px', backgroundColor: theme.border }} />
+
+                    {/* Sign Out */}
+                    <DropdownMenu.Item
+                      className="flex items-center space-x-2 px-3 py-2 text-sm rounded-lg transition-colors cursor-pointer outline-none"
+                      onSelect={(e) => {
+                        e.preventDefault()
+                        onSignOutAction()
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'
+                        e.currentTarget.style.color = '#ef4444'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent'
+                        e.currentTarget.style.color = theme.text
+                      }}
+                      style={{ color: theme.text }}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Sign Out</span>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             </motion.div>
           ) : (
             <div className="flex flex-col items-center space-y-2">
-              {/* Collapsed user avatar */}
-              <div className="w-10 h-10 rounded-full flex items-center justify-center group relative" style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)' }}>
-                <span className="font-medium text-sm" style={{ color: '#16a34a' }}>
-                  {user.email.charAt(0).toUpperCase()}
-                </span>
-                {/* Tooltip */}
-                <div className="absolute left-full ml-2 px-2 py-1 text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none shadow-lg" style={{ backgroundColor: theme.bg, color: theme.text, border: `1px solid ${theme.border}` }}>
-                  {user.email}
-                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent" style={{ borderRightColor: theme.bg }} />
-                </div>
-              </div>
-              {/* Collapsed sign out button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSignOutAction()
-                }}
-                className="p-2 rounded-lg transition-colors group relative"
-                style={{ color: theme.textSecondary }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = theme.hoverBg
-                  e.currentTarget.style.color = theme.text
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent'
-                  e.currentTarget.style.color = theme.textSecondary
-                }}
-                aria-label="Sign out"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                {/* Tooltip */}
-                <div className="absolute left-full ml-2 px-2 py-1 text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none shadow-lg" style={{ backgroundColor: theme.bg, color: theme.text, border: `1px solid ${theme.border}` }}>
-                  Sign Out
-                  <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent" style={{ borderRightColor: theme.bg }} />
-                </div>
-              </button>
+              {/* Collapsed user avatar with dropdown */}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <button className="w-10 h-10 rounded-full flex items-center justify-center group relative" style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)' }}>
+                    <span className="font-medium text-sm" style={{ color: '#16a34a' }}>
+                      {user.email.charAt(0).toUpperCase()}
+                    </span>
+                  </button>
+                </DropdownMenu.Trigger>
+
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    className="min-w-[200px] rounded-xl shadow-xl border p-1"
+                    style={{ 
+                      backgroundColor: theme.cardBg, 
+                      borderColor: theme.border,
+                      zIndex: 9999
+                    }}
+                    sideOffset={5}
+                    side="right"
+                  >
+                    {/* User Info */}
+                    <div className="px-3 py-2 mb-1">
+                      <p className="text-sm font-medium truncate" style={{ color: theme.text }}>{user.email}</p>
+                      <p className="text-xs capitalize" style={{ color: theme.textSecondary }}>{user.role}</p>
+                    </div>
+
+                    <DropdownMenu.Separator className="my-1" style={{ height: '1px', backgroundColor: theme.border }} />
+
+                    {/* Theme Toggle */}
+                    <DropdownMenu.Item
+                      className="flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors cursor-pointer outline-none"
+                      style={{ color: theme.text }}
+                      onSelect={(e) => {
+                        e.preventDefault()
+                        toggleTheme()
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = theme.hoverBg
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent'
+                      }}
+                    >
+                      <div className="flex items-center space-x-2">
+                        {appTheme === 'dark' ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                          </svg>
+                        )}
+                        <span>{appTheme === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
+                      </div>
+                      <span className="text-xs" style={{ color: theme.textSecondary }}>
+                        {appTheme === 'dark' ? '●' : '○'}
+                      </span>
+                    </DropdownMenu.Item>
+
+                    <DropdownMenu.Separator className="my-1" style={{ height: '1px', backgroundColor: theme.border }} />
+
+                    {/* Sign Out */}
+                    <DropdownMenu.Item
+                      className="flex items-center space-x-2 px-3 py-2 text-sm rounded-lg transition-colors cursor-pointer outline-none"
+                      onSelect={(e) => {
+                        e.preventDefault()
+                        onSignOutAction()
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'
+                        e.currentTarget.style.color = '#ef4444'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent'
+                        e.currentTarget.style.color = theme.text
+                      }}
+                      style={{ color: theme.text }}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Sign Out</span>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             </div>
           )}
         </div>

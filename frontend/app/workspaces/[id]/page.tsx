@@ -617,14 +617,18 @@ export default function WorkspacePage() {
                       if (accumulatedContent && !streamError) {
                         saveMessageToSupabase(sessionIdToUse, 'assistant', accumulatedContent)
                       }
+                      // ✅ Update content AND set isStreaming to false to trigger diagram detection
+                      console.log('✅ Streaming complete. Final content length:', accumulatedContent.length)
+                      console.log('📝 Has mermaid code:', accumulatedContent.includes('```mermaid'))
                       setMessages((prev) =>
                         prev.map((msg) =>
                           msg.id === assistantMessageId
-                            ? { ...msg, isStreaming: false }
+                            ? { ...msg, content: accumulatedContent, isStreaming: false }
                             : msg
                         )
                       )
                       setIsProcessing(false)
+                      setIsStreaming(false)
                       return
                     } else if (data.error) {
                       streamError = true

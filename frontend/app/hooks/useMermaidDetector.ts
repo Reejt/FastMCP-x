@@ -23,18 +23,8 @@ export function useMermaidDetector(
   const [detectedDiagrams, setDetectedDiagrams] = useState<DiagramData[]>([])
   const [currentDiagram, setCurrentDiagram] = useState<DiagramData | null>(null)
 
-  // Memoize a stable key based on messages content to avoid infinite loops
-  const messagesKey = useMemo(() => {
-    if (!shouldDetect || messages.length === 0) return null
-
-    // Create a stable key from the last message only
-    const lastMsg = messages[messages.length - 1]
-    if (!lastMsg?.id) return null
-    return `${lastMsg.id}-${lastMsg.role}-${lastMsg.content.length}`
-  }, [messages, shouldDetect])
-
   useEffect(() => {
-    if (!shouldDetect || !messagesKey) {
+    if (!shouldDetect) {
       setDetectedDiagrams([])
       setCurrentDiagram(null)
       return
@@ -108,15 +98,27 @@ export function useMermaidDetector(
       }
     })
 
-    setDetectedDiagrams(diagrams)
+    setDetectedDiagrams((prev) => {
+      // Only update if diagrams actually changed to prevent unnecessary re-renders
+      if (prev.length === diagrams.length && 
+          prev.every((d, i) => d.id === diagrams[i]?.id)) {
+        return prev
+      }
+      return diagrams
+    })
 
     // Only show the most recent diagram if detection is enabled
     if (diagrams.length > 0) {
-      setCurrentDiagram(diagrams[diagrams.length - 1])
+      setCurrentDiagram((prev) => {
+        const newest = diagrams[diagrams.length - 1]
+        // Only update if the diagram actually changed
+        if (prev?.id === newest.id) return prev
+        return newest
+      })
     } else {
       setCurrentDiagram(null)
     }
-  }, [messagesKey, shouldDetect, messages])
+  }, [messages, shouldDetect])
 
   const showDiagram = (diagramId: string) => {
     const diagram = detectedDiagrams.find((d: DiagramData) => d.id === diagramId)

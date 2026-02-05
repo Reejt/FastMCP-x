@@ -299,8 +299,8 @@ export default function WorkspaceChatPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-gray-50 items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: 'var(--bg-app)' }}>
+        <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
       </div>
     )
   }
@@ -352,34 +352,38 @@ export default function WorkspaceChatPage() {
               </svg>
             </button>
           )}
-          <nav className="flex items-center gap-2 text-sm text-gray-600">
+          <nav className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
             <button
               onClick={() => router.push('/workspaces')}
-              className="hover:text-gray-900 transition-colors"
+              className="transition-colors"
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
             >
               Workspaces
             </button>
-            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
             <button
               onClick={() => router.push(`/workspaces/${workspaceId}`)}
-              className="hover:text-gray-900 transition-colors"
+              className="transition-colors"
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
             >
               {currentWorkspace?.name || 'Workspace'}
             </button>
             {currentChatLabel && (
               <>
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
-                <span className="text-gray-900 font-medium">{currentChatLabel}</span>
+                <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{currentChatLabel}</span>
               </>
             )}
-            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
-            <span className="text-gray-900 font-medium">Chats</span>
+            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Chats</span>
           </nav>
         </div>
 
@@ -387,7 +391,7 @@ export default function WorkspaceChatPage() {
         <div className="flex-1 overflow-auto px-8 pb-8">
           <div className="mb-8 flex items-center justify-between pt-8">
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">Chats</h1>
+              <h1 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>Chats</h1>
             </div>
             <div className="flex items-center gap-4">
               <div className="relative">
@@ -427,7 +431,7 @@ export default function WorkspaceChatPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                 </svg>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No files uploaded</h3>
+              <h3 className="text-lg font-medium mb-2" style={{ color: 'var(--text-primary)' }}>No files uploaded</h3>
               <p className="text-gray-500 mb-4">Upload your first file to get started</p>
               <button
                 onClick={triggerFileSelect}
@@ -463,7 +467,7 @@ export default function WorkspaceChatPage() {
                           <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                           </svg>
-                          <span className="text-sm text-gray-900 font-medium">{file.name}</span>
+                          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{file.name}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
