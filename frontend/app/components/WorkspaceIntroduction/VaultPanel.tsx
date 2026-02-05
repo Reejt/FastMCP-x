@@ -161,7 +161,7 @@ export default function VaultPanel({ workspace }: VaultPanelProps) {
 
   // Light theme colors
   const theme = {
-    text: '#1a1a1a',
+    text: 'var(--text-primary)',
     textSecondary: '#666666',
     textMuted: '#999999',
     cardBg: '#f5f5f5',

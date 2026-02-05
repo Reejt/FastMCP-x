@@ -349,13 +349,13 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
 
 
 
-async def query_model(query: str = None, model_name: str = 'llama3.2:3b', stream: bool = False, conversation_history: list = None, abort_event=None, system_prompt: str = None, user_prompt: str = None, timeout: int = 120):
+async def query_model(query: str = None, model_name: str = 'llama3:8b', stream: bool = False, conversation_history: list = None, abort_event=None, system_prompt: str = None, user_prompt: str = None, timeout: int = 120):
     """
     Query the Ollama model via HTTP API with optional conversation history and system prompt (async version)
     
     Args:
         query: The current user query (alternative to user_prompt)
-        model_name: Name of the Ollama model to use (default: llama3.2:3b)
+        model_name: Name of the Ollama model to use (default: llama3:8b)
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
         abort_event: threading.Event to signal cancellation (optional)
@@ -608,13 +608,13 @@ DOCUMENT CONTENT:
 
 
 
-def generate_chat_title(first_message: str, model_name: str = 'llama3.2:3b'):
+def generate_chat_title(first_message: str, model_name: str = 'llama3:8b'):
     """
     Generate a concise, descriptive title for a chat session based on the first message.
     
     Args:
         first_message: The first user message in the chat session
-        model_name: Name of the Ollama model to use (default: llama3.2:3b)
+        model_name: Name of the Ollama model to use (default: llama3:8b)
         
     Returns:
         A short, descriptive title (max 6 words)

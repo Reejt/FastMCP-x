@@ -92,7 +92,7 @@ export default function InstructionsPanel({ workspace, onInstructionAdded }: Ins
 
   // Light theme colors
   const theme = {
-    text: '#1a1a1a',
+    text: 'var(--text-primary)',
     textSecondary: '#666666',
     textMuted: '#999999',
     cardBg: '#ffffff',
@@ -164,18 +164,22 @@ export default function InstructionsPanel({ workspace, onInstructionAdded }: Ins
                 }}
                 disabled={isLoading}
                 className="px-4 py-2 rounded-lg transition-colors text-sm disabled:opacity-50"
-                style={{ color: theme.textSecondary }}
+                style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-subtle)' }}
+                onMouseEnter={(e) => !isLoading && (e.currentTarget.style.backgroundColor = 'var(--bg-surface)')}
+                onMouseLeave={(e) => !isLoading && (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddInstruction}
                 disabled={!newInstruction.trim() || isLoading}
-                className="px-4 py-2 rounded-lg transition-colors text-sm disabled:cursor-not-allowed"
+                className="px-4 py-2 rounded-lg transition-colors text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ 
-                  backgroundColor: 'rgba(0,0,0,0.1)',
-                  color: newInstruction.trim() && !isLoading ? theme.text : theme.textMuted
+                  backgroundColor: 'var(--accent-primary)',
+                  color: 'var(--text-inverse)'
                 }}
+                onMouseEnter={(e) => !isLoading && newInstruction.trim() && (e.currentTarget.style.opacity = '0.9')}
+                onMouseLeave={(e) => !isLoading && newInstruction.trim() && (e.currentTarget.style.opacity = '1')}
               >
                 {isLoading ? 'Adding...' : 'Add'}
               </button>

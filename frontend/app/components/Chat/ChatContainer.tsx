@@ -10,9 +10,10 @@ interface ChatContainerProps {
   workspaceName?: string
   activeInstruction?: WorkspaceInstruction | null
   onShowDiagram?: (diagramId: string) => void
+  hideEmptyState?: boolean
 }
 
-export default function ChatContainer({ messages, onShowDiagram }: ChatContainerProps) {
+export default function ChatContainer({ messages, onShowDiagram, hideEmptyState = false }: ChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -27,9 +28,21 @@ export default function ChatContainer({ messages, onShowDiagram }: ChatContainer
 
   const hasMessages = messages.length > 0
 
+  if (!hasMessages && hideEmptyState) {
+    return (
+      <div className="flex-1 overflow-y-auto px-4" style={{ backgroundColor: 'var(--bg-app)' }}>
+        <div className="mx-auto h-full" style={{ maxWidth: '800px' }} />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex-1 overflow-y-auto px-4" style={{ backgroundColor: '#fcfcfc' }}>
-      <div className={`max-w-4xl mx-auto ${!hasMessages ? 'h-full flex flex-col justify-center' : ''}`}>
+    <div className="flex-1 overflow-y-auto px-4" style={{ backgroundColor: 'var(--bg-app)' }}>
+      {/* Centered chat column with max width */}
+      <div 
+        className={`mx-auto ${!hasMessages ? 'h-full flex flex-col justify-center' : ''}`}
+        style={{ maxWidth: '800px' }}
+      >
         <AnimatePresence mode="wait">
           {!hasMessages ? (
             <motion.div
@@ -40,8 +53,8 @@ export default function ChatContainer({ messages, onShowDiagram }: ChatContainer
               transition={{ duration: 0.3 }}
               className="flex flex-col items-center justify-center text-center px-4"
             >
-              <p className="text-sm mb-2" style={{ color: '#060606' }}>No chats yet.</p>
-              <p className="text-gray-400 text-sm">
+              <p className="text-sm mb-2" style={{ color: 'var(--text-primary)' }}>No chats yet.</p>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 Start a conversation or set project instructions.
               </p>
             </motion.div>
@@ -56,7 +69,7 @@ export default function ChatContainer({ messages, onShowDiagram }: ChatContainer
               {messages.map((message, index) => (
                 // ✅ No animation on streaming messages - allows instant updates
                 message.isStreaming ? (
-                  <div key={message.id}>
+                  <div key={message.id} className="mb-5">
                     <ChatMessage message={message} onShowDiagram={onShowDiagram} />
                   </div>
                 ) : (
@@ -65,6 +78,7 @@ export default function ChatContainer({ messages, onShowDiagram }: ChatContainer
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.5) }}
+                    className="mb-5"
                   >
                     <ChatMessage message={message} onShowDiagram={onShowDiagram} />
                   </motion.div>

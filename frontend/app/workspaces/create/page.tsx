@@ -109,16 +109,16 @@ export default function CreateWorkspacePage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-white">
+      <div className="flex h-screen" style={{ backgroundColor: 'var(--bg-app)' }}>
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-gray-500">Loading...</div>
+          <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen bg-white">
+    <div className="flex h-screen" style={{ backgroundColor: 'var(--bg-app)' }}>
       {user && (
         <Sidebar
           user={user}
@@ -130,7 +130,7 @@ export default function CreateWorkspacePage() {
         <div className="w-full max-w-2xl">
           {/* Page Title */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2" style={{ fontFamily: 'Chirp, sans-serif' }}>
+            <h1 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Chirp, sans-serif', color: 'var(--text-primary)' }}>
               Create a new workspace
             </h1>
           </div>
@@ -140,7 +140,7 @@ export default function CreateWorkspacePage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Workspace Name */}
             <div>
-              <label className="block text-base font-medium text-gray-900 mb-2" style={{ fontFamily: 'Chirp, sans-serif' }}>
+              <label className="block text-base font-medium mb-2" style={{ fontFamily: 'Chirp, sans-serif', color: 'var(--text-primary)' }}>
                 What are you working on?
               </label>
               <input
@@ -148,15 +148,15 @@ export default function CreateWorkspacePage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Name your workspace"
-                className="w-full px-4 py-3 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent placeholder-gray-400 text-gray-900"
-                style={{ fontFamily: 'Chirp, sans-serif' }}
+                className="w-full px-4 py-3 text-base border rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
+                style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-primary)', backgroundColor: 'var(--bg-elevated)', fontFamily: 'Chirp, sans-serif' }}
                 autoFocus
               />
             </div>
 
             {/* Description */}
             <div>
-              <label className="block text-base font-medium text-gray-900 mb-2" style={{ fontFamily: 'Chirp, sans-serif' }}>
+              <label className="block text-base font-medium mb-2" style={{ fontFamily: 'Chirp, sans-serif', color: 'var(--text-primary)' }}>
                 What are you trying to achieve?
               </label>
               <textarea
@@ -164,14 +164,14 @@ export default function CreateWorkspacePage() {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe your workspace, goals, subject, etc..."
                 rows={2}
-                className="w-full px-4 py-3 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent resize-none placeholder-gray-400 text-gray-900"
-                style={{ fontFamily: 'Chirp, sans-serif' }}
+                className="w-full px-4 py-3 text-base border rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent resize-none"
+                style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-primary)', backgroundColor: 'var(--bg-elevated)', fontFamily: 'Chirp, sans-serif' }}
               />
             </div>
 
             {/* Workspace Instructions */}
             <div>
-              <label className="block text-base font-medium text-gray-900 mb-2" style={{ fontFamily: 'Chirp, sans-serif' }}>
+              <label className="block text-base font-medium mb-2" style={{ fontFamily: 'Chirp, sans-serif', color: 'var(--text-primary)' }}>
                 Workspace Instructions
               </label>
               <textarea
@@ -179,8 +179,8 @@ export default function CreateWorkspacePage() {
                 onChange={(e) => setInstructions(e.target.value)}
                 placeholder="Add instructions about the tone, style, and persona you want your workspace to adopt. E.g., 'Use a professional tone', 'Focus on technical accuracy', 'Be creative and conversational'..."
                 rows={3}
-                className="w-full px-4 py-3 text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent resize-none placeholder-gray-400 text-gray-900"
-                style={{ fontFamily: 'Chirp, sans-serif' }}
+                className="w-full px-4 py-3 text-base border rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent resize-none"
+                style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-primary)', backgroundColor: 'var(--bg-elevated)', fontFamily: 'Chirp, sans-serif' }}
               />
             </div>
 
@@ -190,16 +190,20 @@ export default function CreateWorkspacePage() {
                 type="button"
                 onClick={handleCancel}
                 disabled={isSubmitting}
-                className="px-7 py-2.5 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ fontFamily: 'Chirp, sans-serif' }}
+                className="px-7 py-2.5 text-base font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ fontFamily: 'Chirp, sans-serif', color: 'var(--text-primary)', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-subtle)' }}
+                onMouseEnter={(e) => !isSubmitting && (e.currentTarget.style.backgroundColor = 'var(--bg-surface)')}
+                onMouseLeave={(e) => !isSubmitting && (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-7 py-2.5 text-base font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ fontFamily: 'Chirp, sans-serif' }}
+                className="px-7 py-2.5 text-base font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ fontFamily: 'Chirp, sans-serif', backgroundColor: 'var(--accent-primary)', color: 'var(--text-inverse)' }}
+                onMouseEnter={(e) => !isSubmitting && (e.currentTarget.style.opacity = '0.9')}
+                onMouseLeave={(e) => !isSubmitting && (e.currentTarget.style.opacity = '1')}
               >
                 {isSubmitting ? 'Creating...' : 'Create workspace'}
               </button>

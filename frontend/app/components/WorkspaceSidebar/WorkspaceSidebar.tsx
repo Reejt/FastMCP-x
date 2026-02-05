@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Workspace, ChatSession, WorkspaceInstruction } from '@/app/types'
+import { useTheme } from '@/app/contexts/ThemeContext'
 
 interface WorkspaceSidebarProps {
   workspace: Workspace | null
@@ -44,6 +45,7 @@ export default function WorkspaceSidebar({
   onSessionDelete
 }: WorkspaceSidebarProps) {
   const router = useRouter()
+  const { theme: appTheme } = useTheme()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH)
   const [isResizing, setIsResizing] = useState(false)
@@ -60,17 +62,17 @@ export default function WorkspaceSidebar({
   const [deleteConfirmTitle, setDeleteConfirmTitle] = useState('')
   const [isDeletingSession, setIsDeletingSession] = useState(false)
 
-  // Light theme colors
+  // Theme colors using CSS variables
   const theme = {
-    bg: '#ffffff',
-    border: '#e5e5e5',
-    text: '#1a1a1a',
-    textSecondary: '#666666',
-    textMuted: '#999999',
-    hoverBg: 'rgba(0,0,0,0.05)',
-    activeBg: '#f0f0f0',
-    cardBg: '#f5f5f5',
-    hoverGrey: '#f5f5f5',
+    bg: 'var(--bg-surface)',
+    border: 'var(--border-subtle)',
+    text: 'var(--text-primary)',
+    textSecondary: 'var(--text-secondary)',
+    textMuted: 'var(--text-muted)',
+    hoverBg: 'var(--bg-hover)',
+    activeBg: 'var(--bg-elevated)',
+    cardBg: 'var(--bg-elevated)',
+    hoverGrey: 'var(--bg-hover)',
   }
 
   // Format relative time (1 hour ago, 2 days ago, etc.)
@@ -523,9 +525,12 @@ export default function WorkspaceSidebar({
                   onClick={() => setIsEditModalOpen(false)}
                   className="px-5 py-2.5 rounded-lg font-medium transition-colors"
                   style={{ 
-                    color: theme.textSecondary,
-                    backgroundColor: theme.hoverBg
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'var(--bg-hover)',
+                    border: '1px solid var(--border-subtle)'
                   }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
                 >
                   Cancel
                 </button>
@@ -536,10 +541,13 @@ export default function WorkspaceSidebar({
                     handleSaveInstruction()
                   }}
                   disabled={!activeInstruction && !editFormData.instructions.trim()}
-                  className="px-5 py-2.5 rounded-lg font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-5 py-2.5 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ 
-                    backgroundColor: '#1a1a1a'
+                    backgroundColor: 'var(--accent-primary)',
+                    color: 'var(--text-inverse)'
                   }}
+                  onMouseEnter={(e) => !(e.currentTarget.disabled) && (e.currentTarget.style.opacity = '0.9')}
+                  onMouseLeave={(e) => !(e.currentTarget.disabled) && (e.currentTarget.style.opacity = '1')}
                 >
                   {activeInstruction 
                     ? (editFormData.instructions.trim() ? 'Update Instructions' : 'Clear Instruction')
@@ -730,8 +738,8 @@ export default function WorkspaceSidebar({
             }, 
             opacity: { duration: 0.3 } 
           }}
-          className="relative flex flex-col shadow-sm border-r overflow-hidden"
-          style={{ backgroundColor: theme.bg, borderColor: theme.border }}
+          className="relative flex flex-col shadow-sm border-r overflow-hidden sidebar-divider"
+          style={{ backgroundColor: theme.bg, borderColor: appTheme === 'dark' ? 'transparent' : theme.border }}
         >
           {/* Resize Handle */}
           <div
@@ -1008,4 +1016,3 @@ export default function WorkspaceSidebar({
     </>
   )
 }
-

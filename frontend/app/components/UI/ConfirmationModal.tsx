@@ -50,10 +50,10 @@ export default function ConfirmationModal({
   }, [isOpen])
 
   const theme = {
-    bg: '#ffffff',
-    border: '#e5e5e5',
-    text: '#1a1a1a',
-    textSecondary: '#666666',
+    bg: 'var(--bg-elevated)',
+    border: 'var(--border-subtle)',
+    text: 'var(--text-primary)',
+    textSecondary: 'var(--text-secondary)',
     overlay: 'rgba(0, 0, 0, 0.5)',
   }
 
@@ -97,14 +97,14 @@ export default function ConfirmationModal({
                   onClick={onClose}
                   className="px-4 py-2 rounded-lg transition-colors font-medium"
                   style={{
-                    backgroundColor: '#f5f5f5',
+                    backgroundColor: 'var(--bg-hover)',
                     color: theme.text,
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#e5e5e5'
+                    e.currentTarget.style.backgroundColor = 'var(--bg-surface)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#f5f5f5'
+                    e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
                   }}
                 >
                   {cancelText}
@@ -116,14 +116,14 @@ export default function ConfirmationModal({
                   }}
                   className="px-4 py-2 rounded-lg transition-colors font-medium"
                   style={{
-                    backgroundColor: isDestructive ? '#dc2626' : '#3b82f6',
-                    color: '#ffffff',
+                    backgroundColor: isDestructive ? 'var(--accent-danger)' : 'var(--accent-primary)',
+                    color: 'var(--text-inverse)',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = isDestructive ? '#b91c1c' : '#2563eb'
+                    e.currentTarget.style.opacity = '0.9'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = isDestructive ? '#dc2626' : '#3b82f6'
+                    e.currentTarget.style.opacity = '1'
                   }}
                 >
                   {confirmText}

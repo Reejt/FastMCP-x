@@ -66,6 +66,13 @@ describe('ChatInput', () => {
       const input = screen.getByPlaceholderText('Ask anything about this workspace')
       expect(input).toBeInTheDocument()
     })
+
+    it('supports hero variant layout', () => {
+      const { container } = render(<ChatInput onSendMessage={mockOnSendMessage} variant="hero" />)
+      
+      const heroForm = container.querySelector('form[data-variant="hero"]')
+      expect(heroForm).toBeInTheDocument()
+    })
   })
 
   describe('Message Submission', () => {

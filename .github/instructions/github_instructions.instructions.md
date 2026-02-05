@@ -48,7 +48,7 @@ applyTo: '**'
 5. Document the new tool in `README.md`
 
 #### LLM Integration
-- Default model: **Ollama (llama3.2:3b)** via HTTP API at `localhost:11434`
+- Default model: **Ollama (llama3.2:8b)** via HTTP API at `localhost:11434`
 - To add support for new models, update `query_handler.py`'s `query_model()` function
 - Use `requests.post()` for HTTP APIs and handle `requests.RequestException` errors
 
