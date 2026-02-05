@@ -203,7 +203,7 @@ class GoldenEvaluator:
     def __init__(
         self,
         use_llm_judge: bool = True,
-        llm_model: str = "llama3.2:3b",
+        llm_model: str = "llama3:8b",
         verbose: bool = False
     ):
         self.use_llm_judge = use_llm_judge
@@ -589,7 +589,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="llama3.2:3b",
+        default="llama3:8b",
         help="LLM model for judge"
     )
     

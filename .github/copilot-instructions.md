@@ -12,7 +12,7 @@ This is a **full-stack application** combining a Model Context Protocol (MCP) se
   - `csv_excel_processor.py` - Natural language queries for Excel/CSV files using pandas
   - `web_search_file.py` - Tavily API integration for web search
 - **Single FastMCP Instance**: All tools registered via `@mcp.tool` decorator in `server/main.py`
-- **LLM Integration**: Ollama (default: llama3.2:3b) via HTTP API at `localhost:11434`
+- **LLM Integration**: Ollama (default: llama3.2:8b) via HTTP API at `localhost:11434`
 
 ### Frontend (Next.js)
 - **Framework**: Next.js 14 with App Router and TypeScript
@@ -39,7 +39,7 @@ This is a **full-stack application** combining a Model Context Protocol (MCP) se
 
 3. **LLM Querying**:
    - `query_model()` calls Ollama HTTP API at `http://localhost:11434/api/generate`
-   - Default model: `llama3.2:3b`
+   - Default model: `llama3.2:8b`
    - 120s timeout for large content summarization
    - Supports any Ollama-compatible model
 
@@ -67,7 +67,7 @@ This is a **full-stack application** combining a Model Context Protocol (MCP) se
 3. **Install Ollama**:
    - Download from https://ollama.ai
    - Start service: `ollama serve`
-   - Pull model: `ollama pull llama3.2:3b`
+   - Pull model: `ollama pull llama3.2:8b`
    
 4. **Verify Installation**:
    ```powershell
@@ -165,7 +165,7 @@ except Exception as e:
 ## External Dependencies
 
 ### Backend
-- **Ollama**: Required for LLM inference (default: llama3.2:3b)
+- **Ollama**: Required for LLM inference (default: llama3.2:8b)
 - **Tavily API**: For web search functionality (API key needed)
 - **Python Libraries**: See `requirements.txt` for complete list
   - FastMCP, FastAPI, pandas, sentence-transformers, scikit-learn
