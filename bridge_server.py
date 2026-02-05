@@ -478,7 +478,7 @@ async def diagram_endpoint(request: DiagramGenerationRequest):
                         query=content_to_process,
                         diagram_type=diagram_type
                     ),
-                    timeout=30.0  # 30 second timeout for diagram generation
+                    timeout=50.0  # 50 second timeout (single LLM call now)
                 )
                 
                 # Stream the diagram result
@@ -500,8 +500,8 @@ async def diagram_endpoint(request: DiagramGenerationRequest):
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 
             except asyncio.TimeoutError:
-                print(f"⏱️ Diagram generation timed out (10s)")
-                yield f"data: {json.dumps({'success': False, 'error': 'Diagram generation timed out after 10 seconds'})}\n\n"
+                print(f"⏱️ Diagram generation timed out (50s)")
+                yield f"data: {json.dumps({'success': False, 'error': 'Diagram generation timed out after 50 seconds'})}\n\n"
                 yield f"data: {json.dumps({'done': True})}\n\n"
             except Exception as diagram_error:
                 print(f"❌ Diagram generation error: {str(diagram_error)}")

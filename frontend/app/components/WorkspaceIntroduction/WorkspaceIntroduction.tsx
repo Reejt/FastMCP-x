@@ -39,18 +39,18 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   // Check if we're in chat mode (has messages)
   const isInChatMode = messages.length > 0
 
-  // Light theme colors (default)
+  // Theme colors using CSS variables
   const theme = {
-    bg: '#f5f3ef',
-    cardBg: '#ffffff',
-    inputBg: '#ffffff',
-    border: '#e5e5e5',
-    borderHover: '#d5d5d5',
-    text: '#1a1a1a',
-    textSecondary: '#666666',
-    textMuted: '#999999',
-    userBubble: '#f0f0f0',
-    hoverBg: 'rgba(0,0,0,0.05)',
+    bg: 'var(--bg-app)',
+    cardBg: 'var(--bg-elevated)',
+    inputBg: '#303030',
+    border: 'var(--border-subtle)',
+    borderHover: 'var(--border-strong)',
+    text: 'var(--text-primary)',
+    textSecondary: 'var(--text-secondary)',
+    textMuted: 'var(--text-muted)',
+    userBubble: 'var(--bg-user-bubble)',
+    hoverBg: 'var(--bg-hover)',
   }
 
   // Helper function to get relative time string
@@ -272,7 +272,10 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
               referenceFileInputRef.current?.click()
             }}
             disabled={referenceUploading}
-            className="px-3 py-2 rounded-lg text-sm bg-gray-900 text-white hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-app)' }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
           >
             Add
           </button>
@@ -347,7 +350,10 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
           </button>
           <button
             onClick={saveReferenceSelection}
-            className="px-4 py-2 rounded-lg transition-colors text-sm bg-gray-900 text-white hover:bg-gray-700 cursor-pointer"
+            className="px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer"
+            style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-app)' }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
           >
             Save
           </button>
@@ -438,7 +444,7 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                         <span style={{ color: theme.textMuted }}>Thinking...</span>
                       )}
                       {msg.isStreaming && msg.content && (
-                        <span className="inline-block w-2 h-5 animate-pulse ml-0.5" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}></span>
+                        <span className="inline-block w-2 h-5 animate-pulse ml-0.5" style={{ backgroundColor: 'var(--text-secondary)' }}></span>
                       )}
                     </div>
                     
@@ -500,7 +506,7 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
         <div className="px-6 py-4" style={{ backgroundColor: theme.bg, borderTop: `1px solid ${theme.border}` }}>
           <div className="max-w-3xl mx-auto">
             <form onSubmit={handleSubmit}>
-              <div className="relative flex items-center rounded-full border transition-all px-5 py-3" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>
+              <div className="relative flex items-center rounded-full transition-all px-5 py-3" style={{ backgroundColor: theme.inputBg }}>
                 {/* Attachment Button */}
                 <button
                   type="button"
@@ -563,8 +569,8 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                       onClick={onCancel}
                       className="p-2 rounded-full transition-all"
                       style={{
-                        backgroundColor: '#dc2626',
-                        color: '#ffffff',
+                        backgroundColor: 'var(--accent-danger)',
+                        color: 'var(--text-inverse)',
                         cursor: 'pointer'
                       }}
                       aria-label="Cancel message"
@@ -579,8 +585,8 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                       disabled={!message.trim() || isProcessing}
                       className="p-2 rounded-full transition-all"
                       style={{
-                        backgroundColor: message.trim() && !isProcessing ? '#1a1a1a' : theme.hoverBg,
-                        color: message.trim() && !isProcessing ? '#ffffff' : theme.textMuted,
+                        backgroundColor: message.trim() && !isProcessing ? 'var(--text-primary)' : theme.hoverBg,
+                        color: message.trim() && !isProcessing ? 'var(--bg-app)' : theme.textMuted,
                         cursor: !message.trim() || isProcessing ? 'not-allowed' : 'pointer'
                       }}
                       aria-label="Send message"
@@ -703,7 +709,7 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
 
               {/* Chat Input Form */}
               <form onSubmit={handleSubmit}>
-                <div className="rounded-2xl border shadow-sm overflow-hidden" style={{ maxWidth: '99%', backgroundColor: theme.inputBg, borderColor: theme.border }}>
+                <div className="rounded-2xl shadow-sm overflow-hidden" style={{ maxWidth: '99%', backgroundColor: theme.inputBg }}>
                   <textarea
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
@@ -747,8 +753,8 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                       disabled={!message.trim() || isProcessing}
                       className="p-2.5 rounded-full transition-all"
                       style={{
-                        backgroundColor: message.trim() && !isProcessing ? '#1a1a1a' : theme.hoverBg,
-                        color: message.trim() && !isProcessing ? '#ffffff' : theme.textMuted,
+                        backgroundColor: message.trim() && !isProcessing ? 'var(--text-primary)' : theme.hoverBg,
+                        color: message.trim() && !isProcessing ? 'var(--bg-app)' : theme.textMuted,
                         cursor: !message.trim() || isProcessing ? 'not-allowed' : 'pointer'
                       }}
                       aria-label="Send message"
@@ -824,4 +830,3 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
     </>
   )
 }
-

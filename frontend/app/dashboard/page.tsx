@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { flushSync } from 'react-dom'  // ✅ ADD THIS for immediate updates
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
@@ -13,15 +14,15 @@ import { useMermaidDetector } from '@/app/hooks/useMermaidDetector'
 
 // Dynamic imports for heavy components
 const WorkspaceSidebar = dynamic(() => import('@/app/components/WorkspaceSidebar'), {
-  loading: () => <div className="w-64 h-screen bg-gray-50 animate-pulse" />,
+  loading: () => <div className="w-64 h-screen animate-pulse" style={{ backgroundColor: 'var(--bg-surface)' }} />,
   ssr: false
 })
 const ChatContainer = dynamic(() => import('@/app/components/Chat/ChatContainer'), {
-  loading: () => <div className="flex-1 bg-white" />,
+  loading: () => <div className="flex-1" style={{ backgroundColor: 'var(--bg-app)' }} />,
   ssr: false
 })
 const ChatInput = dynamic(() => import('@/app/components/Chat/ChatInput'), {
-  loading: () => <div className="h-16 bg-white border-t" />,
+  loading: () => <div className="h-16" style={{ backgroundColor: 'var(--bg-elevated)', borderTop: '1px solid var(--border-subtle)' }} />,
   ssr: false
 })
 
@@ -824,8 +825,8 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-app)' }}>
+        <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
       </div>
     )
   }
@@ -834,8 +835,14 @@ export default function DashboardPage() {
     return null
   }
 
+  const hasMessages = messages.length > 0
+  const workspaceLabel = currentWorkspace?.name || currentWorkspaceName || 'this workspace'
+  const headlineText = isGeneralChat || !workspaceId
+    ? 'What should we work on today?'
+    : `What should we work on in ${workspaceLabel}?`
+
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-app)' }}>
       {/* Main Sidebar */}
       <Sidebar
         user={user}
@@ -858,30 +865,46 @@ export default function DashboardPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Breadcrumb Navigation with Expand Button */}
         {workspaceId && currentWorkspace && (
-          <div className="flex items-center gap-3 px-8 py-4 bg-gray-50">
+          <div className="flex items-center gap-3 px-8 py-4" style={{ backgroundColor: 'var(--bg-app)' }}>
             {isWorkspaceSidebarCollapsed && (
               <button
                 onClick={handleExpandWorkspaceSidebar}
-                className="p-2 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
+                className="p-2 rounded transition-colors flex-shrink-0"
+                style={{ 
+                  color: 'var(--text-secondary)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                }}
                 aria-label="Expand sidebar"
               >
-                <svg className="w-5 h-5 text-gray-600" viewBox="0 0 16 16" fill="currentColor">
+                <svg className="w-5 h-5" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M14 2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h12zM2 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H2z" />
                   <path d="M3 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4z" />
                 </svg>
               </button>
             )}
-            <nav className="flex items-center gap-2 text-sm text-gray-600">
+            <nav className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
               <button
                 onClick={() => router.push('/workspaces')}
-                className="hover:text-gray-900 transition-colors"
+                className="transition-colors"
+                style={{ color: 'var(--text-secondary)' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--text-primary)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--text-secondary)'
+                }}
               >
                 Workspaces
               </button>
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
-              <span className="text-gray-900 font-medium">{currentWorkspace.name || 'Workspace'}</span>
+              <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{currentWorkspace.name || 'Workspace'}</span>
             </nav>
           </div>
         )}
@@ -924,19 +947,60 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Chat Messages */}
-        <ChatContainer messages={messages} workspaceName={currentWorkspaceName} activeInstruction={activeInstruction} onShowDiagram={showDiagram} />
+        <AnimatePresence mode="wait">
+          {hasMessages ? (
+            <motion.div
+              key="chat"
+              className="flex-1 flex flex-col min-h-0"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25 }}
+            >
+              {/* Chat Messages */}
+              <ChatContainer messages={messages} workspaceName={currentWorkspaceName} activeInstruction={activeInstruction} onShowDiagram={showDiagram} />
 
-        {/* Chat Input */}
-        <ChatInput
-          onSendMessage={handleSendMessage}
-          onCancel={handleCancelStreaming}
-          disabled={isProcessing}
-          isStreaming={isStreaming}
-          hasMessages={messages.length > 0}
-          workspaceName={currentWorkspaceName}
-          workspaceId={workspaceId || undefined}
-        />
+              {/* Chat Input */}
+              <ChatInput
+                onSendMessage={handleSendMessage}
+                onCancel={handleCancelStreaming}
+                disabled={isProcessing}
+                isStreaming={isStreaming}
+                hasMessages={messages.length > 0}
+                workspaceName={currentWorkspaceName}
+                workspaceId={workspaceId || undefined}
+                variant="dock"
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="empty"
+              className="flex-1 flex flex-col items-center justify-center px-6"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.25 }}
+            >
+              <div className="w-full max-w-3xl text-center mb-6">
+                <h1 className="text-2xl md:text-3xl font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {headlineText}
+                </h1>
+              </div>
+              <div className="w-full">
+                <ChatInput
+                  onSendMessage={handleSendMessage}
+                  onCancel={handleCancelStreaming}
+                  disabled={isProcessing}
+                  isStreaming={isStreaming}
+                  hasMessages={false}
+                  workspaceName={currentWorkspaceName}
+                  workspaceId={workspaceId || undefined}
+                  variant="hero"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Mermaid Diagram Preview Panel */}

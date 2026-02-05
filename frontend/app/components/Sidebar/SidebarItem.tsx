@@ -3,18 +3,6 @@
 import { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
-// Light theme colors
-const theme = {
-  bg: '#ffffff',
-  cardBg: '#f5f5f5',
-  border: '#e5e5e5',
-  text: '#1a1a1a',
-  textSecondary: '#666666',
-  textMuted: '#999999',
-  hoverBg: 'rgba(0,0,0,0.05)',
-  activeBg: '#f0f0f0',
-}
-
 interface SidebarItemProps {
   icon: ReactNode
   label: React.ReactNode
@@ -43,19 +31,19 @@ export default function SidebarItem({
         ${className}
       `}
       style={{
-        backgroundColor: isActive ? theme.activeBg : 'transparent',
-        color: isActive ? theme.text : theme.textSecondary,
+        backgroundColor: isActive ? 'var(--bg-elevated)' : 'transparent',
+        color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
       }}
       onMouseEnter={(e) => {
         if (!isActive) {
-          e.currentTarget.style.backgroundColor = theme.hoverBg
-          e.currentTarget.style.color = theme.text
+          e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+          e.currentTarget.style.color = 'var(--text-primary)'
         }
       }}
       onMouseLeave={(e) => {
         if (!isActive) {
           e.currentTarget.style.backgroundColor = 'transparent'
-          e.currentTarget.style.color = theme.textSecondary
+          e.currentTarget.style.color = 'var(--text-secondary)'
         }
       }}
       aria-label={typeof label === 'string' ? label : undefined}
@@ -105,10 +93,17 @@ export default function SidebarItem({
       {isCollapsed && (
         <div 
           className="absolute left-full ml-2 px-2 py-1 text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none shadow-lg"
-          style={{ backgroundColor: theme.cardBg, color: theme.text, border: `1px solid ${theme.border}` }}
+          style={{ 
+            backgroundColor: 'var(--bg-elevated)', 
+            color: 'var(--text-primary)', 
+            border: '1px solid var(--border-subtle)' 
+          }}
         >
           {label}
-          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent" style={{ borderRightColor: theme.cardBg }} />
+          <div 
+            className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent" 
+            style={{ borderRightColor: 'var(--bg-elevated)' }} 
+          />
         </div>
       )}
     </button>

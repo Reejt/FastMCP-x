@@ -47,6 +47,13 @@ describe('ChatContainer', () => {
       expect(screen.getByText('No chats yet.')).toBeInTheDocument()
       expect(screen.getByText('Start a conversation or set project instructions.')).toBeInTheDocument()
     })
+
+    it('hides empty state when hideEmptyState is true', () => {
+      render(<ChatContainer messages={[]} hideEmptyState />)
+      
+      expect(screen.queryByText('No chats yet.')).not.toBeInTheDocument()
+      expect(screen.queryByText('Start a conversation or set project instructions.')).not.toBeInTheDocument()
+    })
   })
 
   describe('Messages Rendering', () => {
@@ -115,7 +122,7 @@ describe('ChatContainer', () => {
     it('has max width constraint for readability', () => {
       const { container } = render(<ChatContainer messages={mockMessages} />)
       
-      const maxWidthContainer = container.querySelector('.max-w-4xl')
+      const maxWidthContainer = container.querySelector('.mx-auto')
       expect(maxWidthContainer).toBeInTheDocument()
     })
   })

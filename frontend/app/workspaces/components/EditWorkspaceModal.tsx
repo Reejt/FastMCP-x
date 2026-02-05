@@ -124,13 +124,16 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+      <div className="rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden" style={{ backgroundColor: 'var(--bg-elevated)' }}>
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">Edit Workspace</h2>
+        <div className="flex items-center justify-between p-6" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+          <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Edit Workspace</h2>
           <button
             onClick={onCloseAction}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="transition-colors"
+            style={{ color: 'var(--text-muted)' }}
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -139,23 +142,37 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-gray-200">
+        <div style={{ borderBottom: '1px solid var(--border-subtle)' }}>
           <div className="flex">
             <button
               onClick={() => setActiveTab('details')}
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'details'
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+              className="px-6 py-3 text-sm font-medium border-b-2 transition-colors"
+              style={{
+                borderColor: activeTab === 'details' ? 'var(--accent-primary)' : 'transparent',
+                color: activeTab === 'details' ? 'var(--accent-primary)' : 'var(--text-secondary)'
+              }}
+              onMouseEnter={(e) => {
+                if (activeTab !== 'details') e.currentTarget.style.color = 'var(--text-primary)'
+              }}
+              onMouseLeave={(e) => {
+                if (activeTab !== 'details') e.currentTarget.style.color = 'var(--text-secondary)'
+              }}
             >
               Details
             </button>
             <button
               onClick={() => setActiveTab('instructions')}
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'instructions'
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+              className="px-6 py-3 text-sm font-medium border-b-2 transition-colors"
+              style={{
+                borderColor: activeTab === 'instructions' ? 'var(--accent-primary)' : 'transparent',
+                color: activeTab === 'instructions' ? 'var(--accent-primary)' : 'var(--text-secondary)'
+              }}
+              onMouseEnter={(e) => {
+                if (activeTab !== 'instructions') e.currentTarget.style.color = 'var(--text-primary)'
+              }}
+              onMouseLeave={(e) => {
+                if (activeTab !== 'instructions') e.currentTarget.style.color = 'var(--text-secondary)'
+              }}
             >
               Instructions ({instructions.length})
             </button>
@@ -168,7 +185,7 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
             <form onSubmit={handleSubmit}>
               <div className="space-y-4">
                 <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="name" className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
                     Workspace Name
                   </label>
                   <input
@@ -176,13 +193,18 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
                     id="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:border-transparent"
+                    style={{ 
+                      border: '1px solid var(--border-subtle)', 
+                      backgroundColor: 'var(--bg-app)', 
+                      color: 'var(--text-primary)' 
+                    }}
                     required
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="description" className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
                     Description (optional)
                   </label>
                   <textarea
@@ -190,7 +212,12 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:border-transparent"
+                    style={{ 
+                      border: '1px solid var(--border-subtle)', 
+                      backgroundColor: 'var(--bg-app)', 
+                      color: 'var(--text-primary)' 
+                    }}
                     placeholder="Describe what this workspace is for..."
                   />
                 </div>
@@ -201,13 +228,23 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
                 <button
                   type="button"
                   onClick={onCloseAction}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                  style={{ 
+                    color: 'var(--text-primary)', 
+                    backgroundColor: 'var(--bg-hover)', 
+                    border: '1px solid var(--border-subtle)' 
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+                  className="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                  style={{ backgroundColor: 'var(--accent-primary)', color: 'var(--text-inverse)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                 >
                   Save Changes
                 </button>
@@ -216,10 +253,13 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
           ) : (
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-700">AI Instructions</h3>
+                <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>AI Instructions</h3>
                 <button
                   onClick={handleCreateInstruction}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+                  style={{ color: 'var(--accent-primary)', backgroundColor: 'rgba(91, 140, 255, 0.1)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(91, 140, 255, 0.2)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(91, 140, 255, 0.1)'}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -229,9 +269,9 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
               </div>
 
               {loadingInstructions ? (
-                <div className="text-center py-8 text-gray-500">Loading instructions...</div>
+                <div className="text-center py-8" style={{ color: 'var(--text-secondary)' }}>Loading instructions...</div>
               ) : instructions.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8" style={{ color: 'var(--text-secondary)' }}>
                   No instructions yet. Add your first instruction to customize AI behavior for this workspace.
                 </div>
               ) : (
@@ -239,29 +279,33 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
                   {instructions.map((instruction) => (
                     <div
                       key={instruction.id}
-                      className={`border rounded-lg p-4 ${instruction.is_active
-                        ? 'border-indigo-300 bg-indigo-50'
-                        : 'border-gray-200 bg-white'
-                        }`}
+                      className="rounded-lg p-4"
+                      style={{
+                        border: instruction.is_active ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                        backgroundColor: instruction.is_active ? 'rgba(91, 140, 255, 0.1)' : 'var(--bg-app)'
+                      }}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-medium text-gray-900">{instruction.title}</h4>
+                            <h4 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{instruction.title}</h4>
                             {instruction.is_active && (
-                              <span className="px-2 py-0.5 text-xs font-medium text-indigo-700 bg-indigo-100 rounded">
+                              <span className="px-2 py-0.5 text-xs font-medium rounded" style={{ color: 'var(--accent-primary)', backgroundColor: 'rgba(91, 140, 255, 0.2)' }}>
                                 Active
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-gray-600 mt-1 line-clamp-2">{instruction.instructions}</p>
+                          <p className="text-sm mt-1 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{instruction.instructions}</p>
                         </div>
 
                         <div className="flex items-center gap-2 ml-4">
                           {!instruction.is_active && (
                             <button
                               onClick={() => handleActivateInstruction(instruction.id)}
-                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                              className="p-1.5 rounded transition-colors"
+                              style={{ color: 'var(--accent-primary)' }}
+                              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(91, 140, 255, 0.1)'}
+                              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                               title="Activate"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -271,7 +315,10 @@ export default function EditWorkspaceModal({ workspaceId, workspaceName, workspa
                           )}
                           <button
                             onClick={() => handleDeleteInstruction(instruction.id)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                            className="p-1.5 rounded transition-colors"
+                            style={{ color: 'var(--accent-danger)' }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                             title="Delete"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
