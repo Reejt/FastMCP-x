@@ -47,8 +47,8 @@ export default function ChatMessage({ message, onShowDiagram }: ChatMessageProps
   const diagrams = detectMermaidDiagrams(message.content)
 
   return (
-    <div className={`flex ${isUser ? 'justify-center' : 'justify-start'}`}>
-      <div className={`max-w-3xl ${isUser ? 'mx-auto' : 'mr-12'}`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div className={`max-w-3xl ${isUser ? '' : 'mr-12'}`}>
         {isUser ? (
           // User message - Right-aligned bubble with theme-aware styling
           <div className="rounded-2xl px-5 py-3" style={{ backgroundColor: 'var(--bg-user-bubble)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)' }}>
