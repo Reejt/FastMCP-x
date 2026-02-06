@@ -41,11 +41,9 @@ class SearchDecisionEngine:
         r'\b(won|won\s+the|became\s+the|elected\s+as)\b'
     ]
 
-    # Explicit search request keywords
+    # Explicit search request keywords (specific, not overly broad)
     SEARCH_REQUEST_PATTERNS = [
         r'\b(search\s+for|search\s+about|find\s+online|look\s+up|find\s+information\s+about)\b',
-        r'\b(tell\s+me\s+about|what\s+is|who\s+is|where\s+is|when\s+did)\s+\w+\s+\w+',  # Multi-word queries often need search
-        r'\b(how\s+to|how\s+can\s+i|help\s+me)\b',
         r'\b(research|investigate|fact-?check|verify)\b'
     ]
 
@@ -127,31 +125,30 @@ Knowledge cutoff: {self.knowledge_cutoff}
 
 User query: "{user_query}"
 
-Criteria for web search (be INCLUSIVE - prefer web search for any query that might benefit from current information):
+Criteria for web search (BALANCED approach - search only when genuinely needed):
 
-✓ SEARCH FOR (these definitely need web search):
-- Current events, news, breaking news
-- Recently released products, movies, music, books
-- Current positions/roles (who is the current CEO, president, etc)
-- Real-time data (stocks, weather, sports scores, cryptocurrency)
-- Events happening now or recently
-- Trending topics, viral content, popular figures
-- Technical/product information that changes frequently
-- Company information, funding news, mergers
-- Research papers, studies, statistics from recent years
-- Any query with temporal keywords: current, latest, recent, now, today, 2024+
-- Explicit search requests: "search for", "find out about", "tell me about X"
-- Complex multi-word queries asking "what is", "who is", "when did", "where is"
+✓ SEARCH FOR (definitely need web search):
+- Current events, breaking news, recent news
+- Real-time data (stocks, weather, sports scores, crypto prices)
+- Current positions (who is the current CEO, president, etc)
+- Recently released products, movies, music (last 3 months)
+- Time-sensitive company/celebrity information
+- Explicit search requests: "search for", "look up", "find out about"
 
-✗ DON'T SEARCH FOR (these are safe to answer without search):
-- Timeless concepts (math, physics, philosophy, definitions)
-- Historical facts (events before 2020)
-- General knowledge about established topics
-- How-to guides, tutorials, explanations
-- Creative writing, brainstorming
-- Personal identity questions
+✗ DON'T SEARCH FOR (safe to answer from knowledge base):
+- Timeless knowledge: math, physics, science, definitions, concepts
+- Historical facts and events (2020 and earlier)
+- General explanations and how-to guides
+- Existing products and technologies (unless very recent)
+- Creative tasks, writing, brainstorming
+- Code, programming, technical explanations
+- General questions about established topics
 
-When in doubt, PREFER SEARCH - it's better to search unnecessarily than to miss current information.
+Guidelines:
+- Only search if the query specifically asks for CURRENT, RECENT, or REAL-TIME information
+- General "what is X" or "who is X" questions DON'T need search unless they mention current/latest
+- Longer queries don't automatically need search
+- Be conservative - avoid unnecessary searches
 
 Respond ONLY with valid JSON (no markdown, no extra text):
 {{
@@ -247,17 +244,15 @@ Respond ONLY with valid JSON (no markdown, no extra text):
             media_match
         ])
 
-        # Decide: search if any strong indicators are present
-        # ✅ More aggressive: require only 1 match for general web search
+        # Decide: search only if strong indicators are present
+        # ✅ More balanced: require strong indicators (temporal/realtime/explicit request)
+        strong_indicators = temporal_match or realtime_match or search_request_match
+        moderate_indicators = position_match or event_match or media_match
+        
+        # Trigger search only for strong indicators OR multiple moderate indicators
         needs_search = (
-            temporal_match or 
-            realtime_match or 
-            position_match or 
-            search_request_match or 
-            event_match or 
-            media_match or
-            # Additional heuristic: longer queries (10+ words) suggesting explanatory intent
-            len(user_query.split()) >= 10
+            strong_indicators or 
+            (pattern_matches >= 2 and moderate_indicators)
         )
 
         # Build reasoning message
@@ -274,19 +269,24 @@ Respond ONLY with valid JSON (no markdown, no extra text):
             reasons.append("event/trend query")
         if media_match:
             reasons.append("news/media content")
-        if not reasons and len(user_query.split()) >= 10:
-            reasons.append("complex multi-word query")
 
         reasoning = ", ".join(reasons) if reasons else "no search criteria matched"
 
-        # ✅ Higher confidence when multiple patterns match
-        # Single strong pattern = 0.8, multiple patterns = 0.9+
-        if pattern_matches >= 2:
-            confidence = 0.9
-        elif needs_search:
+        # ✅ Confidence based on indicator strength
+        # Strong indicators (temporal, realtime, explicit search) = high confidence
+        # Multiple moderate indicators = medium-high confidence  
+        # No matches = low confidence
+        if temporal_match or realtime_match or search_request_match:
+            confidence = 0.95
+        elif pattern_matches >= 2:
             confidence = 0.85
+        elif needs_search:
+            confidence = 0.75
         else:
-            confidence = 0.4  # Lower confidence when heuristics say no search
+            confidence = 0.3  # Low confidence when no patterns match
+
+        # Apply confidence threshold: only search if confidence >= 0.75
+        needs_search = needs_search and confidence >= 0.75
 
         return {
             'needs_search': needs_search,

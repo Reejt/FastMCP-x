@@ -315,7 +315,7 @@ class BenchmarkRunner:
         self,
         query_function: Callable[[str], Dict[str, Any]],
         use_llm_judge: bool = True,
-        llm_judge_model: str = "llama3:8b",
+        llm_judge_model: str = "llama3.2:3b",
         results_dir: str = "evaluation/results"
     ):
         """

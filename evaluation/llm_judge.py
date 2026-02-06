@@ -74,7 +74,7 @@ class LLMJudge:
     
     # Ollama API endpoint
     DEFAULT_OLLAMA_URL = "http://localhost:11434/api/generate"
-    DEFAULT_MODEL = "llama3:8b"
+    DEFAULT_MODEL = "llama3.2:3b"
     
     # Evaluation prompts
     CONTEXT_VALIDITY_PROMPT = """You are an expert evaluator assessing whether retrieved context can answer a question.
@@ -401,7 +401,7 @@ Respond with EXACTLY this JSON format:
 
     def __init__(
         self,
-        model: str = "llama3:8b",
+        model: str = "llama3.2:3b",
         ollama_url: str = "http://localhost:11434/api/generate"
     ):
         self.model = model
