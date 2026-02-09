@@ -1,0 +1,791 @@
+# External Connectors — Product Requirements Document
+# FastMCP-x: External Tool Integrations via MCP
+# Version: 1.0
+# Date: 2026-02-07
+# Status: Draft
+
+---
+
+## 1. Problem Statement
+
+Users currently can only query documents uploaded to the platform's file vault. They cannot
+access information from their existing productivity tools (Google Drive, Slack, Gmail, OneDrive)
+without manually exporting and uploading content. This creates friction and limits the platform's
+utility as a unified knowledge interface.
+
+---
+
+## 2. Goal
+
+Enable users to connect external productivity tools and query them using natural language within
+the existing chat interface, creating a unified AI-powered information hub — similar to ChatGPT's
+"Apps" feature. Users type `@connector_name` followed by a natural language query, and the system
+fetches relevant data from the external service, passes it through the LLM, and returns a
+summarized response.
+
+---
+
+## 3. User Stories
+
+US-1: As a user, I want to type `@gdrive quarterly report` and get a summary of matching files
+      from my Google Drive, so I don't have to leave the app to search Drive.
+
+US-2: As a user, I want to type `@slack what did the team discuss about deployment?` and get a
+      summary of relevant Slack messages across channels.
+
+US-3: As a user, I want to type `@gmail unread from my manager` and see a digest of unread emails
+      matching that criteria.
+
+US-4: As a user, I want to type `@onedrive project proposal` and find documents in my OneDrive.
+
+US-5: As a user, I want to connect/disconnect external tools through a simple settings UI with
+      one-click OAuth authorization.
+
+US-6: As a user, I want the `@` autocomplete in the chat input to show me which tools are
+      available and which ones I've already connected.
+
+US-7: As a user, if I type `@gdrive` without being connected, I want to be prompted to connect
+      right there in the chat — not forced to navigate to a settings page.
+
+US-8: As a user, I want to see a source attribution badge on assistant messages so I know which
+      external tool provided the context (e.g., "via Google Drive").
+
+---
+
+## 4. Supported Connectors (v1)
+
+| Connector      | Trigger    | Capabilities                              | API Endpoint                                      |
+|----------------|------------|-------------------------------------------|----------------------------------------------------||
+| Google Drive   | @gdrive    | Search files, read docs/sheets/slides     | Google Drive REST API v3                          |
+| Slack          | @slack     | List channels, search messages, threads   | Slack Web API                                     |
+| Gmail          | @gmail     | Search emails, read email content         | Gmail REST API v1                                 |
+| OneDrive       | @onedrive  | Search files, read documents              | Microsoft Graph API v1.0                          |
+
+---
+
+## 5. Non-Goals (v1)
+
+NG-1: Write operations — No sending Slack messages, composing emails, or creating Drive files
+      from the chat. v1 is read-only.
+
+NG-2: Real-time sync — No webhook-based live updates or push notifications from external tools.
+
+NG-3: Team/org-level connectors — Per-user only. No shared organization-wide connections.
+
+NG-4: Custom connector SDK — Users cannot register their own connectors in v1.
+
+NG-5: Multi-connector queries — No querying multiple connectors in a single message
+      (e.g., `@gdrive @slack find release notes`). One `@mention` per message.
+
+NG-6: File ingestion from connectors — Connector results are used as LLM context for the
+      current query only. They are not ingested into the document vault or embedded.
+
+---
+
+## 6. Technical Architecture
+
+### 6.1 High-Level Data Flow
+
+```
+User types: "@gdrive quarterly report"
+        |
+        v
+[ChatInput.tsx] — Detects @gdrive, shows autocomplete, sends:
+    { query: "quarterly report", connector: "gdrive", user_id, conversation_history }
+        |
+        v
+[Next.js API Route /api/chat/query] — Forwards to bridge with connector param
+        |
+        v
+[bridge_server.py /api/query] — Detects connector param, routes to ConnectorHandler
+        |
+        v
+[ConnectorHandler] — Retrieves OAuth tokens from DB, translates natural language
+        |
+        v
+[Async REST API Wrapper] — e.g., server/connectors/gdrive.py
+        |
+        v
+[External Provider API] — Google Drive, Slack, Gmail, OneDrive
+        |
+        v
+[ConnectorHandler] — Formats results as XML context (same pattern as web search)
+        |
+        v
+[LLM (Ollama)] — Summarizes results with conversation history
+        |
+        v
+[SSE Stream] — Streamed back through bridge → Next.js → browser
+```
+
+### 6.2 Key Design Decisions
+
+D-1: Direct REST API calls to external providers (Google Drive API, Slack API, Gmail API, 
+     Microsoft Graph) instead of MCP servers. Simpler, fewer dependencies, no subprocess overhead.
+
+D-2: OAuth flow handled in Next.js API routes (same domain as app, avoids CORS/cookie issues).
+     Tokens stored server-side in Supabase, encrypted with Fernet, never exposed to browser.
+
+D-3: Connectors scoped per-user (not per-workspace). User connects once, available everywhere.
+
+D-4: `@mention` syntax for connector invocation. Matches ChatGPT convention, is self-documenting,
+     and allows mixing regular queries and connector queries in the same chat session.
+
+D-5: LLM-mediated connector queries. The ConnectorDecisionEngine translates natural language to
+     provider-specific API calls. Users never see raw API parameters.
+
+D-6: Follow the EnhancedWebSearch pattern (server/enhanced_web_search.py) for connector result
+     formatting and LLM summarization. Connector results → XML context → LLM summarization → streaming.
+
+---
+
+## 7. Database Schema
+
+### 7.1 New Table: `user_connectors`
+
+```sql
+CREATE TABLE IF NOT EXISTS public.user_connectors (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    connector_type  TEXT NOT NULL,               -- 'gdrive', 'slack', 'gmail', 'onedrive'
+    display_name    TEXT NOT NULL,                -- 'Google Drive', 'Slack', etc.
+    access_token    TEXT,                         -- Encrypted (AES/Fernet)
+    refresh_token   TEXT,                         -- Encrypted (AES/Fernet)
+    token_expires_at TIMESTAMPTZ,                 -- NULL if token doesn't expire (e.g., Slack bot)
+    scopes          TEXT[],                       -- OAuth scopes granted
+    metadata        JSONB DEFAULT '{}'::jsonb,    -- Provider-specific data (team_id, project_id, etc.)
+    is_active       BOOLEAN DEFAULT true,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT unique_user_connector UNIQUE (user_id, connector_type)
+);
+
+-- RLS: Users can only access their own connectors
+ALTER TABLE public.user_connectors ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage their own connectors"
+    ON public.user_connectors
+    FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+-- Auto-update updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER user_connectors_updated_at
+    BEFORE UPDATE ON public.user_connectors
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+```
+
+### 7.2 Indexes
+
+```sql
+CREATE INDEX idx_user_connectors_user_id ON public.user_connectors(user_id);
+CREATE INDEX idx_user_connectors_type ON public.user_connectors(connector_type);
+CREATE INDEX idx_user_connectors_active ON public.user_connectors(user_id, is_active)
+    WHERE is_active = true;
+```
+
+---
+
+## 8. Backend Components
+
+### 8.1 Connector Registry — `server/connectors/__init__.py`
+
+Central configuration for all supported connectors:
+
+```python
+CONNECTOR_REGISTRY = {
+    "gdrive": {
+        "name": "Google Drive",
+        "description": "Search and read files from Google Drive",
+        "api_type": "google_drive",
+        "oauth_provider": "google",
+        "oauth_scopes": ["https://www.googleapis.com/auth/drive.readonly"],
+        "icon": "gdrive",
+        "base_url": "https://www.googleapis.com/drive/v3"
+    },
+    "slack": {
+        "name": "Slack",
+        "description": "Search messages and channels in Slack",
+        "api_type": "slack",
+        "oauth_provider": "slack",
+        "oauth_scopes": ["channels:history", "channels:read", "users:read", "users.profile:read"],
+        "icon": "slack",
+        "base_url": "https://slack.com/api"
+    },
+    "gmail": {
+        "name": "Gmail",
+        "description": "Search and read emails from Gmail",
+        "api_type": "gmail",
+        "oauth_provider": "google",
+        "oauth_scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+        "icon": "gmail",
+        "base_url": "https://gmail.googleapis.com/gmail/v1"
+    },
+    "onedrive": {
+        "name": "OneDrive",
+        "description": "Search and read files from OneDrive",
+        "api_type": "microsoft_graph",
+        "oauth_provider": "microsoft",
+        "oauth_scopes": ["Files.Read.All", "Sites.Read.All"],
+        "icon": "onedrive",
+        "base_url": "https://graph.microsoft.com/v1.0"
+    }
+}
+```
+
+### 8.2 ConnectorHandler — `server/connectors/handler.py`
+
+Singleton class (follows `get_enhanced_search()` pattern) responsible for:
+
+- **Token retrieval**: Fetches and decrypts OAuth tokens from `user_connectors` table
+- **Token refresh**: Checking `token_expires_at` before each call, auto-refreshing if expired
+- **Query routing**: Translating natural language queries to provider-specific API calls via LLM
+- **Rate limiting**: Token bucket per `(user_id, connector_type)` to respect provider quotas
+- **Error handling**: Manages token expiration, API errors, rate limits with exponential backoff
+
+Key methods:
+```
+query_connector(user_id, connector_type, natural_language_query, conversation_history) → str
+refresh_token_if_needed(user_id, connector_type) → bool
+format_results(connector_type, raw_results) → str
+get_provider_config(connector_type) → dict
+```
+
+### 8.3 OAuth Token Manager — `server/connectors/oauth.py`
+
+Handles encrypted token storage and provider-specific refresh logic:
+
+- **Encryption**: AES/Fernet using `CONNECTOR_ENCRYPTION_KEY` env var
+- **Token CRUD**: `get_tokens()`, `save_tokens()`, `delete_tokens()`
+- **Token refresh**: Provider-specific refresh endpoints:
+  - Google: `POST https://oauth2.googleapis.com/token`
+  - Microsoft: `POST https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token`
+  - Slack: Bot tokens don't expire (no refresh needed)
+- **Revocation**: Optionally revoke tokens at the provider before deleting locally
+
+### 8.4 Connector Decision Engine — `server/connectors/decision.py`
+
+LLM-powered routing that translates natural language to provider-specific API calls:
+
+```
+Input:  connector_type="slack", query="what did the team discuss about the release?"
+Output: {
+    "search_pattern": "channels=all release OR deployment",
+    "api_calls": [
+        { "method": "search.messages", "params": { "query": "release OR deployment", "count": 50 } }
+    ]
+}
+```
+
+Follows the same pattern as `SearchDecisionEngine` in `server/search/decision.py`. Uses LLM to:
+1. Determine if connector is needed
+2. Translate natural language to provider-specific query syntax
+3. Extract relevant parameters (limit, date range, channel list, etc.)
+
+### 8.5 Connector-Specific Async Wrappers
+
+Each connector gets a simple async module in `server/connectors/` with direct REST API calls:
+
+- `gdrive.py` — Async functions for searching Drive files, reading docs/sheets
+  - `search_drive(query, access_token) → list[dict]`
+  - `get_file_content(file_id, access_token) → str`
+  
+- `slack.py` — Async functions for searching Slack messages
+  - `search_messages(query, bot_token, team_id) → list[dict]`
+  - `get_channel_history(channel_id, bot_token, limit) → list[dict]`
+  
+- `gmail.py` — Async functions for searching Gmail
+  - `search_emails(query, access_token) → list[dict]`
+  - `get_email_content(email_id, access_token) → str`
+  
+- `onedrive.py` — Async functions for searching OneDrive
+  - `search_files(query, access_token, tenant_id) → list[dict]`
+  - `get_file_content(file_id, access_token, tenant_id) → str`
+
+---
+
+## 9. Bridge Server Changes — `bridge_server.py`
+
+### 9.1 Modified Endpoint: `POST /api/query`
+
+Add connector detection before existing routing logic (~line 158):
+
+1. Parse query for `@connector_type` prefix using regex: `r'^@(\w+)\s+(.*)'`
+2. If connector detected:
+   a. Strip `@mention` from query text
+   b. Look up `user_connectors` table for `(user_id, connector_type, is_active=true)`
+   c. If not authorized → return SSE event: `{"type": "connector_auth_required", "connector": "gdrive"}`
+   d. If authorized → call `ConnectorHandler.query_connector(user_id, connector_type, query, history)`
+   e. ConnectorHandler calls the appropriate async wrapper (gdrive.py, slack.py, etc.)
+   f. Format results as XML context: `<connector_results source="Google Drive">...</connector_results>`
+   g. Pass context + query to LLM for summarization via existing streaming pipeline
+3. If no connector detected → proceed with existing routing (CSV/Excel → web search → semantic search)
+
+### 9.2 New Endpoints
+
+```
+GET  /api/connectors               — List all available connectors from registry
+GET  /api/connectors/user          — List user's connected services with status
+POST /api/connectors/{type}/disconnect — Revoke and remove a connector
+GET  /api/connectors/{type}/tools  — List available capabilities/methods for a connector
+```
+
+---
+
+## 10. Frontend Components
+
+### 10.1 OAuth Flow — `frontend/app/api/connectors/`
+
+#### Authorization Route: `[type]/authorize/route.ts`
+
+- Generates OAuth authorization URL with:
+  - `client_id` from env vars
+  - `redirect_uri`: `{ORIGIN}/api/connectors/{type}/callback`
+  - `scope`: from `CONNECTOR_REGISTRY`
+  - `state`: JSON-encoded `{ user_id, connector_type, csrf_token }` (CSRF token stored in httpOnly cookie)
+  - `access_type`: `offline` (for refresh token)
+  - `prompt`: `consent` (force re-consent to get refresh token)
+- Redirects browser to provider's OAuth page
+
+#### Callback Route: `[type]/callback/route.ts`
+
+- Receives `code` and `state` from OAuth provider
+- Validates CSRF token from `state` against cookie
+- Exchanges authorization code for tokens:
+  - Google: `POST https://oauth2.googleapis.com/token`
+  - Slack: `POST https://slack.com/api/oauth.v2.access`
+  - Microsoft: `POST https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token`
+- Encrypts `access_token` and `refresh_token`
+- Upserts into `user_connectors` table via Supabase
+- Redirects to app with success/error query param
+- If opened as popup, sends `postMessage` to parent window and closes
+
+### 10.2 Chat Input `@mention` Autocomplete — `ChatInput.tsx`
+
+Modifications to `frontend/app/components/Chat/ChatInput.tsx`:
+
+- **`@` detection**: On keypress, detect `@` character at start of input or after a space
+- **Dropdown trigger**: Show Radix UI `Popover` positioned near the textarea caret
+- **Connector list**: Fetch from `/api/connectors/user`, show:
+  - Connected connectors: icon + name + "Connected" badge (green)
+  - Available but unconnected: icon + name + "Click to connect" (gray)
+- **Filtering**: As user types after `@`, filter dropdown (e.g., `@sl` shows only Slack)
+- **Selection**: On click/Enter, insert `@connector_name ` at cursor, close dropdown
+- **Visual styling**: Render `@connector_name` as a styled chip/badge in the textarea
+  (use a transparent overlay div positioned over the textarea for highlighting)
+- **Unconnected selection**: If user selects an unconnected connector, open OAuth popup
+  via `window.open()`, listen for `postMessage` completion, then insert mention
+
+### 10.3 Connections Management UI
+
+#### Option A: Sidebar Section (Recommended)
+
+Add a "Connections" collapsible section to the existing sidebar:
+- Grid of connector icons with connect/disconnect toggle
+- Status indicator (green dot = connected, gray = available)
+- Click to connect → opens OAuth popup
+- Click connected → shows disconnect confirmation
+
+#### Option B: Settings Page
+
+Create `frontend/app/settings/connectors/page.tsx`:
+- Full-page grid layout with connector cards
+- Each card: icon, name, description, status, connect/disconnect button
+- Shows granted scopes, last used timestamp, token expiry
+
+### 10.4 Message Rendering Updates
+
+- Parse `@connector_name` in user messages → render as styled `<span>` chip with icon
+- When assistant message includes connector context, show source badge:
+  `📎 via Google Drive` or `💬 via Slack`
+- When bridge returns `connector_auth_required` event, render inline:
+  `"You're not connected to Google Drive. [Connect Now]"` with a button that triggers OAuth
+
+---
+
+## 11. Security Requirements
+
+SEC-1: OAuth tokens encrypted at rest using AES-256 (Fernet) with `CONNECTOR_ENCRYPTION_KEY`
+       environment variable. Key must be 32 bytes, base64-encoded.
+
+SEC-2: RLS policies on `user_connectors` table ensure strict user-level isolation.
+       No user can read/write another user's tokens.
+
+SEC-3: OAuth `state` parameter includes CSRF token (stored in httpOnly secure cookie) to
+       prevent authorization code injection attacks.
+
+SEC-4: Connector OAuth scopes are read-only in v1:
+       - Google Drive: `drive.readonly`
+       - Gmail: `gmail.readonly`
+       - Slack: `channels:read`, `channels:history`, `users:read` (no `chat:write` in v1)
+       - OneDrive: `Files.Read.All`
+
+SEC-5: Tokens never sent to browser after initial OAuth callback. All connector API calls
+       happen server-side (bridge → ConnectorManager → MCP server).
+
+SEC-6: MCP server subprocesses run in isolated environments with only the required env vars.
+       No cross-contamination between connectors or users.
+
+SEC-7: Token refresh happens server-side only. Refresh tokens are never exposed to the frontend.
+
+SEC-8: Failed OAuth attempts and token refresh failures are logged (without token values)
+       for security auditing.
+
+---
+
+## 12. Environment Variables
+
+### Backend (`.env.local` / Docker)
+
+```env
+# Existing
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# New — Connector Encryption
+CONNECTOR_ENCRYPTION_KEY=base64-encoded-32-byte-key
+
+# New — Google OAuth (Drive + Gmail)
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+
+# New — Slack OAuth
+SLACK_CLIENT_ID=your-slack-client-id
+SLACK_CLIENT_SECRET=your-slack-client-secret
+
+# New — Microsoft OAuth (OneDrive)
+MICROSOFT_CLIENT_ID=your-azure-app-client-id
+MICROSOFT_CLIENT_SECRET=your-azure-app-client-secret
+MICROSOFT_TENANT_ID=your-azure-tenant-id
+```
+
+### Frontend (`frontend/.env.local`)
+
+```env
+# Existing
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+
+# New — OAuth Client IDs (public, safe for browser redirect URLs)
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+NEXT_PUBLIC_SLACK_CLIENT_ID=your-slack-client-id
+NEXT_PUBLIC_MICROSOFT_CLIENT_ID=your-azure-app-client-id
+
+# New — OAuth Secrets (server-side only, NOT prefixed with NEXT_PUBLIC_)
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+SLACK_CLIENT_SECRET=your-slack-client-secret
+MICROSOFT_CLIENT_SECRET=your-azure-app-client-secret
+MICROSOFT_TENANT_ID=your-azure-tenant-id
+```
+
+---
+
+## 13. New Dependencies
+
+### Backend (`requirements.txt` additions)
+
+```
+cryptography>=42.0.0       # Fernet encryption for OAuth tokens
+httpx>=0.27.0              # Async HTTP client for REST API calls
+```
+
+### Frontend (`package.json` additions)
+
+No new npm dependencies required. Existing Radix UI primitives (`@radix-ui/react-popover`,
+`@radix-ui/react-dialog`) and `lucide-react` icons are sufficient.
+
+---
+
+## 14. New File Structure
+
+```
+server/
+  connectors/
+    __init__.py             # CONNECTOR_REGISTRY, exports
+    handler.py              # ConnectorHandler (singleton, token management & routing)
+    oauth.py                # Token encryption, storage, refresh
+    decision.py             # LLM-powered natural language → API query translation
+    gdrive.py               # Google Drive API async wrapper functions
+    slack.py                # Slack API async wrapper functions
+    gmail.py                # Gmail API async wrapper functions
+    onedrive.py             # OneDrive/Microsoft Graph async wrapper functions
+
+frontend/
+  app/
+    api/
+      connectors/
+        route.ts            # GET: list all connectors, GET with user: list user connectors
+        [type]/
+          authorize/
+            route.ts        # GET: generate OAuth URL, redirect to provider
+          callback/
+            route.ts        # GET: handle OAuth callback, store tokens
+          disconnect/
+            route.ts        # POST: revoke and delete connector
+          tools/
+            route.ts        # GET: list available MCP tools for connector
+    components/
+      Chat/
+        ConnectorMention.tsx    # @mention autocomplete dropdown component
+        ConnectorBadge.tsx      # Source attribution badge in messages
+        ConnectorAuthPrompt.tsx # Inline "Connect Now" prompt in chat
+      Connectors/
+        ConnectorCard.tsx       # Individual connector card with connect/disconnect
+        ConnectorGrid.tsx       # Grid layout of all connectors
+        ConnectorStatus.tsx     # Connection status indicator
+
+tests/
+  test_connector_manager.py    # ConnectorManager unit tests
+  test_connector_oauth.py      # Token encryption and refresh tests
+  test_connector_routing.py    # @mention parsing, decision engine tests
+```
+
+---
+
+## 15. API Contracts
+
+### 15.1 Query with Connector — `POST /api/query`
+
+Request (modified):
+```json
+{
+    "query": "find the Q4 report",
+    "connector": "gdrive",
+    "user_id": "uuid",
+    "workspace_id": "uuid",
+    "conversation_history": "[]",
+    "selected_file_ids": "[]"
+}
+```
+
+Response (SSE stream — same format as existing):
+```
+data: {"type": "chunk", "content": "Based on your Google Drive, "}
+data: {"type": "chunk", "content": "I found 3 files matching 'Q4 report'..."}
+data: {"type": "done", "source": "gdrive"}
+```
+
+Error — connector not authorized:
+```
+data: {"type": "connector_auth_required", "connector": "gdrive", "name": "Google Drive", "auth_url": "/api/connectors/gdrive/authorize"}
+```
+
+### 15.2 List Connectors — `GET /api/connectors`
+
+Response:
+```json
+{
+    "connectors": [
+        {
+            "type": "gdrive",
+            "name": "Google Drive",
+            "description": "Search and read files from Google Drive",
+            "icon": "gdrive",
+            "is_connected": true,
+            "connected_at": "2026-01-15T10:30:00Z",
+            "scopes": ["drive.readonly"]
+        },
+        {
+            "type": "slack",
+            "name": "Slack",
+            "description": "Search messages and channels in Slack",
+            "icon": "slack",
+            "is_connected": false,
+            "connected_at": null,
+            "scopes": null
+        }
+    ]
+}
+```
+
+### 15.3 Authorize Connector — `GET /api/connectors/{type}/authorize`
+
+Redirects (302) to OAuth provider's authorization page.
+
+### 15.4 OAuth Callback — `GET /api/connectors/{type}/callback`
+
+Receives `code` and `state` query params. On success, redirects to:
+```
+/dashboard?connector_connected=gdrive
+```
+
+On failure, redirects to:
+```
+/dashboard?connector_error=gdrive&reason=access_denied
+```
+
+### 15.5 Disconnect — `POST /api/connectors/{type}/disconnect`
+
+Request:
+```json
+{
+    "user_id": "uuid"
+}
+```
+
+Response:
+```json
+{
+    "success": true,
+    "message": "Google Drive disconnected successfully"
+}
+```
+
+### 15.6 List Connector Capabilities — `GET /api/connectors/{type}/tools`
+
+Response:
+```json
+{
+    "connector": "slack",
+    "capabilities": [
+        { "name": "search_messages", "description": "Search messages across channels", "params": ["query", "count"] },
+        { "name": "get_channel_history", "description": "Get recent messages from a channel", "params": ["channel_id", "limit"] },
+        { "name": "list_users", "description": "List workspace users", "params": ["limit", "cursor"] }
+    ]
+}
+```
+
+---
+
+## 16. Rollout Phases
+
+### Phase 1: Foundation (2 days)
+
+- [ ] Create `user_connectors` table migration in Supabase
+- [ ] Implement `server/connectors/__init__.py` with CONNECTOR_REGISTRY
+- [ ] Implement `server/connectors/oauth.py` with Fernet encryption
+- [ ] Implement `server/connectors/handler.py` with token refresh logic
+- [ ] Implement `server/connectors/decision.py` with LLM routing
+- [ ] Add `cryptography` and `httpx` to requirements.txt
+- [ ] Basic unit tests for token encryption and CRUD
+
+### Phase 2: First Connector — Google Drive (2 days)
+
+- [ ] Implement `server/connectors/gdrive.py` with async REST API wrappers
+- [ ] Add OAuth authorize/callback routes in Next.js
+- [ ] Add `@gdrive` detection in bridge_server.py `/api/query`
+- [ ] Implement ConnectorDecisionEngine for Drive queries
+- [ ] End-to-end test: authorize → query → response
+- [ ] Test token refresh on expired tokens
+
+### Phase 3: @mention UI (2 days)
+
+- [ ] Build ConnectorMention autocomplete component
+- [ ] Integrate into ChatInput.tsx with `@` trigger
+- [ ] Build ConnectorBadge for message source attribution
+- [ ] Build ConnectorAuthPrompt for inline auth prompts
+- [ ] Fetch and display connector status from API
+
+### Phase 4: Additional Connectors (3-4 days)
+
+- [ ] Slack: `server/connectors/slack.py` + OAuth routes (1 day)
+- [ ] Gmail: `server/connectors/gmail.py` + OAuth routes (1 day)
+- [ ] OneDrive: `server/connectors/onedrive.py` + OAuth routes (1-2 days)
+
+### Phase 5: Connector Management UI (2 days)
+
+- [ ] Build ConnectorCard and ConnectorGrid components
+- [ ] Add "Connections" section to sidebar or settings page
+- [ ] Connect/disconnect toggle with confirmation modal
+- [ ] Show connection status, scopes, and last used
+
+### Phase 6: Hardening (2 days)
+
+- [ ] Rate limiting per (user_id, connector_type) with token bucket
+- [ ] Exponential backoff for API rate limit errors (429 responses)
+- [ ] Error handling for all failure modes (expired tokens, API errors, network issues)
+- [ ] Comprehensive test suite (unit + integration)
+- [ ] Update README.md and copilot-instructions.md
+
+**Estimated Total: 1.5-2 weeks** (Faster than MCP approach due to simpler architecture)
+
+---
+
+## 17. Success Metrics
+
+MET-1: User can complete OAuth flow and connect a service in < 30 seconds.
+
+MET-2: `@connector` query returns results in < 5 seconds (excluding LLM summarization time).
+
+MET-3: Zero token leakage — no tokens in logs, browser storage, or client-side code.
+
+MET-4: API call timeout handling — requests complete within 30 seconds with retry on transient failures.
+
+MET-5: Token refresh success rate > 99% — expired tokens auto-refresh transparently.
+
+MET-6: `@mention` autocomplete appears within 200ms of typing `@`.
+
+---
+
+## 18. Testing Strategy
+
+### Unit Tests
+
+- `test_connector_oauth.py`: Token encryption/decryption roundtrip, token CRUD operations,
+  provider-specific refresh logic (mocked HTTP), Fernet key validation
+- `test_connector_handler.py`: Token refresh logic, async API wrapper error handling,
+  rate limiter token bucket, decision engine prompt generation
+- `test_connector_routing.py`: `@mention` regex parsing, natural language → API query translation
+
+### Integration Tests
+
+- Full OAuth flow: authorize → callback → token storage → verify in DB
+- End-to-end query: `@gdrive quarterly report` → Drive API → LLM → streamed response
+- Token refresh: set token as expired → query → verify auto-refresh → verify updated token in DB
+- Rate limit handling: mock 429 response → verify exponential backoff retry
+- Disconnection: disconnect → verify tokens deleted from DB
+
+### Frontend Tests
+
+- `@mention` autocomplete: type `@` → dropdown appears → filter by typing → select → inserts text
+- ConnectorAuthPrompt: connector_auth_required event → inline button renders → click opens popup
+- ConnectorBadge: source attribution renders correctly for each connector type
+
+### API Tests
+
+- `docker-compose up --build` → verify all connectors can be authorized and queried
+- Verify async API calls complete within timeout period
+- Verify error handling for network failures, invalid tokens, provider API errors
+
+---
+
+## 19. Risk Assessment
+
+| Risk | Impact | Likelihood | Mitigation |
+|------|--------|------------|------------|
+| OAuth token storage breach | Critical | Low | Fernet encryption, RLS policies, key rotation procedure |
+| Rate limiting by external APIs | Medium | High | Token bucket rate limiter, exponential backoff, user-facing error messages |
+| API breaking changes (Google/Slack/Microsoft) | Medium | Low | API version pinning, monitoring changelog, feature flags for API versions |
+| Complex OAuth debugging | Medium | Medium | Comprehensive logging (without tokens), error codes in callback redirects, test OAuth flows |
+| Provider API downtime impact | Medium | Medium | Graceful error messages, circuit breaker pattern for failing providers |
+| Network timeouts on API calls | Low | Medium | 30-second timeout with retry logic, user-facing messaging |
+
+---
+
+## 20. Future Considerations (v2+)
+
+FUT-1: Write operations — Send Slack messages, compose emails, create Drive documents.
+
+FUT-2: Multi-connector queries — `@gdrive @gmail find annual report` queries across services.
+
+FUT-3: Custom REST connectors — Let users register custom REST API endpoints as connectors.
+
+FUT-4: Webhook/real-time sync — Live Slack notifications, Gmail push notifications.
+
+FUT-5: Team connectors — Org-level shared connections with admin controls.
+
+FUT-6: Connector data ingestion — Optional embedding of connector results into the document vault.
+
+FUT-7: Connector marketplace — Browse and install community connectors from within the app.
+
+FUT-8: MCP server support — Support for Model Context Protocol servers as alternative connector implementations.

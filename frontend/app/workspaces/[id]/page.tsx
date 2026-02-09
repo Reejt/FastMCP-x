@@ -598,7 +598,31 @@ export default function WorkspacePage() {
                   try {
                     const data = JSON.parse(jsonStr)
 
-                    if (data.chunk) {
+                    if (data.type === 'connector_auth_required') {
+                      // ✅ Handle connector auth required - show auth prompt instead of streaming
+                      console.log('🔐 Connector auth required:', data.connector)
+                      setMessages((prev) =>
+                        prev.map((msg) =>
+                          msg.id === assistantMessageId
+                            ? { 
+                                ...msg, 
+                                content: accumulatedContent || `Connect to ${data.name} to continue...`,
+                                isStreaming: false,
+                                connectorAuthRequired: {
+                                  connector: data.connector,
+                                  name: data.name,
+                                  authUrl: data.auth_url,
+                                  query: content,  // Store original query for retry
+                                  userId: user?.id || '',
+                                }
+                              }
+                            : msg
+                        )
+                      )
+                      setIsProcessing(false)
+                      setIsStreaming(false)
+                      return
+                    } else if (data.chunk) {
                       // Append chunk to accumulated content
                       accumulatedContent += data.chunk
 

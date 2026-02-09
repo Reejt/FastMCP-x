@@ -28,6 +28,7 @@ const MermaidDiagram = dynamic(() => import('./MermaidDiagram'), {
 interface MarkdownRendererProps {
   content: string
   className?: string
+  style?: React.CSSProperties
 }
 
 // Custom light theme inspired by ChatGPT
@@ -49,7 +50,7 @@ const customCodeTheme = {
   },
 }
 
-export default function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+export default function MarkdownRenderer({ content, className = '', style }: MarkdownRendererProps) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
 
   // Create a fake message for diagram detection
@@ -81,7 +82,7 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
   }, [])
 
   return (
-    <div className={`markdown-body ${className}`}>
+    <div className={`markdown-body ${className}`} style={style}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

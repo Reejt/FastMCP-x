@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import type { File } from '@/app/types'
+import ConnectorMention from './ConnectorMention'
 
 interface ChatInputProps {
   onSendMessage: (message: string, selectedFileIds?: string[]) => void
@@ -13,15 +14,21 @@ interface ChatInputProps {
   hasMessages?: boolean
   workspaceName?: string
   workspaceId?: string
+  userId?: string
   variant?: 'hero' | 'dock'
 }
 
-export default function ChatInput({ onSendMessage, disabled = false, workspaceName, workspaceId, onCancel, isStreaming = false, variant = 'dock' }: ChatInputProps) {
+export default function ChatInput({ onSendMessage, disabled = false, workspaceName, workspaceId, userId, onCancel, isStreaming = false, variant = 'dock' }: ChatInputProps) {
   const router = useRouter()
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [cancelDisabled, setCancelDisabled] = useState(false)
   const isHero = variant === 'hero'
+
+  // @mention connector state
+  const [showConnectorMention, setShowConnectorMention] = useState(false)
+  const [connectorFilter, setConnectorFilter] = useState('')
+  const [activeConnector, setActiveConnector] = useState<string | null>(null)
 
   const referenceFileInputRef = useRef<HTMLInputElement>(null)
   const [referenceUploading, setReferenceUploading] = useState(false)
@@ -41,8 +48,11 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (input.trim() && !disabled && !isStreaming) {
-      onSendMessage(input.trim(), selectedFileIds.length > 0 ? selectedFileIds : undefined)
+      // If there's an active connector, prepend @connector to the message
+      const message = activeConnector ? `@${activeConnector} ${input.trim()}` : input.trim()
+      onSendMessage(message, selectedFileIds.length > 0 ? selectedFileIds : undefined)
       setInput('')
+      setActiveConnector(null)
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
@@ -375,9 +385,43 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            onChange={(e) => {
+              const val = e.target.value
+              setInput(val)
+
+              // Detect @mention for connector autocomplete
+              const atMatch = val.match(/^@(\w*)$/)
+              if (atMatch) {
+                setShowConnectorMention(true)
+                setConnectorFilter(atMatch[1])
+              } else if (showConnectorMention && !val.startsWith('@')) {
+                setShowConnectorMention(false)
+                setConnectorFilter('')
+              } else if (showConnectorMention && val.startsWith('@')) {
+                const filter = val.slice(1).split(' ')[0]
+                if (!val.includes(' ')) {
+                  setConnectorFilter(filter)
+                } else {
+                  setShowConnectorMention(false)
+                  setConnectorFilter('')
+                }
+              }
+            }}
+            onKeyDown={(e) => {
+              if (showConnectorMention) {
+                // Let ConnectorMention handle navigation keys
+                if (['ArrowDown', 'ArrowUp', 'Tab'].includes(e.key)) {
+                  return // ConnectorMention handles these
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setShowConnectorMention(false)
+                  return
+                }
+              }
+              handleKeyDown(e)
+            }}
+            placeholder={activeConnector ? `Ask @${activeConnector} anything...` : placeholder}
             disabled={disabled || isStreaming}
             rows={1}
             className={`flex-1 bg-transparent resize-none focus:outline-none max-h-32 overflow-y-auto ${isHero ? 'text-base' : 'text-sm'}`}
@@ -385,6 +429,45 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
               color: 'var(--text-primary)', 
               minHeight: isHero ? '30px' : '26px',
               caretColor: 'var(--accent-primary)'
+            }}
+          />
+
+          {/* Active connector chip */}
+          {activeConnector && (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveConnector(null)
+                setInput(input.replace(new RegExp(`^@${activeConnector}\\s*`), ''))
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs mr-2 cursor-pointer transition-opacity hover:opacity-80"
+              style={{
+                backgroundColor: 'var(--accent-primary)',
+                color: 'var(--text-inverse)',
+              }}
+            >
+              @{activeConnector}
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+
+          {/* Connector @mention dropdown */}
+          <ConnectorMention
+            visible={showConnectorMention}
+            filter={connectorFilter}
+            userId={userId}
+            onSelect={(connectorType) => {
+              setActiveConnector(connectorType)
+              setInput('')
+              setShowConnectorMention(false)
+              setConnectorFilter('')
+              textareaRef.current?.focus()
+            }}
+            onClose={() => {
+              setShowConnectorMention(false)
+              setConnectorFilter('')
             }}
           />
 

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 // Server-side env variable (no NEXT_PUBLIC_ prefix needed in API routes)
 // Defaults to localhost:3001 for local development (npm run dev)
@@ -17,12 +19,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get authenticated user ID from Supabase
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll() { /* not needed for reading */ },
+        },
+      }
+    );
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+
     // Build request body
-    let requestBody: { query: string; conversation_history?: unknown[]; workspace_id?: string; selected_file_ids?: string[] } = {
+    let requestBody: { query: string; conversation_history?: unknown[]; workspace_id?: string; selected_file_ids?: string[]; user_id?: string } = {
       query,
       conversation_history,
       workspace_id,
       selected_file_ids,
+      user_id: userId, // Include user_id for connector queries
     };
 
     // All requests use the same /api/query endpoint

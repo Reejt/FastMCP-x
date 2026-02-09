@@ -45,6 +45,19 @@ except ImportError:
     print("⚠️  Mermaid converter not available")
     MERMAID_AVAILABLE = False
 
+# Import connector handler for external tool integrations
+try:
+    from server.connectors.handler import get_connector_handler, parse_connector_mention
+    from server.connectors.oauth import (
+        get_tokens, list_user_connectors, revoke_token,
+    )
+    from server.connectors import CONNECTOR_REGISTRY, get_connector_display_info
+    CONNECTORS_AVAILABLE = True
+    print("✅ External connectors module loaded")
+except ImportError as e:
+    print(f"⚠️  External connectors not available: {e}")
+    CONNECTORS_AVAILABLE = False
+
 
 # Import Supabase client for file metadata lookup
 try:
@@ -115,7 +128,9 @@ class QueryRequest(BaseModel):
     conversation_history: Optional[list] = []
     workspace_id: Optional[str] = None  # For workspace-specific instructions
     selected_file_ids: Optional[List[str]] = None  # For filtering search to specific files
-    force_web_search: Optional[bool] = False  # ✅ NEW: Force web search even if decision says no
+    force_web_search: Optional[bool] = False  # Force web search even if decision says no
+    connector: Optional[str] = None  # External connector type (e.g., 'gdrive', 'slack')
+    user_id: Optional[str] = None  # User ID for connector auth lookup
 
 class IngestRequest(BaseModel):
     file_name: str
@@ -182,6 +197,80 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
         # Note: URL detection is handled by enhanced_web_search system
         
         async def event_generator():
+            # ============================================
+            # CONNECTOR ROUTING (check @mention or connector param)
+            # ============================================
+            if CONNECTORS_AVAILABLE:
+                # Check for explicit connector param or @mention in query
+                connector_type = query_request.connector
+                connector_query = query_request.query
+                user_id = query_request.user_id
+
+                if not connector_type:
+                    # Try to parse @mention from query
+                    mention = parse_connector_mention(query_request.query)
+                    if mention:
+                        connector_type = mention["connector_type"]
+                        connector_query = mention["query"]
+
+                if connector_type:
+                    print(f"🔌 Connector detected: {connector_type}")
+
+                    if not user_id:
+                        yield f"data: {json.dumps({'error': 'user_id is required for connector queries'})}\n\n"
+                        yield f"data: {json.dumps({'done': True})}\n\n"
+                        return
+
+                    # Check if user has this connector connected
+                    handler = get_connector_handler()
+                    result = await handler.query_connector(
+                        user_id=user_id,
+                        connector_type=connector_type,
+                        natural_language_query=connector_query,
+                        conversation_history=query_request.conversation_history,
+                    )
+                    
+                    print(f"🎯 Handler result for {connector_type}: {json.dumps({k: v for k, v in result.items() if k != 'response'}, default=str)}")
+
+                    if result.get("auth_required"):
+                        # Double-check that tokens really don't exist before telling client
+                        # This handles race conditions where tokens might just have been saved
+                        from server.connectors.oauth import get_tokens
+                        tokens = get_tokens(user_id, connector_type)
+                        
+                        if tokens:
+                            # Tokens exist! Retry the query
+                            print(f"⚠️  auth_required was true but tokens exist! Retrying query...")
+                            result = await handler.query_connector(
+                                user_id=user_id,
+                                connector_type=connector_type,
+                                natural_language_query=connector_query,
+                                conversation_history=query_request.conversation_history,
+                            )
+                            # If it succeeds this time, use the new result
+                            if not result.get("auth_required"):
+                                yield f"data: {json.dumps({'chunk': result.get('response', '')})}\n\n"
+                                yield f"data: {json.dumps({'done': True, 'source': connector_type, 'source_name': result.get('source_name', '')})}\n\n"
+                                print(f"✅ Connector query completed after retry ({connector_type}): {result.get('results_count', 0)} results")
+                                return
+                        
+                        # User needs to authorize this connector
+                        config = CONNECTOR_REGISTRY.get(connector_type, {})
+                        yield f"data: {json.dumps({'type': 'connector_auth_required', 'connector': connector_type, 'name': config.get('name', connector_type), 'auth_url': f'/api/connectors/{connector_type}/authorize'})}\n\n"
+                        yield f"data: {json.dumps({'done': True})}\n\n"
+                        return
+
+                    if result.get("error") and not result.get("auth_required"):
+                        yield f"data: {json.dumps({'chunk': result.get('response', 'Connector error')})}\n\n"
+                        yield f"data: {json.dumps({'done': True, 'source': connector_type})}\n\n"
+                        return
+
+                    # Stream successful connector response
+                    yield f"data: {json.dumps({'chunk': result.get('response', '')})}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'source': connector_type, 'source_name': result.get('source_name', '')})}\n\n"
+                    print(f"✅ Connector query completed ({connector_type}): {result.get('results_count', 0)} results")
+                    return
+
             csv_file_ids = []
             excel_file_ids = []
             if query_request.selected_file_ids:
@@ -662,6 +751,145 @@ async def generate_title(request: TitleGenerationRequest):
             "success": True,
             "title": fallback_title
         }
+
+
+# ============================================
+# Connector Management Endpoints
+# ============================================
+
+@app.get("/api/connectors")
+async def list_connectors():
+    """List all available connectors from registry."""
+    if not CONNECTORS_AVAILABLE:
+        return JSONResponse({"connectors": []}, status_code=200)
+
+    return {"connectors": get_connector_display_info()}
+
+
+class ConnectorUserRequest(BaseModel):
+    user_id: str
+
+
+@app.post("/api/connectors/user")
+async def get_user_connectors(request: ConnectorUserRequest):
+    """List user's connected services with status."""
+    if not CONNECTORS_AVAILABLE:
+        return JSONResponse({"connectors": []}, status_code=200)
+
+    user_connections = list_user_connectors(request.user_id)
+    connected_types = {
+        c["connector_type"]: c
+        for c in user_connections
+        if c.get("is_active")
+    }
+
+    result = []
+    for ctype, config in CONNECTOR_REGISTRY.items():
+        conn = connected_types.get(ctype)
+        result.append({
+            "type": ctype,
+            "name": config["name"],
+            "description": config["description"],
+            "icon": config["icon"],
+            "is_connected": ctype in connected_types,
+            "connected_at": conn.get("created_at") if conn else None,
+            "scopes": conn.get("scopes") if conn else None,
+        })
+
+    return {"connectors": result}
+
+
+@app.post("/api/connectors/{connector_type}/disconnect")
+async def disconnect_connector(connector_type: str, request: ConnectorUserRequest):
+    """Revoke and remove a connector."""
+    if not CONNECTORS_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Connectors not available")
+
+    if connector_type not in CONNECTOR_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Unknown connector: {connector_type}")
+
+    success = await revoke_token(request.user_id, connector_type)
+    name = CONNECTOR_REGISTRY[connector_type]["name"]
+    return {
+        "success": success,
+        "message": f"{name} disconnected successfully",
+    }
+
+
+@app.get("/api/connectors/{connector_type}/tools")
+async def list_connector_tools(connector_type: str):
+    """List available capabilities/methods for a connector."""
+    if not CONNECTORS_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Connectors not available")
+
+    if connector_type not in CONNECTOR_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Unknown connector: {connector_type}")
+
+    capabilities_map = {
+        "gdrive": [
+            {"name": "search_drive", "description": "Search files in Google Drive", "params": ["query", "max_results", "file_type"]},
+            {"name": "get_file_content", "description": "Read file content from Google Drive", "params": ["file_id"]},
+        ],
+        "slack": [
+            {"name": "search_messages", "description": "Search messages across channels", "params": ["query", "count"]},
+            {"name": "get_channel_history", "description": "Get recent messages from a channel", "params": ["channel_id", "limit"]},
+            {"name": "list_channels", "description": "List workspace channels", "params": ["limit"]},
+        ],
+        "gmail": [
+            {"name": "search_emails", "description": "Search emails matching a query", "params": ["query", "max_results"]},
+            {"name": "get_email_content", "description": "Read full email content", "params": ["email_id"]},
+        ],
+        "onedrive": [
+            {"name": "search_files", "description": "Search files in OneDrive", "params": ["query", "max_results"]},
+            {"name": "get_file_content", "description": "Read file content from OneDrive", "params": ["file_id"]},
+            {"name": "list_recent_files", "description": "List recently modified files", "params": ["max_results"]},
+        ],
+    }
+
+    return {
+        "connector": connector_type,
+        "capabilities": capabilities_map.get(connector_type, []),
+    }
+
+
+class StoreTokensRequest(BaseModel):
+    user_id: str
+    connector_type: str
+    access_token: str
+    refresh_token: Optional[str] = None
+    token_expires_at: Optional[str] = None
+    scopes: Optional[List[str]] = None
+    metadata: Optional[dict] = None
+
+
+@app.post("/api/connectors/store-tokens")
+async def store_connector_tokens(request: StoreTokensRequest):
+    """Store encrypted OAuth tokens for a connector (called by OAuth callback)."""
+    if not CONNECTORS_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Connectors not available")
+
+    if request.connector_type not in CONNECTOR_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Unknown connector: {request.connector_type}")
+
+    try:
+        from server.connectors.oauth import save_tokens
+
+        print(f"🔐 Received token save request from {request.user_id} for {request.connector_type}")
+        save_tokens(
+            user_id=request.user_id,
+            connector_type=request.connector_type,
+            access_token=request.access_token,
+            refresh_token=request.refresh_token,
+            token_expires_at=request.token_expires_at,
+            scopes=request.scopes,
+            metadata=request.metadata,
+        )
+        name = CONNECTOR_REGISTRY[request.connector_type]["name"]
+        print(f"✅ {name} connected successfully for {request.user_id}")
+        return {"success": True, "message": f"{name} connected successfully"}
+    except Exception as e:
+        print(f"❌ Failed to store tokens for {request.connector_type}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to store tokens: {str(e)}")
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ from server.query_handler import (
 )
 from server.mermaid_converter import convert_query_to_mermaid_markdown
 from server.enhanced_web_search import enhanced_web_search
+from server.instructions import get_active_instruction, clear_instruction_cache, get_instruction_preview
 
 
 
@@ -245,6 +246,75 @@ async def generate_diagram_tool(query: str, diagram_type: str = "auto") -> str:
             "diagram_type": "error"
         })
 
+
+@mcp.tool
+def get_active_instruction_tool(workspace_id: str) -> str:
+    """
+    Get the active instruction for a workspace
+    
+    Args:
+        workspace_id: The workspace ID to fetch instructions for
+    
+    Returns:
+        JSON string with instruction details or error message
+    """
+    try:
+        import json
+        instruction = get_active_instruction(workspace_id)
+        if instruction:
+            return json.dumps({
+                "success": True,
+                "instruction": instruction
+            })
+        else:
+            return json.dumps({
+                "success": True,
+                "instruction": None,
+                "message": "No active instruction found"
+            })
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": f"Error fetching instruction: {str(e)}"
+        })
+
+
+@mcp.tool
+def get_instruction_preview_tool(workspace_id: str) -> str:
+    """
+    Get a preview of the active instruction for display purposes
+    
+    Args:
+        workspace_id: The workspace ID
+    
+    Returns:
+        String preview of active instruction
+    """
+    try:
+        return get_instruction_preview(workspace_id)
+    except Exception as e:
+        return f"Error getting instruction preview: {str(e)}"
+
+
+@mcp.tool
+def clear_instruction_cache_tool(workspace_id: str = None) -> str:
+    """
+    Clear cached instructions to force reload from database
+    
+    Args:
+        workspace_id: Optional workspace ID to clear specific cache, or None to clear all
+    
+    Returns:
+        Success message
+    """
+    try:
+        clear_instruction_cache(workspace_id)
+        if workspace_id:
+            return f"Instruction cache cleared for workspace: {workspace_id}"
+        else:
+            return "All instruction caches cleared"
+    except Exception as e:
+        return f"Error clearing instruction cache: {str(e)}"
 
 
 if __name__ == "__main__":

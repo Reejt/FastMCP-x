@@ -132,6 +132,15 @@ export interface Message {
   timestamp: Date
   session_id?: string           // Optional: Links message to session for proper scoping
   isStreaming?: boolean
+  connectorSource?: string      // Source connector type (e.g., 'gdrive', 'slack')
+  connectorSourceName?: string  // Display name of source connector
+  connectorAuthRequired?: {     // Set when connector auth is needed
+    connector: string
+    name: string
+    authUrl: string
+    query?: string               // Original query to retry after auth
+    userId?: string              // User ID for retrying query
+  }
 }
 
 export interface User {

@@ -175,6 +175,7 @@ export function useMermaidDetector(
   }
 
   return {
+    detectedDiagrams,
     currentDiagram,
     showDiagram,
     addDynamicDiagram,

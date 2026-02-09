@@ -2,13 +2,16 @@
 
 import { Message } from '@/app/types'
 import MarkdownRenderer from '@/app/components/UI/MarkdownRenderer'
+import ConnectorBadge from './ConnectorBadge'
+import ConnectorAuthPrompt from './ConnectorAuthPrompt'
 
 interface ChatMessageProps {
   message: Message
   onShowDiagram?: (diagramId: string) => void
+  onRetryQuery?: (query: string) => void  // Callback to retry query after connector auth
 }
 
-export default function ChatMessage({ message, onShowDiagram }: ChatMessageProps) {
+export default function ChatMessage({ message, onShowDiagram, onRetryQuery }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
 
@@ -52,7 +55,22 @@ export default function ChatMessage({ message, onShowDiagram }: ChatMessageProps
         {isUser ? (
           // User message - Right-aligned bubble with theme-aware styling
           <div className="rounded-2xl px-5 py-3" style={{ backgroundColor: 'var(--bg-user-bubble)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)' }}>
-            <p className="text-[15px] whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>{message.content}</p>
+            <p className="text-[15px] whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
+              {/* Render @connector mentions as styled chips */}
+              {message.content.match(/^@(\w+)\s/) ? (
+                <>
+                  <span
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium mr-1"
+                    style={{ backgroundColor: 'var(--accent-primary)', color: 'var(--text-inverse)' }}
+                  >
+                    @{message.content.match(/^@(\w+)/)?.[1]}
+                  </span>
+                  {message.content.replace(/^@\w+\s/, '')}
+                </>
+              ) : (
+                message.content
+              )}
+            </p>
           </div>
         ) : isSystem ? (
           // System message - Light grey, centered, no background
@@ -107,6 +125,28 @@ export default function ChatMessage({ message, onShowDiagram }: ChatMessageProps
                       </button>
                     ))}
                   </div>
+                )}
+
+                {/* Connector source attribution badge */}
+                {message.connectorSource && (
+                  <div className="mt-1">
+                    <ConnectorBadge
+                      source={message.connectorSource}
+                      sourceName={message.connectorSourceName}
+                    />
+                  </div>
+                )}
+
+                {/* Connector auth required prompt */}
+                {message.connectorAuthRequired && (
+                  <ConnectorAuthPrompt
+                    connector={message.connectorAuthRequired.connector}
+                    connectorName={message.connectorAuthRequired.name}
+                    authUrl={message.connectorAuthRequired.authUrl}
+                    query={message.connectorAuthRequired.query}
+                    userId={message.connectorAuthRequired.userId}
+                    onRetryQuery={onRetryQuery}
+                  />
                 )}
               </div>
             )}

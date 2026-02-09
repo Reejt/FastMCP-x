@@ -6,6 +6,7 @@ import { Workspace, Message, ChatSession, File } from '@/app/types'
 import InstructionsPanel from '@/app/components/WorkspaceIntroduction/InstructionsPanel'
 import VaultPanel from '@/app/components/WorkspaceIntroduction/VaultPanel'
 import MarkdownRenderer from '@/app/components/UI/MarkdownRenderer'
+import ConnectorAuthPrompt from '@/app/components/Chat/ConnectorAuthPrompt'
 
 interface WorkspaceIntroductionProps {
   workspace: Workspace
@@ -493,6 +494,20 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                             <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
                           </svg>
                         </button>
+                      </div>
+                    )}
+                    
+                    {/* Connector auth required prompt */}
+                    {msg.connectorAuthRequired && (
+                      <div className="mt-4">
+                        <ConnectorAuthPrompt
+                          connector={msg.connectorAuthRequired.connector}
+                          connectorName={msg.connectorAuthRequired.name}
+                          authUrl={msg.connectorAuthRequired.authUrl}
+                          query={msg.connectorAuthRequired.query}
+                          userId={msg.connectorAuthRequired.userId}
+                          onRetryQuery={(query) => onSendMessage(query)}
+                        />
                       </div>
                     )}
                   </div>
