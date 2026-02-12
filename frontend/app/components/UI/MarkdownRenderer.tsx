@@ -283,33 +283,33 @@ export default function MarkdownRenderer({ content, className = '', style }: Mar
           // Tables with proper styling
           table: ({ children }) => (
             <div className="overflow-x-auto my-4">
-              <table className="min-w-full border border-gray-200 text-sm">
+              <table className="min-w-full border border-gray-200 dark:border-gray-700 text-sm">
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 dark:bg-gray-800">
               {children}
             </thead>
           ),
           tbody: ({ children }) => (
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {children}
             </tbody>
           ),
           tr: ({ children }) => (
-            <tr className="hover:bg-gray-50 transition-colors">
+            <tr className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
               {children}
             </tr>
           ),
           th: ({ children }) => (
-            <th className="px-4 py-3 text-left font-semibold text-gray-700 border-b border-gray-200">
+            <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-white border-b border-gray-200 dark:border-gray-700">
               {children}
             </th>
           ),
           td: ({ children }) => (
-            <td className="px-4 py-3 text-gray-700 border-b border-gray-100">
+            <td className="px-4 py-3 text-gray-700 dark:text-white border-b border-gray-100 dark:border-gray-700">
               {children}
             </td>
           ),
