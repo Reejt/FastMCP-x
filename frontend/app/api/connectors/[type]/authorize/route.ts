@@ -5,7 +5,9 @@ import { cookies } from 'next/headers';
 // OAuth configuration per provider
 const OAUTH_CONFIG: Record<string, {
   auth_url: string;
-  scopes: string[];
+  scopes?: string[];
+  bot_scopes?: string[];
+  user_scopes?: string[];
   client_id_env: string;
   extra_params?: Record<string, string>;
 }> = {
@@ -23,7 +25,11 @@ const OAUTH_CONFIG: Record<string, {
   },
   slack: {
     auth_url: 'https://slack.com/oauth/v2/authorize',
-    scopes: ['channels:history', 'channels:read', 'users:read', 'users.profile:read', 'search:read'],
+    // Bot scopes: required for app/bot to access workspace data
+    // Using conversations.history instead of search.messages, so we don't need search:read.public
+    bot_scopes: ['channels:history', 'channels:read', 'groups:history', 'groups:read'],
+    // User scopes: additional permissions for the installing user
+    user_scopes: [],
     client_id_env: 'NEXT_PUBLIC_SLACK_CLIENT_ID',
   },
   onedrive: {
@@ -86,7 +92,9 @@ export async function GET(
   // Generate CSRF token
   const csrfToken = crypto.randomUUID();
   const origin = request.nextUrl.origin;
-  const redirectUri = `${origin}/api/connectors/${type}/callback`;
+  // Use HTTPS for redirect URI (required by Slack for security)
+  // In production this will already be HTTPS, but for local dev we need to force it
+  const redirectUri = `${origin.replace(/^http:/, 'https:')}/api/connectors/${type}/callback`;
 
   // Build state parameter
   const state = JSON.stringify({
@@ -102,11 +110,20 @@ export async function GET(
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('state', Buffer.from(state).toString('base64'));
 
-  // Set scopes (Slack uses user_scope instead of scope)
+  // Set scopes (Slack uses both user_scope and scope for different permissions)
   if (type === 'slack') {
-    authUrl.searchParams.set('user_scope', config.scopes.join(','));
+    // Request bot scopes (for app/bot permissions like search:read)
+    if (config.bot_scopes) {
+      authUrl.searchParams.set('scope', config.bot_scopes.join(','));
+    }
+    // Request user scopes (for user_authed_user permissions)
+    if (config.user_scopes) {
+      authUrl.searchParams.set('user_scope', config.user_scopes.join(','));
+    }
   } else {
-    authUrl.searchParams.set('scope', config.scopes.join(' '));
+    // Standard OAuth2 scopes (space-separated for Google/Microsoft)
+    const scopes = config.scopes || [];
+    authUrl.searchParams.set('scope', scopes.join(' '));
   }
 
   // Add extra params

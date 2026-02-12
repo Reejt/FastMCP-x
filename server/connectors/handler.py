@@ -219,6 +219,11 @@ class ConnectorHandler:
                     from server.connectors.slack import search_messages
                     token_data = get_tokens(user_id, connector_type)
                     team_id = token_data.get("metadata", {}).get("team_id") if token_data else None
+                    access_token_preview = access_token[:10] + "..." if access_token else None
+                    print(f"🔑 Slack API call:")
+                    print(f"   Access token type: {access_token_preview}")
+                    print(f"   Token scopes: {token_data.get('scopes') if token_data else 'NONE'}")
+                    print(f"   Team ID: {team_id}")
                     results = await search_messages(
                         query=api_params.get("search_query", ""),
                         bot_token=access_token,

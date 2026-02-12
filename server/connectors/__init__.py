@@ -29,9 +29,8 @@ CONNECTOR_REGISTRY: Dict[str, Dict[str, Any]] = {
         "oauth_scopes": [
             "channels:history",
             "channels:read",
-            "users:read",
-            "users.profile:read",
-            "search:read",
+            "groups:history",
+            "groups:read",
         ],
         "icon": "slack",
         "base_url": "https://slack.com/api",

@@ -722,7 +722,7 @@ File: {file_record_name}{rows_info}
 Computed Results:
 {result_sample}
 
-Provide a clear, specific answer using the actual computed data shown. Include relevant numbers and insights."""
+Provide a clear, specific answer using the actual computed data shown. Include relevant numbers and insights. Format the data as a table if applicable."""
                                 llm_response = query_model(prompt)
                                 all_results.append(f"\n📄 **{file_record_name}**{rows_info}:\n{llm_response}")
                             except ImportError:

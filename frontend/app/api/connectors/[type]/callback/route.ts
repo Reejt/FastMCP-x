@@ -179,13 +179,36 @@ export async function GET(
     let metadata: Record<string, unknown> = {};
 
     if (type === 'slack') {
-      // Slack returns tokens in authed_user for user tokens
+      // Slack returns two tokens:
+      // 1. tokenData.access_token - bot/app token (xoxb-*) (has search:read.public, channels:history, etc.)
+      // 2. tokenData.authed_user.access_token - user token (xoxp-*) 
+      // We MUST use the bot token for search.messages API
+      const botToken = (tokenData as Record<string, string>).access_token;
       const authedUser = (tokenData as Record<string, Record<string, string>>).authed_user || {};
-      accessToken = authedUser.access_token || (tokenData as Record<string, string>).access_token;
-      scopes = authedUser.scope ? authedUser.scope.split(',') : undefined;
+      const userToken = authedUser.access_token;
+      
+      // Debug logging
+      console.log(`🔐 Slack token exchange:
+        Bot token: ${botToken ? botToken.substring(0, 10) + '...' : 'MISSING'}
+        User token: ${userToken ? userToken.substring(0, 10) + '...' : 'MISSING'}
+        Using: ${botToken ? 'BOT' : 'USER'}`);
+      
+      // Use bot token ONLY - it's required for search.messages API
+      if (!botToken) {
+        throw new Error('Bot token missing from Slack OAuth response. Check your app permissions.');
+      }
+      accessToken = botToken;
+      
+      // Get scopes from bot token
+      const botScopes = (tokenData as Record<string, string>).scope;
+      scopes = botScopes?.split(',').map(s => s.trim());
+      
       metadata = {
         team_id: (tokenData as Record<string, Record<string, string>>).team?.id,
         team_name: (tokenData as Record<string, Record<string, string>>).team?.name,
+        bot_user_id: (tokenData as Record<string, string>).bot_user_id,
+        app_id: (tokenData as Record<string, string>).app_id,
+        user_token: userToken, // Store user token separately if needed
       };
     } else {
       accessToken = tokenData.access_token as string;
