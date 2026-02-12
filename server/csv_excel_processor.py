@@ -617,7 +617,7 @@ class SafeCodeExecutor:
             return None, f"Execution error: {str(e)}"
 
 
-def process_csv_excel_query(query: str, conversation_history: List = None, selected_file_ids: List = None):
+async def process_csv_excel_query(query: str, conversation_history: List = None, selected_file_ids: List = None):
     """
     Main entry point for the sophisticated CSV/Excel processing pipeline.
     
@@ -723,7 +723,8 @@ Computed Results:
 {result_sample}
 
 Provide a clear, specific answer using the actual computed data shown. Include relevant numbers and insights. Format the data as a table if applicable."""
-                                llm_response = query_model(prompt)
+                                # Await the async query_model function
+                                llm_response = await query_model(prompt)
                                 all_results.append(f"\n📄 **{file_record_name}**{rows_info}:\n{llm_response}")
                             except ImportError:
                                 # Fallback to raw data if query_model unavailable
