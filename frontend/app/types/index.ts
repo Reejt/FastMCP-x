@@ -165,6 +165,26 @@ export interface ChatSession {
   messages?: Message[]          // Frontend-only: Loaded separately from chats table
 }
 
+/**
+ * DocumentData for Streaming Preview
+ * Represents document content detected in LLM responses
+ */
+export interface DocumentData {
+  id: string                    // Unique identifier for the document
+  type: 'document' | 'report' | 'plan' | 'guide' | 'analysis' | 'proposal' | 'summary'  // Document type
+  title: string                 // Document title
+  content: string               // Document content (markdown)
+  userQuery: string             // Original user message that prompted document creation
+  createdAt: Date               // When document was created
+  isStreaming?: boolean         // Whether document is still being generated
+  metadata?: {
+    wordCount: number           // Number of words in content
+    estimatedReadTime: number   // Estimated read time in minutes
+    charCount: number           // Number of characters
+    headingCount: number        // Number of headings
+  }
+}
+
 // ============================================
 // Type Conversion Helpers
 // ============================================

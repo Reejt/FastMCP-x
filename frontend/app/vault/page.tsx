@@ -219,6 +219,9 @@ export default function VaultPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
+      if (defaultWorkspaceId) {
+        formData.append('workspaceId', defaultWorkspaceId)
+      }
 
       const response = await fetch('/api/vault/upload', {
         method: 'POST',

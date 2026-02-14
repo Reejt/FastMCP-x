@@ -4,10 +4,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { useState, useCallback, useEffect, ComponentPropsWithoutRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, ComponentPropsWithoutRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useMermaidDetector } from '../../hooks/useMermaidDetector'
-import DiagramPreviewPanel from './DiagramPreviewPanel'
 
 // Dynamically import MermaidDiagram to avoid SSR issues
 const MermaidDiagram = dynamic(() => import('./MermaidDiagram'), {
@@ -53,8 +52,9 @@ const customCodeTheme = {
 export default function MarkdownRenderer({ content, className = '', style }: MarkdownRendererProps) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
 
-  // Create a fake message for diagram detection
-  const messages = [{ content, role: 'assistant' as const, id: 'markdown-content' }]
+  // Memoize the messages array to prevent unnecessary re-renders
+  // This prevents the useMermaidDetector hook from re-running on every render
+  const messages = useMemo(() => [{ content, role: 'assistant' as const, id: 'markdown-content' }], [content])
   
   // Use the mermaid detector hook
   const { detectedDiagrams, currentDiagram, showDiagram, closeDiagram, hasDiagrams } = useMermaidDetector(messages, true)
@@ -69,7 +69,7 @@ export default function MarkdownRenderer({ content, className = '', style }: Mar
         console.log('✅ First diagram:', detectedDiagrams[0])
       }
     }
-  }, [content, detectedDiagrams, hasDiagrams])
+  }, [content])
 
   const copyToClipboard = useCallback(async (code: string) => {
     try {
@@ -342,13 +342,6 @@ export default function MarkdownRenderer({ content, className = '', style }: Mar
       >
         {content}
       </ReactMarkdown>
-
-      {/* Diagram Preview Panel */}
-      <DiagramPreviewPanel
-        isOpen={!!currentDiagram}
-        diagram={currentDiagram}
-        onClose={closeDiagram}
-      />
     </div>
   )
 }

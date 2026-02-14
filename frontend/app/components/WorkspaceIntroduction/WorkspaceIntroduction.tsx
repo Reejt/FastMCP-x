@@ -6,7 +6,9 @@ import { Workspace, Message, ChatSession, File } from '@/app/types'
 import InstructionsPanel from '@/app/components/WorkspaceIntroduction/InstructionsPanel'
 import VaultPanel from '@/app/components/WorkspaceIntroduction/VaultPanel'
 import MarkdownRenderer from '@/app/components/UI/MarkdownRenderer'
+import DocumentPreviewPanel from '@/app/components/UI/DocumentPreviewPanel'
 import ConnectorAuthPrompt from '@/app/components/Chat/ConnectorAuthPrompt'
+import { useDocumentDetector } from '@/app/hooks/useDocumentDetector'
 
 interface WorkspaceIntroductionProps {
   workspace: Workspace
@@ -26,6 +28,14 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   const router = useRouter()
   const [message, setMessage] = useState('')
   const chatHistoryRef = useRef<HTMLDivElement>(null)
+
+  // Document preview detection for streaming
+  const { currentDocument, isDocumentPanelOpen, closeDocumentPanel } = useDocumentDetector(
+    messages,
+    {
+      enableStreamingPreview: true
+    }
+  )
 
   const [isReferenceModalOpen, setIsReferenceModalOpen] = useState(false)
   const [workspaceFiles, setWorkspaceFiles] = useState<File[]>([])
@@ -384,120 +394,122 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   if (isInChatMode) {
     return (
       <>
-        <div className="flex flex-col h-full w-full" style={{ backgroundColor: theme.bg }}>
-        {/* Top Navigation Bar */}
-        <div className="px-6 pt-4 pb-2" style={{ backgroundColor: theme.bg }}>
-          <div className="flex items-center justify-between">
-            {/* Left side - Breadcrumb with Expand Button */}
-            <nav className="flex items-center gap-3 text-sm" style={{ color: theme.textSecondary }} aria-label="Breadcrumb">
-              {/* Expand Button - Shows when workspace sidebar is collapsed */}
-              {isWorkspaceSidebarCollapsed && onExpandWorkspaceSidebar && (
-                <button
-                  onClick={onExpandWorkspaceSidebar}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 border shadow-sm rounded-lg transition-all"
-                  style={{ 
-                    backgroundColor: theme.cardBg, 
-                    borderColor: theme.border,
-                  }}
-                  aria-label="Expand workspace sidebar"
-                >
-                  <svg className="w-4 h-4" style={{ color: theme.textSecondary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="flex h-full w-full" style={{ backgroundColor: theme.bg }}>
+          {/* Main Chat Container - Left side (55% when preview open, 100% otherwise) */}
+          <div className={`flex flex-col flex-1 transition-all duration-200 ${isDocumentPanelOpen ? 'w-[55%]' : 'w-full'}`} style={{ backgroundColor: theme.bg }}>
+            {/* Top Navigation Bar */}
+            <div className="px-6 pt-4 pb-2" style={{ backgroundColor: theme.bg }}>
+              <div className="flex items-center justify-between">
+                {/* Left side - Breadcrumb with Expand Button */}
+                <nav className="flex items-center gap-3 text-sm" style={{ color: theme.textSecondary }} aria-label="Breadcrumb">
+                  {/* Expand Button - Shows when workspace sidebar is collapsed */}
+                  {isWorkspaceSidebarCollapsed && onExpandWorkspaceSidebar && (
+                    <button
+                      onClick={onExpandWorkspaceSidebar}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 border shadow-sm rounded-lg transition-all"
+                      style={{ 
+                        backgroundColor: theme.cardBg, 
+                        borderColor: theme.border,
+                      }}
+                      aria-label="Expand workspace sidebar"
+                    >
+                      <svg className="w-4 h-4" style={{ color: theme.textSecondary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => router.push('/workspaces')}
+                    className="hover:opacity-80 transition-opacity"
+                  >
+                    Workspaces
+                  </button>
+                  <svg className="w-4 h-4" style={{ color: theme.textMuted }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
-                </button>
-              )}
-              <button
-                onClick={() => router.push('/workspaces')}
-                className="hover:opacity-80 transition-opacity"
-              >
-                Workspaces
-              </button>
-              <svg className="w-4 h-4" style={{ color: theme.textMuted }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              <span style={{ color: theme.text }} className="font-medium">{workspace.name}</span>
-            </nav>
+                  <span style={{ color: theme.text }} className="font-medium">{workspace.name}</span>
+                </nav>
 
-          </div>
-        </div>
+              </div>
+            </div>
 
-        {/* Chat Messages Area - Scrollable */}
-        <div 
-          ref={chatHistoryRef}
-          className="flex-1 overflow-y-auto px-6 py-6"
-        >
-          <div className="max-w-3xl mx-auto">
-            {messages.map((msg) => (
-              <div key={msg.id} className="mb-8">
-                {msg.role === 'user' ? (
-                  // User message - Right aligned, simple text
-                  <div className="flex justify-end mb-2">
-                    <div className="rounded-2xl px-5 py-3 max-w-[85%]" style={{ backgroundColor: theme.userBubble }}>
-                      <p className="text-[15px] whitespace-pre-wrap" style={{ color: theme.text }}>{msg.content}</p>
-                    </div>
-                  </div>
-                ) : (
-                  // Assistant message - Inline text, no bubble
-                  <div style={{ color: theme.text }}>
-                    <div className="text-[15px]">
-                      <MarkdownRenderer content={msg.content || ''} />
-                      {msg.isStreaming && !msg.content && (
-                        <span style={{ color: theme.textMuted }}>Thinking...</span>
-                      )}
-                      {msg.isStreaming && msg.content && (
-                        <span className="inline-block w-2 h-5 animate-pulse ml-0.5" style={{ backgroundColor: 'var(--text-secondary)' }}></span>
-                      )}
-                    </div>
-                    
-                    {/* Action buttons row - Grok style */}
-                    {!msg.isStreaming && msg.content && (
-                      <div className="flex items-center gap-1 mt-4" style={{ color: theme.textMuted }}>
-                        {/* Regenerate */}
-                        <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Regenerate">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                          </svg>
-                        </button>
-                        {/* Read aloud */}
-                        <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Read aloud">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                          </svg>
-                        </button>
-                        {/* Copy */}
-                        <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Copy">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        </button>
-                        {/* Share */}
-                        <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Share">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                          </svg>
-                        </button>
-                        {/* Thumbs up */}
-                        <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Good response">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
-                          </svg>
-                        </button>
-                        {/* Thumbs down */}
-                        <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Bad response">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018c.163 0 .326.02.485.06L17 4m-7 10v5a2 2 0 002 2h.095c.5 0 .905-.405.905-.905 0-.714.211-1.412.608-2.006L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
-                          </svg>
-                        </button>
-                        {/* More options */}
-                        <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="More options">
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                          </svg>
-                        </button>
+            {/* Chat Messages Area - Scrollable */}
+            <div 
+              ref={chatHistoryRef}
+              className="flex-1 overflow-y-auto px-6 py-6"
+            >
+              <div className="max-w-3xl mx-auto">
+                {messages.map((msg) => (
+                  <div key={msg.id} className="mb-8">
+                    {msg.role === 'user' ? (
+                      // User message - Right aligned, simple text
+                      <div className="flex justify-end mb-2">
+                        <div className="rounded-2xl px-5 py-3 max-w-[85%]" style={{ backgroundColor: theme.userBubble }}>
+                          <p className="text-[15px] whitespace-pre-wrap" style={{ color: theme.text }}>{msg.content}</p>
+                        </div>
                       </div>
-                    )}
-                    
-                    {/* Connector auth required prompt */}
+                    ) : (
+                      // Assistant message - Inline text, no bubble
+                      <div style={{ color: theme.text }}>
+                        <div className="text-[15px]">
+                          <MarkdownRenderer content={msg.content || ''} />
+                          {msg.isStreaming && !msg.content && (
+                            <span style={{ color: theme.textMuted }}>Thinking...</span>
+                          )}
+                          {msg.isStreaming && msg.content && (
+                            <span className="inline-block w-2 h-5 animate-pulse ml-0.5" style={{ backgroundColor: 'var(--text-secondary)' }}></span>
+                          )}
+                        </div>
+                        
+                        {/* Action buttons row - Grok style */}
+                        {!msg.isStreaming && msg.content && (
+                          <div className="flex items-center gap-1 mt-4" style={{ color: theme.textMuted }}>
+                            {/* Regenerate */}
+                            <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Regenerate">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                            {/* Read aloud */}
+                            <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Read aloud">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                              </svg>
+                            </button>
+                            {/* Copy */}
+                            <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Copy">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                            {/* Share */}
+                            <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Share">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                              </svg>
+                            </button>
+                            {/* Thumbs up */}
+                            <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Good response">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+                              </svg>
+                            </button>
+                            {/* Thumbs down */}
+                            <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="Bad response">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018c.163 0 .326.02.485.06L17 4m-7 10v5a2 2 0 002 2h.095c.5 0 .905-.405.905-.905 0-.714.211-1.412.608-2.006L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
+                              </svg>
+                            </button>
+                            {/* More options */}
+                            <button className="p-2 rounded-lg transition-colors hover:opacity-70" title="More options">
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
+                        
+                        {/* Connector auth required prompt */}
                     {msg.connectorAuthRequired && (
                       <div className="mt-4">
                         <ConnectorAuthPrompt
@@ -623,6 +635,19 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
             </form>
           </div>
         </div>
+        </div>
+
+        {/* Document Preview Panel - Right side (45% when open) */}
+        {isDocumentPanelOpen && (
+          <div className="w-[45%] h-full p-3 flex-shrink-0">
+            <DocumentPreviewPanel
+              isOpen={isDocumentPanelOpen}
+              document={currentDocument}
+              onClose={closeDocumentPanel}
+              isStreaming={messages[messages.length - 1]?.isStreaming}
+            />
+          </div>
+        )}
         </div>
         {referenceModal}
       </>

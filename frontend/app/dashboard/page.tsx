@@ -9,8 +9,10 @@ import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace, WorkspaceInstruction, Chat } from '@/app/types'
 import Sidebar from '@/app/components/Sidebar/Sidebar'
 import DiagramPreviewPanel from '@/app/components/UI/DiagramPreviewPanel'
+import DocumentPreviewPanel from '@/app/components/UI/DocumentPreviewPanel'
 import { generateDiagram, extractMermaidCode, isDiagramQuery as checkDiagramQuery } from '@/app/lib/diagram-client'
 import { useMermaidDetector } from '@/app/hooks/useMermaidDetector'
+import { useDocumentDetector } from '@/app/hooks/useDocumentDetector'
 
 // Dynamic imports for heavy components
 const WorkspaceSidebar = dynamic(() => import('@/app/components/WorkspaceSidebar'), {
@@ -63,6 +65,14 @@ export default function DashboardPage() {
 
   // Mermaid diagram detection - only enabled for diagram queries
   const { currentDiagram, showDiagram, addDynamicDiagram, closeDiagram, hasDiagrams } = useMermaidDetector(messages, hasDiagramQuery)
+
+  // Document preview detection for streaming
+  const { currentDocument, isDocumentPanelOpen, closeDocumentPanel } = useDocumentDetector(
+    messages,
+    {
+      enableStreamingPreview: true
+    }
+  )
 
   // Load workspace sidebar collapse state from localStorage on mount
   useEffect(() => {
@@ -862,7 +872,9 @@ export default function DashboardPage() {
       )}
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex overflow-hidden">
+        {/* Chat Content */}
+        <div className={`flex flex-col flex-1 transition-all duration-200 ${isDocumentPanelOpen ? 'w-[55%]' : 'w-full'}`}>
         {/* Breadcrumb Navigation with Expand Button */}
         {workspaceId && currentWorkspace && (
           <div className="flex items-center gap-3 px-8 py-4" style={{ backgroundColor: 'var(--bg-app)' }}>
@@ -1003,12 +1015,25 @@ export default function DashboardPage() {
         </AnimatePresence>
       </div>
 
+      {/* Document Preview Panel - Right side (45% when open) */}
+      {isDocumentPanelOpen && (
+        <div className="w-[45%] h-full p-3 flex-shrink-0">
+          <DocumentPreviewPanel
+            isOpen={isDocumentPanelOpen}
+            document={currentDocument}
+            onClose={closeDocumentPanel}
+            isStreaming={messages[messages.length - 1]?.isStreaming}
+          />
+        </div>
+      )}
+
       {/* Mermaid Diagram Preview Panel */}
       <DiagramPreviewPanel
         isOpen={!!currentDiagram}
         diagram={currentDiagram}
         onClose={closeDiagram}
       />
+    </div>
     </div>
   )
 }
