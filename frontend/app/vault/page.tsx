@@ -81,6 +81,7 @@ export default function VaultPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [showUploadMenu, setShowUploadMenu] = useState(false)
+  const [defaultWorkspaceId, setDefaultWorkspaceId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const uploadMenuRef = useRef<HTMLDivElement>(null)
@@ -162,6 +163,17 @@ export default function VaultPage() {
         email: authUser.email || 'Unknown',
         role: userRole
       })
+
+      // Fetch the user's default workspace
+      const { data: workspaces } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('user_id', authUser.id)
+        .limit(1)
+
+      if (workspaces && workspaces.length > 0) {
+        setDefaultWorkspaceId(workspaces[0].id)
+      }
 
       await loadDocuments()
       setLoading(false)
