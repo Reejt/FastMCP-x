@@ -1,4 +1,5 @@
 export { default as DiagramPreviewPanel } from './DiagramPreviewPanel'
+export { default as DocumentPreviewPanel } from './DocumentPreviewPanel'
 export { default as MermaidDiagram } from './MermaidDiagram'
 export { default as MarkdownRenderer } from './MarkdownRenderer'
 export { default as LoadingSpinner } from './LoadingSpinner'
