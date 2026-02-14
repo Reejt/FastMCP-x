@@ -132,12 +132,6 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
 
   useEffect(() => {
     if (!isReferenceModalOpen) return
-    if (!workspaceId) {
-      setWorkspaceFiles([])
-      setFilesError(null)
-      setFilesLoading(false)
-      return
-    }
 
     let isCancelled = false
 
@@ -145,7 +139,13 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
       setFilesLoading(true)
       setFilesError(null)
       try {
-        const response = await fetch(`/api/vault/upload?workspaceId=${workspaceId}`)
+        // If workspaceId is provided, fetch workspace-specific files
+        // If not provided, fetch all files from main vault (no workspaceId param)
+        const url = workspaceId 
+          ? `/api/vault/upload?workspaceId=${workspaceId}`
+          : '/api/vault/upload'
+        
+        const response = await fetch(url)
         const data = await response.json()
 
         if (!response.ok) {
@@ -175,11 +175,16 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
   }, [isReferenceModalOpen, workspaceId])
 
   const refreshWorkspaceFiles = async () => {
-    if (!workspaceId) return
     setFilesLoading(true)
     setFilesError(null)
     try {
-      const response = await fetch(`/api/vault/upload?workspaceId=${workspaceId}`)
+      // If workspaceId is provided, fetch workspace-specific files
+      // If not provided, fetch all files from main vault (no workspaceId param)
+      const url = workspaceId 
+        ? `/api/vault/upload?workspaceId=${workspaceId}`
+        : '/api/vault/upload'
+      
+      const response = await fetch(url)
       const data = await response.json()
 
       if (!response.ok) {
@@ -255,7 +260,7 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
             onClick={() => {
               referenceFileInputRef.current?.click()
             }}
-            disabled={!workspaceId || referenceUploading}
+            disabled={referenceUploading}
             className="px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: 'var(--accent-primary)', color: 'var(--text-inverse)' }}
             onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.opacity = '0.9')}
@@ -270,10 +275,8 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
             <div className="p-4 text-sm" style={{ color: 'var(--text-secondary)' }}>Loading files...</div>
           ) : filesError ? (
             <div className="p-4 text-sm" style={{ color: 'var(--text-secondary)' }}>{filesError}</div>
-          ) : !workspaceId ? (
-            <div className="p-4 text-sm" style={{ color: 'var(--text-secondary)' }}>Select a workspace to use reference files.</div>
           ) : workspaceFiles.length === 0 ? (
-            <div className="p-4 text-sm" style={{ color: 'var(--text-secondary)' }}>No files uploaded in this workspace.</div>
+            <div className="p-4 text-sm" style={{ color: 'var(--text-secondary)' }}>{workspaceId ? 'No files uploaded in this workspace.' : 'No files uploaded in your vault.'}</div>
           ) : (
             <div className="max-h-[360px] overflow-y-auto" style={{ borderTop: '1px solid var(--border-subtle)' }}>
               {workspaceFiles.map((file) => {
