@@ -184,7 +184,7 @@ export default function VaultPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-app)' }}>
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -200,16 +200,27 @@ export default function VaultPage() {
 
       {/* Main Chats Area */}
       <div className="flex-1 overflow-auto">
-        <div className="min-h-screen bg-white">
+        <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-app)' }}>
           {/* Header */}
-          <div className="border-b border-gray-200">
+          <div style={{ borderBottom: '1px solid var(--border-subtle)' }}>
             <div className="max-w-7xl mx-auto px-6 py-6">
               <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-semibold" style={{ color: 'var(--text-primary)' }}>Chats</h1>
+                <h1 className="text-3xl font-semibold" style={{ color: 'var(--text-primary)' }}>Vault</h1>
                 <button
                   onClick={triggerFileSelect}
                   disabled={uploading}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'var(--bg-elevated)',
+                    border: '1px solid var(--border-subtle)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'var(--bg-elevated)'
+                  }}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -219,8 +230,8 @@ export default function VaultPage() {
               </div>
               {/* Upload Progress */}
               {uploadProgress && (
-                <div className="mt-4 p-3 rounded-lg bg-blue-50 border border-blue-200">
-                  <p className="text-sm text-blue-700">{uploadProgress}</p>
+                <div className="mt-4 p-3 rounded-lg" style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                  <p className="text-sm" style={{ color: '#60a5fa' }}>{uploadProgress}</p>
                 </div>
               )}
             </div>
@@ -234,12 +245,12 @@ export default function VaultPage() {
                   <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Uploaded Files ({uploadedFiles.length})</h2>
                   <div className="space-y-3">
                     {uploadedFiles.map((file) => (
-                      <div key={file.id} className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow">
+                      <div key={file.id} className="flex items-center justify-between p-4 rounded-lg transition-colors" style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
                         <div className="flex items-center gap-4 flex-1 min-w-0">
                           {/* File Icon */}
                           <div className="flex-shrink-0">
-                            <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-                              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)' }}>
+                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#6366f1' }}>
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                               </svg>
                             </div>
@@ -249,20 +260,20 @@ export default function VaultPage() {
                           <div className="flex-1 min-w-0">
                             <div>
                               <h3 className="text-base font-medium truncate" style={{ color: 'var(--text-primary)' }}>{file.name}</h3>
-                              {file.extension && <p className="text-xs text-gray-400">{file.extension.toUpperCase()}</p>}
+                              {file.extension && <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{file.extension.toUpperCase()}</p>}
                             </div>
                             <div className="flex items-center gap-3 mt-1">
-                              <p className="text-xs text-gray-500">
+                              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                                 {file.size > 0 ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown size'}
                               </p>
-                              <span className="text-gray-300">•</span>
-                              <p className="text-xs text-gray-500">
+                              <span style={{ color: 'var(--border-subtle)' }}>•</span>
+                              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                                 {new Date(file.uploadedAt).toLocaleDateString()} {new Date(file.uploadedAt).toLocaleTimeString()}
                               </p>
                               {file.status && (
                                 <>
-                                  <span className="text-gray-300">•</span>
-                                  <span className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                                  <span style={{ color: 'var(--border-subtle)' }}>•</span>
+                                  <span className="inline-block px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)', color: '#22c55e' }}>
                                     {file.status}
                                   </span>
                                 </>
@@ -276,7 +287,14 @@ export default function VaultPage() {
                           <button
                             onClick={() => handleDeleteFile(file.id, file.name)}
                             disabled={deletingId === file.id}
-                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            style={{ color: '#ef4444' }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                            }}
                             title="Delete file"
                           >
                             {deletingId === file.id ? (
@@ -302,14 +320,24 @@ export default function VaultPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                   </svg>
                 </div>
-                <p className="text-lg mb-2" style={{ color: 'var(--text-primary)' }}>Your Chats is Empty</p>
+                <p className="text-lg mb-2" style={{ color: 'var(--text-primary)' }}>Your Vault is Empty</p>
                 <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
                   Upload documents, images, and other files to access them in your conversations
                 </p>
                 <button
                   onClick={triggerFileSelect}
                   disabled={uploading}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    color: 'white',
+                    backgroundColor: '#6366f1'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#4f46e5'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#6366f1'
+                  }}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
