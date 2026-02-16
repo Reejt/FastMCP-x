@@ -76,6 +76,11 @@ export default function VaultPage() {
   const [uploadProgress, setUploadProgress] = useState<string>('')
   const [uploadedFiles, setUploadedFiles] = useState<VaultFile[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [sortField, setSortField] = useState<SortField>('uploadedAt')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [showUploadMenu, setShowUploadMenu] = useState<boolean>(false)
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const uploadMenuRef = useRef<HTMLDivElement>(null)
@@ -134,7 +139,7 @@ export default function VaultPage() {
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+      setSortDirection((prev: SortDirection) => prev === 'asc' ? 'desc' : 'asc')
     } else {
       setSortField(field)
       setSortDirection('asc')
@@ -461,7 +466,7 @@ export default function VaultPage() {
               {/* Upload Button with Dropdown */}
               <div className="relative" ref={uploadMenuRef}>
                 <button
-                  onClick={() => { if (!uploading) setShowUploadMenu(prev => !prev) }}
+                  onClick={() => { if (!uploading) setShowUploadMenu((prev: boolean) => !prev) }}
                   disabled={uploading}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-medium border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{
