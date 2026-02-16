@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import type { File } from '@/app/types'
 import ConnectorMention from './ConnectorMention'
@@ -19,7 +18,6 @@ interface ChatInputProps {
 }
 
 export default function ChatInput({ onSendMessage, disabled = false, workspaceName, workspaceId, userId, onCancel, isStreaming = false, variant = 'dock' }: ChatInputProps) {
-  const router = useRouter()
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [cancelDisabled, setCancelDisabled] = useState(false)
@@ -44,6 +42,9 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
   const placeholder = workspaceName
     ? `Ask anything about this workspace`
     : 'Ask anything'
+  const displayPlaceholder = activeConnector
+    ? `Ask @${activeConnector} anything...`
+    : (isHero ? 'What needs to get done?' : placeholder)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -74,6 +75,43 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
       e.preventDefault()
       handleSubmit(e)
     }
+  }
+
+  const handleInputChange = (value: string) => {
+    setInput(value)
+
+    // Detect @mention for connector autocomplete
+    const atMatch = value.match(/^@(\w*)$/)
+    if (atMatch) {
+      setShowConnectorMention(true)
+      setConnectorFilter(atMatch[1])
+    } else if (showConnectorMention && !value.startsWith('@')) {
+      setShowConnectorMention(false)
+      setConnectorFilter('')
+    } else if (showConnectorMention && value.startsWith('@')) {
+      const filter = value.slice(1).split(' ')[0]
+      if (!value.includes(' ')) {
+        setConnectorFilter(filter)
+      } else {
+        setShowConnectorMention(false)
+        setConnectorFilter('')
+      }
+    }
+  }
+
+  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showConnectorMention) {
+      // Let ConnectorMention handle navigation keys
+      if (['ArrowDown', 'ArrowUp', 'Tab'].includes(e.key)) {
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowConnectorMention(false)
+        return
+      }
+    }
+    handleKeyDown(e)
   }
 
   const openReferenceModal = () => {
@@ -338,175 +376,265 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
       >
         <motion.form
           onSubmit={handleSubmit}
-          className="mx-auto w-full"
+          className={`mx-auto w-full ${isHero ? 'max-w-[820px] xl:max-w-[760px]' : 'max-w-[860px]'}`}
           data-variant={variant}
-          style={{ maxWidth: isHero ? '920px' : '860px' }}
           initial={false}
           animate={{
             scale: 1,
           }}
           transition={{ duration: 0.3 }}
         >
-          <div
-            onClick={handleContainerClick}
-            className={`relative flex items-center transition-all cursor-text ${isHero ? 'rounded-xl px-7 py-4' : 'rounded-xl px-6 py-3.5'}`}
-            style={{ 
-              backgroundColor: '#303030',
-              boxShadow: isHero ? '0 12px 30px rgba(0, 0, 0, 0.14)' : '0 6px 16px rgba(0, 0, 0, 0.08)'
-            }}
-          >
-          {/* Attachment Icon - Left */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              openReferenceModal()
-            }}
-            className="hover:opacity-70 transition-opacity mr-4 flex-shrink-0 cursor-pointer"
-            style={{ color: 'var(--text-secondary)' }}
-            disabled={disabled}
-            aria-label="Attach file"
-          >
-            {isHero ? (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-            )}
-          </button>
+          {isHero ? (
+            <div
+              onClick={handleContainerClick}
+              className="relative cursor-text transition-all rounded-[24px] px-6 pt-4 pb-3 xl:min-h-[102px] xl:py-4 xl:rounded-[24px] flex flex-col justify-between gap-5"
+              style={{
+                backgroundColor: '#303030',
+                boxShadow: '0 12px 30px rgba(0, 0, 0, 0.14)'
+              }}
+            >
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={handleTextareaKeyDown}
+                placeholder={displayPlaceholder}
+                disabled={disabled || isStreaming}
+                rows={1}
+                className="w-full bg-transparent resize-none focus:outline-none max-h-32 overflow-y-auto text-base font-light placeholder:font-light placeholder:text-[#a3a3a3]"
+                style={{
+                  color: 'var(--text-primary)',
+                  minHeight: '32px',
+                  caretColor: 'var(--accent-primary)'
+                }}
+              />
 
-          {selectedFileIds.length > 0 && (
-            <span className="text-xs mr-4 select-none" style={{ color: 'var(--text-muted)' }}>
-              {selectedFileIds.length} files selected
-            </span>
-          )}
+              {activeConnector && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveConnector(null)
+                    setInput(input.replace(new RegExp(`^@${activeConnector}\\s*`), ''))
+                  }}
+                  className="self-start flex items-center gap-1 px-2 py-0.5 rounded-full text-xs cursor-pointer transition-opacity hover:opacity-80"
+                  style={{
+                    backgroundColor: 'var(--accent-primary)',
+                    color: 'var(--text-inverse)',
+                  }}
+                >
+                  @{activeConnector}
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
 
-          {/* Text Input */}
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => {
-              const val = e.target.value
-              setInput(val)
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openReferenceModal()
+                    }}
+                    className="flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-200 hover:bg-white/10 hover:scale-[1.03] active:scale-100 flex-shrink-0 cursor-pointer"
+                    style={{ color: 'var(--text-secondary)' }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = 'var(--text-primary)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = 'var(--text-secondary)'
+                    }}
+                    disabled={disabled}
+                    aria-label="Attach file"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 5v14m-7-7h14" />
+                    </svg>
+                  </button>
 
-              // Detect @mention for connector autocomplete
-              const atMatch = val.match(/^@(\w*)$/)
-              if (atMatch) {
-                setShowConnectorMention(true)
-                setConnectorFilter(atMatch[1])
-              } else if (showConnectorMention && !val.startsWith('@')) {
-                setShowConnectorMention(false)
-                setConnectorFilter('')
-              } else if (showConnectorMention && val.startsWith('@')) {
-                const filter = val.slice(1).split(' ')[0]
-                if (!val.includes(' ')) {
-                  setConnectorFilter(filter)
-                } else {
+                  {selectedFileIds.length > 0 && (
+                    <span className="text-xs select-none truncate" style={{ color: 'var(--text-muted)' }}>
+                      {selectedFileIds.length} files selected
+                    </span>
+                  )}
+                </div>
+
+                {isStreaming ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleCancel(e)
+                    }}
+                    disabled={cancelDisabled}
+                    className="transition-opacity disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center h-12 w-12 rounded-2xl"
+                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.06)', color: 'var(--accent-danger)' }}
+                    aria-label="Cancel streaming"
+                    title="Cancel response generation"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 4h12v12H6z" />
+                    </svg>
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    onClick={(e) => e.stopPropagation()}
+                    disabled={disabled || !input.trim()}
+                    className="transition-opacity disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center h-12 w-12 rounded-2xl"
+                    style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                      color: !disabled && input.trim() ? 'var(--text-primary)' : 'var(--text-muted)'
+                    }}
+                    aria-label="Send message"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.25} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              <ConnectorMention
+                visible={showConnectorMention}
+                filter={connectorFilter}
+                userId={userId}
+                onSelect={(connectorType) => {
+                  setActiveConnector(connectorType)
+                  setInput('')
                   setShowConnectorMention(false)
                   setConnectorFilter('')
-                }
-              }
-            }}
-            onKeyDown={(e) => {
-              if (showConnectorMention) {
-                // Let ConnectorMention handle navigation keys
-                if (['ArrowDown', 'ArrowUp', 'Tab'].includes(e.key)) {
-                  return // ConnectorMention handles these
-                }
-                if (e.key === 'Escape') {
-                  e.preventDefault()
+                  textareaRef.current?.focus()
+                }}
+                onClose={() => {
                   setShowConnectorMention(false)
-                  return
-                }
-              }
-              handleKeyDown(e)
-            }}
-            placeholder={activeConnector ? `Ask @${activeConnector} anything...` : placeholder}
-            disabled={disabled || isStreaming}
-            rows={1}
-            className={`flex-1 bg-transparent resize-none focus:outline-none max-h-32 overflow-y-auto ${isHero ? 'text-base' : 'text-sm'}`}
-            style={{ 
-              color: 'var(--text-primary)', 
-              minHeight: isHero ? '30px' : '26px',
-              caretColor: 'var(--accent-primary)'
-            }}
-          />
-
-          {/* Active connector chip */}
-          {activeConnector && (
-            <button
-              type="button"
-              onClick={() => {
-                setActiveConnector(null)
-                setInput(input.replace(new RegExp(`^@${activeConnector}\\s*`), ''))
-              }}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs mr-2 cursor-pointer transition-opacity hover:opacity-80"
-              style={{
-                backgroundColor: 'var(--accent-primary)',
-                color: 'var(--text-inverse)',
-              }}
-            >
-              @{activeConnector}
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-
-          {/* Connector @mention dropdown */}
-          <ConnectorMention
-            visible={showConnectorMention}
-            filter={connectorFilter}
-            userId={userId}
-            onSelect={(connectorType) => {
-              setActiveConnector(connectorType)
-              setInput('')
-              setShowConnectorMention(false)
-              setConnectorFilter('')
-              textareaRef.current?.focus()
-            }}
-            onClose={() => {
-              setShowConnectorMention(false)
-              setConnectorFilter('')
-            }}
-          />
-
-          {/* Send/Cancel Button - Right */}
-          {isStreaming ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleCancel(e)
-              }}
-              disabled={cancelDisabled}
-              className="hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity ml-4 flex-shrink-0"
-              style={{ color: 'var(--accent-danger)' }}
-              aria-label="Cancel streaming"
-              title="Cancel response generation"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M6 4h12v12H6z" />
-              </svg>
-            </button>
+                  setConnectorFilter('')
+                }}
+              />
+            </div>
           ) : (
-            <button
-              type="submit"
-              onClick={(e) => e.stopPropagation()}
-              disabled={disabled || !input.trim()}
-              className="hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity ml-4 flex-shrink-0"
-              style={{ color: !disabled && input.trim() ? 'var(--accent-primary)' : 'var(--text-muted)' }}
-              aria-label="Send message"
+            <div
+              onClick={handleContainerClick}
+              className="relative flex items-center transition-all cursor-text rounded-xl px-6 py-3.5"
+              style={{
+                backgroundColor: '#303030',
+                boxShadow: '0 6px 16px rgba(0, 0, 0, 0.08)'
+              }}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-              </svg>
-            </button>
+              {/* Attachment Icon - Left */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openReferenceModal()
+                }}
+                className="hover:opacity-70 transition-opacity mr-4 flex-shrink-0 cursor-pointer"
+                style={{ color: 'var(--text-secondary)' }}
+                disabled={disabled}
+                aria-label="Attach file"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
+
+              {selectedFileIds.length > 0 && (
+                <span className="text-xs mr-4 select-none" style={{ color: 'var(--text-muted)' }}>
+                  {selectedFileIds.length} files selected
+                </span>
+              )}
+
+              {/* Text Input */}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={handleTextareaKeyDown}
+                placeholder={displayPlaceholder}
+                disabled={disabled || isStreaming}
+                rows={1}
+                className="flex-1 bg-transparent resize-none focus:outline-none max-h-32 overflow-y-auto text-sm"
+                style={{
+                  color: 'var(--text-primary)',
+                  minHeight: '26px',
+                  caretColor: 'var(--accent-primary)'
+                }}
+              />
+
+              {/* Active connector chip */}
+              {activeConnector && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveConnector(null)
+                    setInput(input.replace(new RegExp(`^@${activeConnector}\\s*`), ''))
+                  }}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs mr-2 cursor-pointer transition-opacity hover:opacity-80"
+                  style={{
+                    backgroundColor: 'var(--accent-primary)',
+                    color: 'var(--text-inverse)',
+                  }}
+                >
+                  @{activeConnector}
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+
+              {/* Connector @mention dropdown */}
+              <ConnectorMention
+                visible={showConnectorMention}
+                filter={connectorFilter}
+                userId={userId}
+                onSelect={(connectorType) => {
+                  setActiveConnector(connectorType)
+                  setInput('')
+                  setShowConnectorMention(false)
+                  setConnectorFilter('')
+                  textareaRef.current?.focus()
+                }}
+                onClose={() => {
+                  setShowConnectorMention(false)
+                  setConnectorFilter('')
+                }}
+              />
+
+              {/* Send/Cancel Button - Right */}
+              {isStreaming ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleCancel(e)
+                  }}
+                  disabled={cancelDisabled}
+                  className="hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity ml-4 flex-shrink-0"
+                  style={{ color: 'var(--accent-danger)' }}
+                  aria-label="Cancel streaming"
+                  title="Cancel response generation"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 4h12v12H6z" />
+                  </svg>
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  onClick={(e) => e.stopPropagation()}
+                  disabled={disabled || !input.trim()}
+                  className="hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity ml-4 flex-shrink-0"
+                  style={{ color: !disabled && input.trim() ? 'var(--accent-primary)' : 'var(--text-muted)' }}
+                  aria-label="Send message"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                  </svg>
+                </button>
+              )}
+            </div>
           )}
-          </div>
         </motion.form>
       </div>
       {referenceModal}

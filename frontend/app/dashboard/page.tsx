@@ -987,14 +987,14 @@ export default function DashboardPage() {
           ) : (
             <motion.div
               key="empty"
-              className="flex-1 flex flex-col items-center justify-center px-6"
+              className="flex-1 flex flex-col items-center justify-center px-6 -mt-2 xl:-mt-20"
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.25 }}
             >
-              <div className="w-full max-w-3xl text-center mb-6">
-                <h1 className="text-2xl md:text-3xl font-medium" style={{ color: 'var(--text-primary)' }}>
+              <div className="w-full max-w-3xl text-center mb-6 xl:mb-8">
+                <h1 className="text-2xl md:text-3xl font-light" style={{ color: 'var(--text-primary)' }}>
                   {headlineText}
                 </h1>
               </div>
