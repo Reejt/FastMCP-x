@@ -600,8 +600,33 @@ class SafeCodeExecutor:
                 'result': None
             }
             
+            # ✅ Fixed: Whitelist essential built-in types/functions for code execution
+            # This allows str(), int(), float(), etc. while keeping execution sandboxed
+            safe_builtins = {
+                'str': str,
+                'int': int,
+                'float': float,
+                'bool': bool,
+                'list': list,
+                'dict': dict,
+                'tuple': tuple,
+                'set': set,
+                'len': len,
+                'range': range,
+                'sum': sum,
+                'min': min,
+                'max': max,
+                'sorted': sorted,
+                'enumerate': enumerate,
+                'zip': zip,
+                'any': any,
+                'all': all,
+                'round': round,
+                'abs': abs,
+            }
+            
             # Execute the code
-            exec(code, {"__builtins__": {}}, local_vars)
+            exec(code, {"__builtins__": safe_builtins}, local_vars)
             
             result_df = local_vars.get('result')
             
