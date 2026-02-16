@@ -2,6 +2,7 @@
 from fastmcp import FastMCP
 import os
 import shutil
+from typing import Optional
 from utils.file_parser import extract_and_store_file_content
 from supabase import create_client, Client
 from datetime import datetime
@@ -41,7 +42,7 @@ if SUPABASE_URL and SUPABASE_KEY:
 
 # Import will be done after query_handler is fully loaded to avoid circular import
 
-def ingest_file(file_path: str, user_id: str, workspace_id: str = None, base64_content: str = None, file_name: str = None):
+def ingest_file(file_path: str, user_id: str, workspace_id: Optional[str] = None, base64_content: Optional[str] = None, file_name: Optional[str] = None):
     """
     Implementation function for file ingestion
     

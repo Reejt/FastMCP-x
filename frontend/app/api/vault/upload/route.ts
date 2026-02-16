@@ -48,48 +48,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If no workspaceId provided, get or create default workspace
+    // Keep workspace_id as provided (null = main vault, otherwise use specified workspace)
     let _finalWorkspaceId: string | null = workspaceId || null;
 
-    if (!_finalWorkspaceId) {
-      // Get or create default workspace
-      try {
-        const { data: workspaces, error: selectError } = await supabase
-          .from('workspaces')
-          .select('id')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: true })
-          .limit(1);
-
-        if (selectError || !workspaces || workspaces.length === 0) {
-          // Create default workspace
-          const { data: newWorkspace, error: createError } = await supabase
-            .from('workspaces')
-            .insert({
-              name: 'Default',
-              description: 'Your default workspace for vault files',
-              user_id: user.id
-            })
-            .select('id')
-            .single();
-
-          if (createError || !newWorkspace) {
-            return NextResponse.json(
-              { error: 'Failed to create default workspace' },
-              { status: 500 }
-            );
-          }
-          _finalWorkspaceId = newWorkspace.id;
-        } else {
-          _finalWorkspaceId = workspaces[0].id;
-        }
-      } catch (error) {
-        return NextResponse.json(
-          { error: 'Failed to handle workspace' },
-          { status: 500 }
-        );
-      }
-    } else {
+    // Only validate workspace_id if explicitly provided
+    if (_finalWorkspaceId) {
       // Validate provided workspace_id exists and belongs to user
       const { data: workspace, error: workspaceError } = await supabase
         .from('workspaces')
@@ -352,9 +315,23 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // ✅ CRITICAL FIX: Delete associated embeddings to prevent orphaned vectors
+    // This ensures deleted files don't appear in search results
+    const { error: embeddingError } = await supabase
+      .from('document_embeddings')
+      .delete()
+      .eq('file_id', id);
+
+    if (embeddingError) {
+      console.error('⚠️  Warning: Failed to delete embeddings for file:', embeddingError);
+      // Log but don't fail - the file is still deleted in file_upload table
+    } else {
+      console.log('✅ Deleted embeddings for file:', id);
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'File deleted successfully',
+      message: 'File and associated embeddings deleted successfully',
       id: id
     });
   } catch (error) {

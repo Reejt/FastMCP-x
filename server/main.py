@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 from fastmcp import FastMCP
 import sys
 import os
@@ -53,7 +54,7 @@ print("✅ FastMCP Server initialized")
 
 
 @mcp.tool
-def ingest_file_tool(file_path: str, user_id: str, workspace_id: str = None, base64_content: str = None, file_name: str = None) -> str:
+def ingest_file_tool(file_path: str, user_id: str, workspace_id: Optional[str] = None, base64_content: Optional[str] = None, file_name: Optional[str] = None) -> str:
     """
     Ingest a file into the system
     
@@ -74,7 +75,7 @@ def ingest_file_tool(file_path: str, user_id: str, workspace_id: str = None, bas
         return error_msg
 
 @mcp.tool
-def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id: str = None, selected_file_ids: str = None):
+def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id: Optional[str] = None, selected_file_ids: Optional[str] = None):
     """
     Answer queries with conversation history support and file filtering
     
@@ -99,7 +100,7 @@ def answer_query_tool(query: str, conversation_history: str = "[]", workspace_id
 
 
 @mcp.tool
-async def web_search_tool(query: str, conversation_history: str = "[]", workspace_id: str = None) -> str:
+async def web_search_tool(query: str, conversation_history: str = "[]", workspace_id: Optional[str] = None) -> str:
     """
     Perform an enhanced web search with automatic decision-making.
     Uses SearchDecisionEngine + Tavily API for optimized results.
@@ -131,7 +132,7 @@ async def web_search_tool(query: str, conversation_history: str = "[]", workspac
 
 
 @mcp.tool
-def query_csv_with_context_tool(query: str, file_name: str, file_path: str = None, conversation_history: str = "[]", workspace_id: str = None, selected_file_ids: str = None) -> str:
+def query_csv_with_context_tool(query: str, file_name: str, file_path: Optional[str] = None, conversation_history: str = "[]", workspace_id: Optional[str] = None, selected_file_ids: Optional[str] = None) -> str:
     """
     Query CSV data using keyword filtering and LLM reasoning with conversation context
     
@@ -165,7 +166,7 @@ def query_csv_with_context_tool(query: str, file_name: str, file_path: str = Non
 
 
 @mcp.tool
-def query_excel_with_context_tool(query: str, file_name: str, file_path: str = None, conversation_history: str = "[]", workspace_id: str = None, selected_file_ids: str = None)-> str:
+def query_excel_with_context_tool(query: str, file_name: str, file_path: Optional[str] = None, conversation_history: str = "[]", workspace_id: Optional[str] = None, selected_file_ids: Optional[str] = None) -> str:
     """
     Query Excel data using keyword filtering and LLM reasoning with conversation context
     
@@ -297,7 +298,7 @@ def get_instruction_preview_tool(workspace_id: str) -> str:
 
 
 @mcp.tool
-def clear_instruction_cache_tool(workspace_id: str = None) -> str:
+def clear_instruction_cache_tool(workspace_id: Optional[str] = None) -> str:
     """
     Clear cached instructions to force reload from database
     

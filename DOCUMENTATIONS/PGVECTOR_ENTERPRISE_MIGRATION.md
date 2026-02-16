@@ -285,7 +285,9 @@ RETURNS TABLE (
   file_name text,
   file_id uuid,
   file_path text,
-  similarity_score float
+  similarity_score float,
+  workspace_id uuid,
+  uploaded_at timestamp
 ) LANGUAGE plpgsql STABLE AS $$
 BEGIN
   RETURN QUERY
@@ -295,12 +297,15 @@ BEGIN
     fu.file_name,
     de.file_id,
     fu.file_path,
-    (1 - (de.embedding <=> query_embedding)) as similarity_score
+    (1 - (de.embedding <=> query_embedding)) as similarity_score,
+    fu.workspace_id,
+    fu.uploaded_at
   FROM document_embeddings de
   LEFT JOIN file_upload fu ON de.file_id = fu.id
   WHERE 1 - (de.embedding <=> query_embedding) >= match_threshold
     AND (file_filter IS NULL OR fu.file_name = file_filter)
     AND (file_ids IS NULL OR de.file_id = ANY(file_ids))
+    AND fu.deleted_at IS NULL  -- ✅ CRITICAL FIX: Filter out deleted files
   ORDER BY de.embedding <=> query_embedding
   LIMIT match_count;
 END;

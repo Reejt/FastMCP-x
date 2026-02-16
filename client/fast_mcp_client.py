@@ -1,6 +1,7 @@
 # client/fast_mcp_client.py
 import asyncio
 import os
+from typing import Optional
 from fastmcp import Client
 
 # MCP Server URL - defaults to localhost for local development
@@ -9,7 +10,7 @@ MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/sse")
 FASTMCP_SERVER_URL = MCP_SERVER_URL
 print(f"MCP Server URL: {FASTMCP_SERVER_URL}")
 
-async def answer_query(query: str, conversation_history: list = None, workspace_id: str = None, selected_file_ids: list = None):
+async def answer_query(query: str, conversation_history: Optional[list] = None, workspace_id: Optional[str] = None, selected_file_ids: Optional[list] = None):
     """
     Answer a query using semantic search and LLM with document context
     
@@ -53,7 +54,7 @@ async def answer_query(query: str, conversation_history: list = None, workspace_
         return response
 
         
-async def ingest_file(file_path: str, user_id: str, workspace_id: str = None, base64_content: str = None, file_name: str = None):
+async def ingest_file(file_path: str, user_id: str, workspace_id: Optional[str] = None, base64_content: Optional[str] = None, file_name: Optional[str] = None):
     """
     Ingest a document into the system
     
@@ -86,7 +87,7 @@ async def ingest_file(file_path: str, user_id: str, workspace_id: str = None, ba
         return response
                
                     
-async def web_search(search_query: str, conversation_history: list = None, workspace_id: str = None):
+async def web_search(search_query: str, conversation_history: Optional[list] = None, workspace_id: Optional[str] = None):
     """Perform web search using integrated web search tool"""
     import json
     async with Client(FASTMCP_SERVER_URL) as client:
@@ -172,7 +173,7 @@ async def get_instruction_preview(workspace_id: str):
         return response
 
 
-async def clear_instruction_cache(workspace_id: str = None):
+async def clear_instruction_cache(workspace_id: Optional[str] = None):
     """
     Clear cached instructions to force reload from database
     
@@ -200,7 +201,7 @@ async def clear_instruction_cache(workspace_id: str = None):
         return response
 
 
-async def query_csv_with_context(query: str, file_name: str, file_path: str = None, conversation_history: list = None, workspace_id: str = None, selected_file_ids: list = None):
+async def query_csv_with_context(query: str, file_name: str, file_path: Optional[str] = None, conversation_history: Optional[list] = None, workspace_id: Optional[str] = None, selected_file_ids: Optional[list] = None):
     """
     Query CSV data using keyword filtering and LLM reasoning with conversation context
     
@@ -255,7 +256,7 @@ async def query_csv_with_context(query: str, file_name: str, file_path: str = No
         return response
 
 
-async def query_excel_with_context(query: str, file_name: str, file_path: str = None, conversation_history: list = None, workspace_id: str = None, selected_file_ids: list = None):
+async def query_excel_with_context(query: str, file_name: str, file_path: Optional[str] = None, conversation_history: Optional[list] = None, workspace_id: Optional[str] = None, selected_file_ids: Optional[list] = None):
     """
     Query Excel data using keyword filtering and LLM reasoning with conversation context
     

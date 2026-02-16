@@ -15,7 +15,6 @@ export default function VaultPage() {
   const [uploadProgress, setUploadProgress] = useState<string>('')
   const [uploadedFiles, setUploadedFiles] = useState<{ id: string; name: string; extension?: string; size: number; uploadedAt: string; filePath: string; status: string }[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [defaultWorkspaceId, setDefaultWorkspaceId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -35,19 +34,6 @@ export default function VaultPage() {
         email: authUser.email || 'Unknown',
         role: userRole
       })
-
-      // Get or create default workspace
-      try {
-        const response = await fetch('/api/workspace/default')
-        if (response.ok) {
-          const result = await response.json()
-          if (result.success && result.workspace) {
-            setDefaultWorkspaceId(result.workspace.id)
-          }
-        }
-      } catch (error) {
-        console.error('Error getting default workspace:', error)
-      }
 
       // Load existing documents from Supabase
       await loadDocuments()
@@ -111,9 +97,6 @@ export default function VaultPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      if (defaultWorkspaceId) {
-        formData.append('workspaceId', defaultWorkspaceId)
-      }
 
       const response = await fetch('/api/vault/upload', {
         method: 'POST',

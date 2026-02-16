@@ -2,7 +2,6 @@
 
 import { useRouter, useParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { flushSync } from 'react-dom'  // ✅ ADD THIS for immediate updates
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace } from '@/app/types'
@@ -524,7 +523,11 @@ export default function WorkspacePage() {
 
     // Cancel any previous streaming request
     if (abortController) {
-      abortController.abort('New request started')
+      try {
+        abortController.abort('New request started')
+      } catch (e) {
+        // Ignore abort errors
+      }
     }
 
     const newAbortController = new AbortController()
@@ -626,16 +629,15 @@ export default function WorkspacePage() {
                       // Append chunk to accumulated content
                       accumulatedContent += data.chunk
 
-                      // ✅ FORCE IMMEDIATE UPDATE - Don't batch with React
-                      flushSync(() => {
-                        setMessages((prev) =>
-                          prev.map((msg) =>
-                            msg.id === assistantMessageId
-                              ? { ...msg, content: accumulatedContent, isStreaming: true }
-                              : msg
-                          )
+                      // ✅ Batch updates during streaming to prevent infinite loops
+                      // Use regular setState instead of flushSync to allow React batching
+                      setMessages((prev) =>
+                        prev.map((msg) =>
+                          msg.id === assistantMessageId
+                            ? { ...msg, content: accumulatedContent, isStreaming: true }
+                            : msg
                         )
-                      })
+                      )
                     } else if (data.done) {
                       // Streaming complete - save assistant response to Supabase
                       if (accumulatedContent && !streamError) {

@@ -69,7 +69,7 @@ export default function MarkdownRenderer({ content, className = '', style }: Mar
         console.log('✅ First diagram:', detectedDiagrams[0])
       }
     }
-  }, [content])
+  }, [content, detectedDiagrams, hasDiagrams])
 
   const copyToClipboard = useCallback(async (code: string) => {
     try {

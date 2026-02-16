@@ -95,7 +95,7 @@ def get_semantic_model():
 
 def semantic_search_with_metadata(query: str, top_k: int = 5, min_similarity: float = 0.2, workspace_id: str = None, selected_file_ids: list = None):
     """
-    ENHANCED: Semantic search with rich metadata for intelligent routing.
+    ENHANCED: Semantic search with rich metadata for intelligent routing AND citations.
     
     Performs pgvector similarity search AND returns metadata (file_type, workspace_id, uploaded_at, etc.)
     automatically populates detected_files for ALL selected files, even if no semantic matches exist.
@@ -109,7 +109,8 @@ def semantic_search_with_metadata(query: str, top_k: int = 5, min_similarity: fl
     
     Returns:
         Dict with:
-        - 'results': List of (content, similarity, filename, file_path, uploaded_at) tuples
+        - 'results': List of dicts with keys: content, similarity, filename, file_path, uploaded_at, 
+          chunk_index, page_number (optional), section_title (optional), citation_info
         - 'detected_files': Dict mapping file_id -> {file_name, file_type, file_path, workspace_id, uploaded_at}
           (includes metadata for ALL selected files, not just semantic matches)
         - 'file_types': List of detected file types ('csv', 'xlsx', 'txt', etc.)
@@ -144,13 +145,36 @@ def semantic_search_with_metadata(query: str, top_k: int = 5, min_similarity: fl
         
         if hasattr(response, 'data') and response.data:
             for row in response.data:
-                results.append((
-                    row['chunk_text'],
-                    float(row['similarity_score']),
-                    row['file_name'],
-                    row.get('file_path'),
-                    row.get('uploaded_at')  # Include timestamp for time-based queries
-                ))
+                # Extract citation metadata from metadata JSONB field
+                metadata = row.get('metadata', {})
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except (json.JSONDecodeError, TypeError):
+                        metadata = {}
+                
+                # Build citation info from available metadata
+                citation_info = {
+                    'file_name': row['file_name'],
+                    'file_path': row.get('file_path'),
+                    'uploaded_at': row.get('uploaded_at'),
+                    'chunk_index': row.get('chunk_index', 0),
+                    'similarity_score': float(row['similarity_score']),
+                    # Optional citation fields (from metadata JSONB)
+                    'page_number': metadata.get('page_number'),
+                    'section_title': metadata.get('section_title'),
+                    'subsection_title': metadata.get('subsection_title'),
+                    'paragraph_index': metadata.get('paragraph_index'),
+                    'document_version': metadata.get('document_version'),
+                    'effective_date': metadata.get('effective_date')
+                }
+                
+                results.append({
+                    'content': row['chunk_text'],
+                    'similarity': float(row['similarity_score']),
+                    'filename': row['file_name'],
+                    'citation_info': citation_info
+                })
                 
                 # Extract metadata
                 file_id = row.get('file_id')
@@ -168,7 +192,7 @@ def semantic_search_with_metadata(query: str, top_k: int = 5, min_similarity: fl
                             'file_type': file_type,
                             'file_path': row.get('file_path'),
                             'workspace_id': row.get('workspace_id'),
-                            'uploaded_at': row.get('uploaded_at')  # Include timestamp metadata
+                            'uploaded_at': row.get('uploaded_at')
                         }
             
             print(f"✅ Found {len(results)} chunks from {len(detected_files)} file(s)")
@@ -522,10 +546,48 @@ def fetch_full_document_by_file_id(file_id: str):
         return ""
 
 
+def _format_citation(citation_info: dict):
+    """
+    Format citation metadata into a readable citation string.
+    
+    Args:
+        citation_info: Dictionary with citation metadata
+        
+    Returns:
+        Formatted citation string for use in LLM context
+    """
+    parts = []
+    parts.append(f"📄 {citation_info.get('file_name', 'Unknown Document')}")
+    
+    if citation_info.get('page_number'):
+        parts.append(f"Page {citation_info['page_number']}")
+    
+    if citation_info.get('section_title'):
+        section = citation_info['section_title']
+        if citation_info.get('subsection_title'):
+            section += f" → {citation_info['subsection_title']}"
+        parts.append(section)
+    
+    if citation_info.get('uploaded_at'):
+        parts.append(f"(Updated: {citation_info['uploaded_at'][:10]})")
+    
+    confidence = citation_info.get('similarity_score', 0)
+    if confidence:
+        confidence_pct = int(confidence * 100)
+        parts.append(f"Relevance: {confidence_pct}%")
+    
+    return " | ".join(parts)
+
+
 async def query_with_context(query: str, max_chunks: int = 5, include_context_preview: bool = True, conversation_history: list = None, stream: bool = False, workspace_id: str = None, selected_file_ids: list = None, abort_event=None):
     """
     Query the LLM with relevant document chunks as context using pgvector semantic search (async version)
     Text documents only - CSV/Excel files are handled separately via their dedicated functions
+    
+    ENHANCED WITH CITATIONS:
+    - Each document chunk includes full citation metadata (page numbers, sections, dates)
+    - LLM receives formatted citations for proper source attribution
+    - System prompt instructs LLM to cite sources in responses
     
     FALLBACK MECHANISM:
     - If file(s) exist but all scores are low (< 0.25), includes ALL embeddings from those files
@@ -542,23 +604,31 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
         selected_file_ids: Optional list of file IDs to filter search results
         abort_event: threading.Event to signal cancellation (optional)
     """
-    # Get relevant chunks using pgvector database-side search with metadata
+    # Get relevant chunks using pgvector database-side search with metadata and citation info
     search_result = semantic_search_with_metadata(query, top_k=max_chunks, min_similarity=0.2, workspace_id=workspace_id, selected_file_ids=selected_file_ids)
     semantic_results = search_result.get('results', [])
     detected_files = search_result.get('detected_files', {})
     
     # Check if semantic results have weak similarity scores
-    has_weak_matches = any(score < 0.25 for _, score, _, _, _ in semantic_results)
+    has_weak_matches = any(result['similarity'] < 0.25 for result in semantic_results if isinstance(result, dict))
     
     # FALLBACK: If selected files exist but semantic search yields weak results, fetch full content
     context_parts = []
+    citations = []  # Track citations for the response
     
     if semantic_results and not has_weak_matches:
-        # Build context from strong semantic search results (max 2000 chars per chunk)
-        context_parts = [
-            f"Document: {filename}\nScore:{score:.2f}\nContent: {content[:2000]}{'...' if len(content) > 2000 else ''}"
-            for content, score, filename, file_path, uploaded_at in semantic_results
-        ]
+        # Build context from strong semantic search results with citations
+        for result in semantic_results:
+            if isinstance(result, dict):
+                content = result.get('content', '')
+                citation_info = result.get('citation_info', {})
+                citation_str = _format_citation(citation_info)
+                
+                # Truncate content to 2000 chars for context window
+                truncated_content = content[:2000] + ('...' if len(content) > 2000 else '')
+                
+                context_parts.append(f"**{citation_str}**\n{truncated_content}")
+                citations.append(citation_info)
     
     # Fallback: If weak matches OR no results but files are selected, fetch full document content
     if (not semantic_results or has_weak_matches) and selected_file_ids:
@@ -577,9 +647,19 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
             if full_content:
                 # Truncate to reasonable length (5000 chars per file for fallback)
                 truncated = full_content[:5000]
+                
+                # Format citation for fallback content
+                citation_info = {
+                    'file_name': file_info.get('file_name', 'Unknown'),
+                    'uploaded_at': file_info.get('uploaded_at'),
+                    'similarity_score': 1.0  # Fallback uses full document, so 100% relevant
+                }
+                citation_str = _format_citation(citation_info)
+                
                 context_parts.append(
-                    f"📄 Document: {file_info.get('file_name', 'Unknown')}\nContent (Full Context):\n{truncated}{'...' if len(full_content) > 5000 else ''}"
+                    f"**{citation_str}** (Full Document as Fallback)\n{truncated}{'...' if len(full_content) > 5000 else ''}"
                 )
+                citations.append(citation_info)
                 print(f"   ✅ Loaded {len(full_content)} chars from {file_info.get('file_name', 'Unknown')}")
             else:
                 print(f"   ⚠️  No content found for file {file_info.get('file_name', file_id)}")
@@ -591,17 +671,20 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
     
     context = "\n\n---\n\n".join(context_parts)
     
-    # Build enhanced query - if context is empty, use query directly
+    # Build enhanced query with citations - if context is empty, use query directly
     if not context.strip():
         enhanced_query = query
+        system_prompt = None
     else:
-        enhanced_query = f"""Answer this question using the document content provided below: {query}
+        enhanced_query = f"""Answer this question using the document content provided below. Cite your sources using the format: [Source: Document Name, Page X, Section Y]
+
+Question: {query}
 
 DOCUMENT CONTENT:
 {context}
 """
     
-    # Query the LLM with context and conversation history (async)
+    # Query the LLM with context, citations, and system prompt (async)
     # ✅ Pass abort_event for cancellation support
     return await query_model(enhanced_query, conversation_history=conversation_history, stream=stream, abort_event=abort_event)
 
