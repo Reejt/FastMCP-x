@@ -247,7 +247,29 @@ export default function VaultPage() {
       }
 
       setUploadProgress('File processed successfully!')
-      await loadDocuments()
+
+      // Optimistically add the file to the list immediately
+      if (result.file) {
+        const displayName = result.file.file_name
+        const lastDotIndex = displayName.lastIndexOf('.')
+        const extension = lastDotIndex > -1 ? displayName.substring(lastDotIndex + 1).toLowerCase() : ''
+        const nameWithoutExtension = lastDotIndex > -1 ? displayName.substring(0, lastDotIndex) : displayName
+
+        const newFile: VaultFile = {
+          id: result.file.id,
+          name: nameWithoutExtension,
+          extension: extension,
+          size: result.file.size_bytes || 0,
+          uploadedAt: result.file.uploaded_at || new Date().toISOString(),
+          filePath: result.file.file_path,
+          status: result.file.status
+        }
+        setUploadedFiles(prev => [newFile, ...prev])
+      } else {
+        // Fallback: reload all documents if the API doesn't return the file
+        await loadDocuments()
+      }
+
       setTimeout(() => setUploadProgress(''), 3000)
     } catch (error) {
       console.error('Upload error:', error)
@@ -344,14 +366,32 @@ export default function VaultPage() {
         if (!response.ok) {
           throw new Error(result.error || 'Upload failed')
         }
+
+        // Optimistically add the file to the list immediately
+        if (result.file) {
+          const displayName = result.file.file_name
+          const lastDotIndex = displayName.lastIndexOf('.')
+          const extension = lastDotIndex > -1 ? displayName.substring(lastDotIndex + 1).toLowerCase() : ''
+          const nameWithoutExtension = lastDotIndex > -1 ? displayName.substring(0, lastDotIndex) : displayName
+
+          const newFile: VaultFile = {
+            id: result.file.id,
+            name: nameWithoutExtension,
+            extension: extension,
+            size: result.file.size_bytes || 0,
+            uploadedAt: result.file.uploaded_at || new Date().toISOString(),
+            filePath: result.file.file_path,
+            status: result.file.status
+          }
+          setUploadedFiles(prev => [newFile, ...prev])
+        }
+
         successCount++
       } catch (error) {
         console.error(`Failed to upload ${file.name}:`, error)
         failCount++
       }
     }
-
-    await loadDocuments()
 
     const msg = failCount > 0
       ? `Uploaded ${successCount} file(s), ${failCount} failed.`
