@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { flushSync } from 'react-dom'  // ✅ ADD THIS for immediate updates
 import dynamic from 'next/dynamic'
@@ -49,6 +49,9 @@ export default function DashboardPage() {
   const [activeInstruction, setActiveInstruction] = useState<WorkspaceInstruction | null>(null)
   const [showInstructionBanner, setShowInstructionBanner] = useState(false)
   const [isGeneralChat, setIsGeneralChat] = useState(!workspaceId)
+  const [generalChatSessions, setGeneralChatSessions] = useState<ChatSession[]>([])
+  const [currentGeneralSessionId, setCurrentGeneralSessionId] = useState<string>('')
+  const isCreatingSessionRef = useRef(false) // Track if we're already creating a session
 
   // Check if the query is diagram-related - memoized to avoid infinite loops
   // ✅ Uses diagram-client utility for consistent detection
@@ -139,39 +142,241 @@ export default function DashboardPage() {
     fetchActiveInstruction()
   }, [workspaceId])
 
+  // Extract general session ID from search params
+  const generalSessionId = searchParams.get('general')
+
   // Load chat history - workspace chat or general chat
   useEffect(() => {
     if (!user) return // Wait for user to be loaded
 
+    console.log('Dashboard effect running - generalSessionId:', generalSessionId, 'workspaceId:', workspaceId)
+
     if (workspaceId) {
       loadWorkspaceChat()
     } else {
-      loadGeneralChat()
+      // For general chat:
+      if (generalSessionId) {
+        // If a session ID is specified, load that session's messages
+        console.log('Loading existing session:', generalSessionId)
+        loadGeneralChat()
+      } else {
+        // If no session ID, check if there are existing sessions
+        // Only create a new session if no sessions exist
+        console.log('No session ID - checking for existing sessions...')
+        loadOrCreateGeneralSession()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, user?.id]) // Only re-run when workspace or user ID changes
+  }, [workspaceId, user?.id, generalSessionId]) // Re-run when session ID changes
+
+  // Load most recent general chat session or create one if none exist
+  const loadOrCreateGeneralSession = async () => {
+    if (isCreatingSessionRef.current) {
+      console.log('Session operation already in progress, skipping...')
+      return
+    }
+
+    try {
+      // Fetch existing general chat sessions
+      const sessionsResponse = await fetch('/api/chats/general/sessions')
+      if (!sessionsResponse.ok) {
+        throw new Error('Failed to load general chat sessions')
+      }
+
+      const sessionsResult = await sessionsResponse.json()
+      const sessions = sessionsResult.sessions || []
+      
+      if (sessions.length > 0) {
+        // Load the most recent session (first in list)
+        console.log('Found existing sessions, loading most recent:', sessions[0].id)
+        router.push(`/dashboard?general=${sessions[0].id}`)
+      } else {
+        // No sessions exist - create a new one
+        console.log('No existing sessions found - creating new general chat session...')
+        await createNewGeneralSession()
+      }
+    } catch (error) {
+      console.error('Error in loadOrCreateGeneralSession:', error)
+      // Fallback: create a new session if fetching fails
+      await createNewGeneralSession()
+    }
+  }
+
+  // Create a new general chat session
+  const createNewGeneralSession = async () => {
+    // Prevent duplicate calls
+    if (isCreatingSessionRef.current) {
+      console.log('Session creation already in progress, skipping...')
+      return
+    }
+
+    isCreatingSessionRef.current = true
+    try {
+      console.log('Creating new general chat session...')
+      // Create a new session with "New Chat" title
+      // Title will be auto-generated after the first message is sent
+      const createResponse = await fetch('/api/chats/general/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'New Chat' })
+      })
+
+      if (!createResponse.ok) {
+        throw new Error('Failed to create general chat session')
+      }
+
+      const createResult = await createResponse.json()
+      const newSession = createResult.session
+      console.log('New session created:', newSession.id, 'with title:', 'New Chat')
+
+      // Immediately update state with the new empty session
+      setMessages([])
+      setCurrentGeneralSessionId(newSession.id)
+      setCurrentChatId(newSession.id)
+      setIsGeneralChat(true)
+      setCurrentWorkspaceName('General Chat')
+      setCurrentWorkspace(null)
+      setWorkspaceChatSessions([])
+      setActiveInstruction(null)
+      setShowInstructionBanner(false)
+      
+      // Update sessions in chatSessions map
+      setChatSessions({
+        [newSession.id]: {
+          id: newSession.id,
+          user_id: newSession.user_id || '',
+          workspace_id: null, // General chat sessions don't belong to a workspace
+          title: newSession.title,
+          created_at: newSession.created_at,
+          updated_at: newSession.updated_at,
+          deleted_at: newSession.deleted_at,
+          messages: [],
+          is_general_chat: true
+        }
+      })
+      
+      // Update sessions list for sidebar
+      setGeneralChatSessions([newSession])
+
+      // Then navigate to the new session
+      console.log('Navigating to new session:', newSession.id)
+      router.push(`/dashboard?general=${newSession.id}`)
+    } catch (error) {
+      console.error('Error creating new chat session:', error)
+      setMessages([])
+    } finally {
+      isCreatingSessionRef.current = false
+    }
+  }
 
   const loadGeneralChat = async () => {
-    // General chat is ephemeral - start with empty messages, no persistence
-    const newSession: ChatSession = {
-      id: 'general_chat',
-      workspace_id: '',
-      user_id: '',
-      title: 'General Chat',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      deleted_at: null,
-      messages: []
+    if (!user || !generalSessionId) {
+      setMessages([])
+      return
     }
-    setMessages([])
-    setCurrentChatId(newSession.id)
-    setChatSessions(prev => ({ ...prev, [newSession.id]: newSession }))
-    setIsGeneralChat(true)
-    setCurrentWorkspaceName('General Chat')
-    setCurrentWorkspace(null)
-    setWorkspaceChatSessions([])
-    setActiveInstruction(null)
-    setShowInstructionBanner(false)
+
+    try {
+      console.log('Loading general chat session:', generalSessionId)
+      
+      // Load list of general chat sessions
+      const sessionsResponse = await fetch('/api/chats/general/sessions')
+      if (!sessionsResponse.ok) {
+        throw new Error('Failed to load general chat sessions')
+      }
+
+      const sessionsResult = await sessionsResponse.json()
+      const sessions = sessionsResult.sessions || []
+      console.log('Available sessions:', sessions.map((s: any) => ({ id: s.id, title: s.title })))
+
+      // Find the requested session
+      let currentSession = sessions.find((s: ChatSession) => s.id === generalSessionId)
+      
+      if (!currentSession) {
+        console.warn('Session not found in list, trying to fetch directly...')
+        // Try to fetch the session directly
+        const directResponse = await fetch(`/api/chats/general/session?sessionId=${generalSessionId}`)
+        if (!directResponse.ok) {
+          throw new Error(`Session ${generalSessionId} not found`)
+        }
+        
+        const directResult = await directResponse.json()
+        // Create a minimal session object if we got messages
+        currentSession = {
+          id: generalSessionId,
+          user_id: user?.id || '',
+          title: 'New Chat',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          deleted_at: null,
+          messages: directResult.messages || []
+        }
+      }
+
+      // Load messages for this session
+      const messagesResponse = await fetch(
+        `/api/chats/general/session?sessionId=${currentSession.id}`
+      )
+
+      if (!messagesResponse.ok) {
+        throw new Error('Failed to load general chat messages')
+      }
+
+      const messagesResult = await messagesResponse.json()
+      const chatMessages = messagesResult.messages || []
+      console.log('Messages loaded for session:', currentSession.id, 'Count:', chatMessages.length)
+
+      // Update state
+      setMessages(chatMessages)
+      setCurrentGeneralSessionId(currentSession.id)
+      setCurrentChatId(currentSession.id)
+      
+      // Store all sessions in chatSessions map for switching
+      // Only load messages for the current session, keep others empty until clicked
+      const chatSessionsMap: Record<string, ChatSession> = {}
+      sessions.forEach((session: any) => {
+        chatSessionsMap[session.id] = {
+          id: session.id,
+          user_id: session.user_id || '',
+          workspace_id: null, // General chat sessions don't belong to a workspace
+          title: session.title,
+          created_at: session.created_at,
+          updated_at: session.updated_at,
+          deleted_at: session.deleted_at,
+          messages: session.id === currentSession.id ? chatMessages : [], // Only load messages for current session
+          is_general_chat: true
+        }
+      })
+      
+      // Also include the current session if it wasn't in the list
+      if (!sessions.find((s: any) => s.id === currentSession.id)) {
+        chatSessionsMap[currentSession.id] = {
+          id: currentSession.id,
+          user_id: currentSession.user_id,
+          workspace_id: null,
+          title: currentSession.title,
+          created_at: currentSession.created_at,
+          updated_at: currentSession.updated_at,
+          deleted_at: currentSession.deleted_at,
+          messages: chatMessages,
+          is_general_chat: true
+        }
+      }
+      
+      setChatSessions(chatSessionsMap)
+
+      // Update sessions list for sidebar (without messages)
+      setGeneralChatSessions(sessions)
+
+      setIsGeneralChat(true)
+      setCurrentWorkspaceName('General Chat')
+      setCurrentWorkspace(null)
+      setWorkspaceChatSessions([])
+      setActiveInstruction(null)
+      setShowInstructionBanner(false)
+    } catch (error) {
+      console.error('Error loading general chat:', error)
+      setMessages([])
+    }
   }
 
   const loadWorkspaceChat = async () => {
@@ -271,7 +476,38 @@ export default function DashboardPage() {
     saveMessages()
   }, [messages, isGeneralChat, user])
 
-  const handleChatSelect = (chatId: string) => {
+  const handleChatSelect = async (chatId: string) => {
+    // For general chat, load messages from API if not already loaded
+    if (isGeneralChat) {
+      try {
+        setCurrentChatId(chatId)
+        setCurrentGeneralSessionId(chatId)
+
+        const response = await fetch(`/api/chats/general/session?sessionId=${chatId}`)
+        if (response.ok) {
+          const result = await response.json()
+          const chatMessages = result.messages || []
+          setMessages(chatMessages)
+
+          // Update local cache
+          setChatSessions(prev => ({
+            ...prev,
+            [chatId]: {
+              ...prev[chatId],
+              messages: chatMessages
+            }
+          }))
+        }
+
+        // Update URL to reflect current session
+        router.push(`/dashboard?general=${chatId}`)
+      } catch (error) {
+        console.error('Error loading general chat session:', error)
+      }
+      return
+    }
+
+    // For workspace chats, use local state
     const session = chatSessions[chatId]
     if (session) {
       setMessages(session.messages || [])
@@ -279,7 +515,13 @@ export default function DashboardPage() {
     }
   }
 
-  const handleNewChat = () => {
+  const handleNewChat = async () => {
+    if (isGeneralChat) {
+      // For general chat: create a new session via API
+      await createNewGeneralSession()
+      return
+    }
+
     if (!workspaceId) return
 
     // Clear messages - new chat starts empty
@@ -287,6 +529,72 @@ export default function DashboardPage() {
     setMessages([])
     const newSessionId = `${workspaceId}_main`
     setCurrentChatId(newSessionId)
+  }
+
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      console.log('🗑️ Deleting session:', sessionId)
+      
+      // Determine if this is a general chat or workspace chat
+      const session = chatSessions[sessionId]
+      const isGeneralChatSession = session?.workspace_id === null || session?.is_general_chat
+      
+      // Call appropriate delete endpoint
+      const deleteUrl = isGeneralChatSession
+        ? `/api/chats/general/session?sessionId=${sessionId}`
+        : `/api/chats/session?sessionId=${sessionId}`
+      
+      const response = await fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to delete session: ${response.statusText}`)
+      }
+      
+      console.log('✅ Session deleted:', sessionId)
+      
+      // Remove session from state
+      setChatSessions(prev => {
+        const updated = { ...prev }
+        delete updated[sessionId]
+        return updated
+      })
+      
+      // Remove from sidebar lists
+      if (isGeneralChatSession) {
+        setGeneralChatSessions(prev => prev.filter(s => s.id !== sessionId))
+      } else if (workspaceId) {
+        setWorkspaceChatSessions(prev => prev.filter(s => s.id !== sessionId))
+      }
+      
+      // If the deleted session is the current one, navigate to another session
+      if (currentChatId === sessionId) {
+        if (isGeneralChatSession) {
+          // For general chat: create a new session or load another one
+          const remainingGeneralSessions = generalChatSessions.filter(s => s.id !== sessionId)
+          if (remainingGeneralSessions.length > 0) {
+            // Load the most recent remaining session
+            const nextSession = remainingGeneralSessions[0]
+            router.push(`/dashboard?general=${nextSession.id}`)
+          } else {
+            // No more sessions - create a new one
+            await createNewGeneralSession()
+          }
+        } else if (workspaceId) {
+          // For workspace chat: clear messages and show "New Chat"
+          setMessages([])
+          const newSessionId = `${workspaceId}_main`
+          setCurrentChatId(newSessionId)
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error deleting session:', error)
+      // Show user-friendly error message
+      alert(`Failed to delete session: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   }
 
   const handleWorkspaceSidebarToggle = (isCollapsed: boolean) => {
@@ -496,7 +804,7 @@ export default function DashboardPage() {
     setMessages((prev) => [...prev, userMessage])
     setIsProcessing(true)
 
-    // Save user message to database (only for workspace chats)
+    // Save user message to database (workspace chats)
     if (workspaceId) {
       try {
         await fetch('/api/chats', {
@@ -509,7 +817,120 @@ export default function DashboardPage() {
           })
         })
       } catch (error) {
-        console.error('Error saving user message:', error)
+        console.error('Error saving user message to workspace chat:', error)
+      }
+    }
+
+    // Save user message to database (general chat)
+    if (isGeneralChat && currentGeneralSessionId) {
+      try {
+        await fetch('/api/chats/general', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: currentGeneralSessionId,
+            role: 'user',
+            message: content
+          })
+        })
+      } catch (error) {
+        console.error('Error saving user message to general chat:', error)
+      }
+    }
+
+    // ✅ Generate title for first message in any session
+    const isFirstMessage = messages.length === 1 // After adding user message, this is the first one
+    if (isFirstMessage) {
+      try {
+        console.log('🎯 Generating title for first message:', content.substring(0, 50))
+        
+        // Call the title generation API
+        const titleResponse = await fetch('/api/chats/generate-title', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: content
+          })
+        })
+        
+        console.log('📥 Title generation response status:', titleResponse.status)
+        
+        // Determine which session to update and which API endpoint to use
+        const sessionIdToUpdate = isGeneralChat ? currentGeneralSessionId : (workspaceId ? `${workspaceId}_main` : currentChatId)
+        const titleUpdateUrl = isGeneralChat
+          ? '/api/chats/general/session'
+          : '/api/chats/session'
+        
+        if (titleResponse.ok) {
+          const titleData = await titleResponse.json()
+          const generatedTitle = titleData.title || 'New Chat'
+          
+          console.log('✅ Generated title:', generatedTitle)
+          
+          // Update the session title in database using correct endpoint
+          await fetch(titleUpdateUrl, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: sessionIdToUpdate,
+              title: generatedTitle
+            })
+          })
+          
+          // Update local state
+          setChatSessions(prev => ({
+            ...prev,
+            [sessionIdToUpdate]: {
+              ...prev[sessionIdToUpdate],
+              title: generatedTitle
+            }
+          }))
+          
+          // Update sidebar display
+          if (isGeneralChat) {
+            setGeneralChatSessions(prev =>
+              prev.map(s => s.id === sessionIdToUpdate ? { ...s, title: generatedTitle } : s)
+            )
+          } else if (workspaceId) {
+            setWorkspaceChatSessions(prev =>
+              prev.map(s => s.id === sessionIdToUpdate ? { ...s, title: generatedTitle } : s)
+            )
+          }
+        } else {
+          // Fallback to truncated message if title generation fails
+          console.warn('⚠️ Title generation failed, using fallback')
+          const fallbackTitle = content.length > 50 ? content.substring(0, 50) + '...' : content
+          
+          await fetch(titleUpdateUrl, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: sessionIdToUpdate,
+              title: fallbackTitle
+            })
+          })
+          
+          setChatSessions(prev => ({
+            ...prev,
+            [sessionIdToUpdate]: {
+              ...prev[sessionIdToUpdate],
+              title: fallbackTitle
+            }
+          }))
+          
+          if (isGeneralChat) {
+            setGeneralChatSessions(prev =>
+              prev.map(s => s.id === sessionIdToUpdate ? { ...s, title: fallbackTitle } : s)
+            )
+          } else if (workspaceId) {
+            setWorkspaceChatSessions(prev =>
+              prev.map(s => s.id === sessionIdToUpdate ? { ...s, title: fallbackTitle } : s)
+            )
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error generating title:', error)
+        // Continue with chat flow even if title generation fails
       }
     }
 
@@ -702,7 +1123,24 @@ export default function DashboardPage() {
                             })
                           })
                         } catch (error) {
-                          console.error('Error saving assistant message:', error)
+                          console.error('Error saving assistant message to workspace chat:', error)
+                        }
+                      }
+
+                      // Save message to general chat if applicable
+                      if (isGeneralChat && currentGeneralSessionId) {
+                        try {
+                          await fetch('/api/chats/general', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              sessionId: currentGeneralSessionId,
+                              role: 'assistant',
+                              message: accumulatedContent
+                            })
+                          })
+                        } catch (error) {
+                          console.error('Error saving assistant message to general chat:', error)
                         }
                       }
 
@@ -859,27 +1297,30 @@ export default function DashboardPage() {
         onSignOutAction={handleSignOut}
       />
 
-      {/* Workspace Sidebar */}
-      {workspaceId && currentWorkspace && (
+      {/* Workspace Sidebar - Shows workspace chats or general chat sessions */}
+      {(workspaceId && currentWorkspace) || isGeneralChat ? (
         <WorkspaceSidebar
           workspace={currentWorkspace}
-          chatSessions={workspaceChatSessions}
+          chatSessions={isGeneralChat ? generalChatSessions : workspaceChatSessions}
           currentChatId={currentChatId}
           onChatSelect={handleChatSelect}
           onNewChat={handleNewChat}
+          onSessionDelete={handleDeleteSession}
           onToggleSidebar={handleWorkspaceSidebarToggle}
+          isGeneralChat={isGeneralChat}
         />
-      )}
+      ) : null}
 
       {/* Main Chat Area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Chat Content */}
         <div className={`flex flex-col flex-1 transition-all duration-200 ${isDocumentPanelOpen ? 'w-[55%]' : 'w-full'}`}>
-        {/* Breadcrumb Navigation with Expand Button */}
+        {/* Breadcrumb Navigation for Workspace */}
         {workspaceId && currentWorkspace && (
           <div className="flex items-center gap-3 px-8 py-4" style={{ backgroundColor: 'var(--bg-app)' }}>
             {isWorkspaceSidebarCollapsed && (
               <button
+                type="button"
                 onClick={handleExpandWorkspaceSidebar}
                 className="p-2 rounded transition-colors flex-shrink-0"
                 style={{ 
@@ -901,6 +1342,7 @@ export default function DashboardPage() {
             )}
             <nav className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
               <button
+                type="button"
                 onClick={() => router.push('/workspaces')}
                 className="transition-colors"
                 style={{ color: 'var(--text-secondary)' }}
@@ -917,6 +1359,78 @@ export default function DashboardPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
               <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{currentWorkspace.name || 'Workspace'}</span>
+            </nav>
+          </div>
+        )}
+
+        {/* Breadcrumb Navigation for General Chat */}
+        {isGeneralChat && (
+          <div className="flex items-center gap-3 px-8 py-4 relative" style={{ backgroundColor: 'var(--bg-app)', zIndex: 10 }}>
+            {isWorkspaceSidebarCollapsed ? (
+              <button
+                type="button"
+                onClick={handleExpandWorkspaceSidebar}
+                className="p-2 rounded transition-colors flex-shrink-0 cursor-pointer active:opacity-60"
+                style={{ 
+                  color: 'var(--text-secondary)',
+                  zIndex: 20
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                }}
+                aria-label="Expand sidebar"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsWorkspaceSidebarCollapsed(true)
+                  localStorage.setItem('workspace-sidebar-collapsed', 'true')
+                }}
+                className="p-1 rounded transition-colors cursor-pointer active:opacity-60"
+                style={{ 
+                  color: 'var(--text-secondary)',
+                  zIndex: 20
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                }}
+                aria-label="Collapse sidebar"
+              >
+                <svg 
+                  className="w-5 h-5" 
+                  viewBox="0 0 16 16" 
+                  fill="currentColor"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <path d="M14 2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h12zM2 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H2z" />
+                  <path d="M3 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4z" />
+                </svg>
+              </button>
+            )}
+            <nav className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+              {isWorkspaceSidebarCollapsed && (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              )}
+              <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Chats</span>
             </nav>
           </div>
         )}

@@ -79,12 +79,12 @@ export interface DocumentEmbedding {
 
 /**
  * Chat from `chats` table
- * Stores chat messages and conversations
+ * Stores chat messages and conversations (workspace and general)
  */
 export interface Chat {
   id: string                    // UUID primary key
-  workspace_id: string          // Foreign key to workspaces(id) (NOT nullable after migration)
-  user_id: string               // Foreign key to auth.users(id) (NOT nullable after migration)
+  workspace_id: string | null   // Foreign key to workspaces(id) (nullable for general chat)
+  user_id: string               // Foreign key to auth.users(id) (NOT nullable)
   session_id: string            // Foreign key to chat_sessions(id) (NOT nullable)
   role: string                  // Message role (user, assistant, system, etc.) (NOT nullable)
   message: string               // Chat message content (NOT nullable)
@@ -152,16 +152,17 @@ export interface User {
 
 /**
  * ChatSession from `chat_sessions` table
- * Represents an isolated conversation thread within a workspace
+ * Represents an isolated conversation thread within a workspace or general chat
  */
 export interface ChatSession {
   id: string                    // UUID primary key
-  workspace_id: string          // Foreign key to workspaces(id) (NOT nullable)
+  workspace_id: string | null   // Foreign key to workspaces(id) (nullable for general chat)
   user_id: string               // Foreign key to auth.users(id) (NOT nullable)
   title: string                 // Session title (default: "New Chat")
   created_at: string            // ISO timestamp with time zone
   updated_at: string            // ISO timestamp with time zone (auto-updated)
   deleted_at: string | null     // Soft delete timestamp (nullable)
+  is_general_chat?: boolean     // Optional flag indicating this is general chat
   messages?: Message[]          // Frontend-only: Loaded separately from chats table
 }
 

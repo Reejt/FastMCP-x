@@ -395,3 +395,224 @@ export async function getWorkspaceChatCount(workspaceId: string) {
 
   return count || 0
 }
+// ============================================
+// General Chat Functions (Persistent History)
+// ============================================
+
+/**
+ * Get or create general chat session for current user
+ * Returns the most recent general chat session or creates a new one
+ */
+export async function getOrCreateGeneralChatSession(
+  title: string = 'General Chat'
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  // Always create a new general chat session
+  // Each session should be independent
+  const { data: newSession, error: createError } = await supabase
+    .from('chat_sessions')
+    .insert({
+      user_id: user.id,
+      workspace_id: null, // null indicates general chat
+      title: title.trim()
+    })
+    .select()
+    .single()
+
+  if (createError) {
+    console.error('Error creating general chat session:', createError)
+    throw createError
+  }
+
+  return newSession as ChatSession
+}
+
+/**
+ * Get all messages for general chat session
+ */
+export async function getGeneralChatMessages(sessionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  const { data, error } = await supabase
+    .from('chats')
+    .select('*')
+    .eq('session_id', sessionId)
+    .eq('user_id', user.id)
+    .is('workspace_id', null)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching general chat messages:', error)
+    throw error
+  }
+
+  return data as Chat[]
+}
+
+/**
+ * Save message to general chat
+ */
+export async function createGeneralChatMessage(
+  sessionId: string,
+  role: string,
+  message: string
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  if (!message || message.trim().length === 0) {
+    throw new Error('Message cannot be empty')
+  }
+
+  if (!sessionId) {
+    throw new Error('Session ID is required')
+  }
+
+  const { data, error } = await supabase
+    .from('chats')
+    .insert({
+      user_id: user.id,
+      session_id: sessionId,
+      workspace_id: null, // null for general chat
+      role: role,
+      message: message.trim()
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error creating general chat message:', error)
+    throw error
+  }
+
+  return data as Chat
+}
+
+/**
+ * Get all general chat sessions for user (for sidebar/history)
+ */
+export async function getUserGeneralChatSessions() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  const { data, error } = await supabase
+    .from('chat_sessions')
+    .select('*')
+    .eq('user_id', user.id)
+    .is('workspace_id', null)
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching general chat sessions:', error)
+    throw error
+  }
+
+  return data as ChatSession[]
+}
+
+/**
+ * Update general chat session title
+ */
+export async function updateGeneralChatSessionTitle(sessionId: string, title: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  if (!title || title.trim().length === 0) {
+    throw new Error('Session title cannot be empty')
+  }
+
+  const { data, error } = await supabase
+    .from('chat_sessions')
+    .update({ 
+      title: title.trim(),
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', sessionId)
+    .eq('user_id', user.id)
+    .is('workspace_id', null)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error updating general chat session title:', error)
+    throw error
+  }
+
+  return data as ChatSession
+}
+
+/**
+ * Delete general chat session (soft delete)
+ */
+export async function deleteGeneralChatSession(sessionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  const { error } = await supabase
+    .from('chat_sessions')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .eq('user_id', user.id)
+    .is('workspace_id', null)
+
+  if (error) {
+    console.error('Error deleting general chat session:', error)
+    throw error
+  }
+
+  return true
+}
+
+/**
+ * Get general chat count for user
+ */
+export async function getGeneralChatSessionCount() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('User not authenticated')
+  }
+
+  const { count, error } = await supabase
+    .from('chat_sessions')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .is('workspace_id', null)
+    .is('deleted_at', null)
+
+  if (error) {
+    console.error('Error counting general chat sessions:', error)
+    throw error
+  }
+
+  return count || 0
+}

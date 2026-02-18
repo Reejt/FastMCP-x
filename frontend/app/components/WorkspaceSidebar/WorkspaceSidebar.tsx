@@ -28,6 +28,7 @@ interface WorkspaceSidebarProps {
   onToggleSidebar?: (isCollapsed: boolean) => void
   onSessionRename?: (sessionId: string, newTitle: string) => void
   onSessionDelete?: (sessionId: string) => void
+  isGeneralChat?: boolean
 }
 
 const MIN_WIDTH = 200
@@ -42,7 +43,8 @@ export default function WorkspaceSidebar({
   onNewChat,
   onToggleSidebar,
   onSessionRename,
-  onSessionDelete
+  onSessionDelete,
+  isGeneralChat
 }: WorkspaceSidebarProps) {
   const router = useRouter()
   const { theme: appTheme } = useTheme()
@@ -396,7 +398,11 @@ export default function WorkspaceSidebar({
       setIsRenamingSession(true)
       const newTitle = renameFormValue.trim()
 
-      const response = await fetch('/api/chats/session', {
+      const renameUrl = isGeneralChat
+        ? '/api/chats/general/session'
+        : '/api/chats/session'
+
+      const response = await fetch(renameUrl, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -441,7 +447,11 @@ export default function WorkspaceSidebar({
     try {
       setIsDeletingSession(true)
 
-      const response = await fetch(`/api/chats/session?sessionId=${deleteConfirmSessionId}`, {
+      const deleteUrl = isGeneralChat
+        ? `/api/chats/general/session?sessionId=${deleteConfirmSessionId}`
+        : `/api/chats/session?sessionId=${deleteConfirmSessionId}`
+
+      const response = await fetch(deleteUrl, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' }
       })
@@ -463,7 +473,7 @@ export default function WorkspaceSidebar({
     }
   }
 
-  if (!workspace) {
+  if (!workspace && !isGeneralChat) {
     return null
   }
 
@@ -760,18 +770,25 @@ export default function WorkspaceSidebar({
             <div className="border-b p-4" style={{ backgroundColor: theme.bg, borderColor: theme.border }}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <h2 className="font-medium truncate" style={{ color: theme.text }}>{workspace.name}</h2>
+                  {isGeneralChat && (
+                    <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme.textSecondary }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                  )}
+                  <h2 className="font-medium truncate" style={{ color: theme.text }}>{isGeneralChat ? 'General Chat' : workspace?.name}</h2>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    className="p-1 rounded transition-colors hover:opacity-70"
-                    style={{ color: theme.textSecondary }}
-                    aria-label="More options"
-                  >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                    </svg>
-                  </button>
+                  {!isGeneralChat && (
+                    <button
+                      className="p-1 rounded transition-colors hover:opacity-70"
+                      style={{ color: theme.textSecondary }}
+                      aria-label="More options"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                      </svg>
+                    </button>
+                  )}
                   <button
                     onClick={handleToggleCollapse}
                     className="p-1 rounded transition-colors hover:opacity-70"
@@ -786,7 +803,8 @@ export default function WorkspaceSidebar({
                 </div>
               </div>
 
-              {/* Instructions Section */}
+              {/* Instructions Section - only for workspaces */}
+              {!isGeneralChat && workspace && (
               <div className="mb-3">
                 <button 
                   onClick={handleEditInstruction}
@@ -820,8 +838,10 @@ export default function WorkspaceSidebar({
                   </svg>
                 </button>
               </div>
+              )}
 
-              {/* Files Section */}
+              {/* Files Section - only for workspaces */}
+              {!isGeneralChat && workspace && (
               <div className="pt-3">
                 <h3 className="text-xs font-semibold uppercase px-3 mb-2" style={{ color: theme.textMuted }}>
                   Files - {workspace.name}
@@ -839,6 +859,7 @@ export default function WorkspaceSidebar({
                   <span className="font-medium" style={{ color: theme.text }}>Vault</span>
                 </button>
               </div>
+              )}
             </div>
 
             {/* Chats Section */}

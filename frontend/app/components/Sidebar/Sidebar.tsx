@@ -33,6 +33,8 @@ export default function Sidebar({
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
   const [isWorkspacesDropdownOpen, setIsWorkspacesDropdownOpen] = useState(true)
+  const [isGeneralChatDropdownOpen, setIsGeneralChatDropdownOpen] = useState(false)
+  const [generalChatSessions, setGeneralChatSessions] = useState<any[]>([])
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -43,6 +45,11 @@ export default function Sidebar({
   const menuRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const { theme: appTheme, toggleTheme } = useTheme()
+  const [isCreatingChat, setIsCreatingChat] = useState(false)
+  const [chatContextMenuId, setChatContextMenuId] = useState<string | null>(null)
+  const [deleteChatConfirmId, setDeleteChatConfirmId] = useState<string | null>(null)
+  const [deleteChatConfirmTitle, setDeleteChatConfirmTitle] = useState('')
+  const [isDeletingChat, setIsDeletingChat] = useState(false)
 
   // Theme colors using CSS variables
   const theme = {
@@ -88,6 +95,9 @@ export default function Sidebar({
 
     // Load workspaces from API
     loadWorkspaces()
+    
+    // Load general chat sessions
+    loadGeneralChatSessions()
   }, [loadWorkspaces])
 
   // Close menu when clicking outside
@@ -97,11 +107,15 @@ export default function Sidebar({
         setOpenMenuId(null)
         setMenuPosition(null)
       }
+      // Close chat context menu when clicking outside
+      if (chatContextMenuId && !(event.target as Element).closest('.chat-context-menu-trigger')) {
+        setChatContextMenuId(null)
+      }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [chatContextMenuId])
 
   // Focus rename input when entering rename mode
   useEffect(() => {
@@ -110,6 +124,44 @@ export default function Sidebar({
       renameInputRef.current.select()
     }
   }, [renamingId])
+
+  // Load general chat sessions from API
+  const loadGeneralChatSessions = async () => {
+    try {
+      const response = await fetch('/api/chats/general/sessions')
+      if (response.ok) {
+        const data = await response.json()
+        setGeneralChatSessions(data.sessions || [])
+      }
+    } catch (error) {
+      console.error('Error loading general chat sessions:', error)
+    }
+  }
+
+  // Create a new chat session
+  const createNewChatSession = async () => {
+    setIsCreatingChat(true)
+    try {
+      const response = await fetch('/api/chats/general/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'New Chat' })
+      })
+
+      const data = await response.json()
+
+      if (data.success && data.session) {
+        setActiveSection('chat')
+        router.push(`/dashboard?general=${data.session.id}`)
+        // Reload sessions to update the list
+        loadGeneralChatSessions()
+      }
+    } catch (error) {
+      console.error('Error creating new chat session:', error)
+    } finally {
+      setIsCreatingChat(false)
+    }
+  }
 
   // Handle workspace rename
   const handleRename = async (workspaceId: string, newName: string) => {
@@ -158,6 +210,51 @@ export default function Sidebar({
       }
     } catch (error) {
       console.error('Error deleting workspace:', error)
+    }
+  }
+
+  // Open delete confirmation for chat session
+  const handleOpenChatDeleteConfirm = (sessionId: string, sessionTitle: string) => {
+    setDeleteChatConfirmId(sessionId)
+    setDeleteChatConfirmTitle(sessionTitle)
+    setChatContextMenuId(null)
+  }
+
+  const handleCloseChatDeleteConfirm = () => {
+    setDeleteChatConfirmId(null)
+    setDeleteChatConfirmTitle('')
+    setIsDeletingChat(false)
+  }
+
+  const handleConfirmDeleteChat = async () => {
+    if (!deleteChatConfirmId) return
+
+    try {
+      setIsDeletingChat(true)
+
+      const response = await fetch(`/api/chats/general/session?sessionId=${deleteChatConfirmId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      if (response.ok) {
+        const deletedId = deleteChatConfirmId
+        handleCloseChatDeleteConfirm()
+        
+        // Reload sessions to update the list
+        loadGeneralChatSessions()
+        
+        // If we're currently viewing the deleted session, redirect to main dashboard
+        const urlParams = new URLSearchParams(window.location.search)
+        const currentGeneralId = urlParams.get('general')
+        if (currentGeneralId === deletedId) {
+          router.push('/dashboard')
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting chat session:', error)
+    } finally {
+      setIsDeletingChat(false)
     }
   }
 
@@ -269,22 +366,163 @@ export default function Sidebar({
         <div className="flex-1 overflow-y-auto overflow-x-hidden" id="sidebar-nav">
           <div className="p-3 space-y-1">
             {/* Chat Section */}
-            <SidebarItem
-              icon={
-                <svg fill="none" viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="11" fill="#dadadaff" />
-                  <path stroke="black" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 6v12M6 12h12" />
-                </svg>
-              }
-              label="New Chat"
-              isActive={activeSection === 'chat'}
-              isCollapsed={isCollapsed}
-              onClick={(e) => {
-                e.stopPropagation() // Prevent triggering sidebar click
-                setActiveSection('chat')
-                router.push('/dashboard')
-              }}
-            />
+            <div className="relative group">
+              <SidebarItem
+                icon={
+                  <svg fill="none" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="11" fill="#dadadaff" />
+                    <path stroke="black" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 6v12M6 12h12" />
+                  </svg>
+                }
+                label="Chats"
+                isActive={activeSection === 'chat'}
+                isCollapsed={isCollapsed}
+                onClick={(e) => {
+                  e.stopPropagation() // Prevent triggering sidebar click
+                  setActiveSection('chat')
+                  router.push('/dashboard')
+                }}
+              />
+            </div>
+
+            {/* Sub-items for General Chat Sessions - visible when dropdown is open and sidebar is expanded */}
+            <AnimatePresence>
+              {!isCollapsed && isGeneralChatDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="ml-4 space-y-1 overflow-hidden"
+                >
+                  {generalChatSessions.length === 0 ? (
+                    <p className="text-sm px-4 py-2" style={{ color: theme.textSecondary }}>No chat sessions yet</p>
+                  ) : (
+                    generalChatSessions.slice(0, 5).map((session) => (
+                      <div
+                        key={session.id}
+                        className="relative group"
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setActiveSection('chat')
+                            router.push(`/dashboard?general=${session.id}`)
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm rounded-lg transition-colors cursor-pointer"
+                          style={{
+                            backgroundColor: 'transparent',
+                            color: theme.textSecondary,
+                            pointerEvents: 'auto'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = theme.hoverBg
+                            e.currentTarget.style.color = theme.text
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent'
+                            e.currentTarget.style.color = theme.textSecondary
+                          }}
+                          title={session.title || 'New Chat'}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex-1 truncate">{session.title || 'New Chat'}</span>
+                            
+                            {/* 3-dot context menu trigger - visible on hover */}
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setChatContextMenuId(chatContextMenuId === session.id ? null : session.id)
+                              }}
+                              className="chat-context-menu-trigger opacity-0 group-hover:opacity-100 p-1 rounded transition-all hover:bg-black/10 cursor-pointer"
+                              style={{ color: theme.textSecondary }}
+                              role="button"
+                              aria-label="Options"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  setChatContextMenuId(chatContextMenuId === session.id ? null : session.id)
+                                }
+                              }}
+                            >
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                              </svg>
+                            </div>
+                          </div>
+                        </button>
+
+                        {/* Context Menu */}
+                        <AnimatePresence>
+                          {chatContextMenuId === session.id && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.95 }}
+                              transition={{ duration: 0.1 }}
+                              className="absolute right-0 top-full mt-1 z-10 min-w-[160px] rounded-lg shadow-lg border"
+                              style={{
+                                backgroundColor: theme.bg,
+                                borderColor: theme.border
+                              }}
+                            >
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleOpenChatDeleteConfirm(session.id, session.title || 'New Chat')
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm rounded-lg transition-colors flex items-center gap-2"
+                                style={{
+                                  color: '#ef4444',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = theme.hoverBg
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'transparent'
+                                }}
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Delete
+                              </button>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    ))
+                  )}
+                  {generalChatSessions.length > 5 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setActiveSection('chat')
+                        router.push('/dashboard')
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm rounded-lg transition-colors cursor-pointer"
+                      style={{ color: theme.textSecondary, pointerEvents: 'auto' }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = theme.hoverBg
+                        e.currentTarget.style.color = theme.text
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent'
+                        e.currentTarget.style.color = theme.textSecondary
+                      }}
+                    >
+                      View all
+                    </button>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Workspaces Section */}
             <div className="relative group">
@@ -776,6 +1014,84 @@ export default function Sidebar({
         cancelText="Cancel"
         isDestructive={true}
       />
+
+      {/* Delete Chat Session Confirmation Modal */}
+      <AnimatePresence>
+        {deleteChatConfirmId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={handleCloseChatDeleteConfirm}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-md mx-4 p-6 rounded-lg shadow-xl"
+              style={{ backgroundColor: theme.bg }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold" style={{ color: theme.text }}>
+                  Delete Chat Session
+                </h3>
+                <button
+                  onClick={handleCloseChatDeleteConfirm}
+                  className="p-2 rounded transition-colors hover:opacity-70"
+                  style={{ color: theme.textSecondary }}
+                  aria-label="Close"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-sm mb-3" style={{ color: theme.text }}>
+                  Are you sure you want to delete this chat session?
+                </p>
+                <div className="p-3 rounded-lg" style={{ backgroundColor: theme.cardBg }}>
+                  <p className="text-sm font-medium truncate" style={{ color: theme.text }}>
+                    {deleteChatConfirmTitle || 'New Chat'}
+                  </p>
+                </div>
+                <p className="text-xs mt-3" style={{ color: theme.textMuted }}>
+                  This action cannot be undone. All messages in this session will be permanently deleted.
+                </p>
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={handleCloseChatDeleteConfirm}
+                  disabled={isDeletingChat}
+                  className="px-5 py-2.5 rounded-lg font-medium transition-colors"
+                  style={{ 
+                    backgroundColor: theme.hoverBg,
+                    color: theme.text
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDeleteChat}
+                  disabled={isDeletingChat}
+                  className="px-5 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ 
+                    backgroundColor: '#ef4444',
+                    color: '#ffffff'
+                  }}
+                >
+                  {isDeletingChat ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   )
 }

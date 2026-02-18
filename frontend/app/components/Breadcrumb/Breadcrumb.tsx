@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 interface BreadcrumbItem {
   label: string
   href?: string
+  isExpandButton?: boolean
+  onExpand?: () => void
 }
 
 interface BreadcrumbProps {
@@ -18,7 +20,17 @@ export default function Breadcrumb({ items }: BreadcrumbProps) {
     <nav className="flex items-center gap-2 px-8 py-4 text-sm" style={{ backgroundColor: 'var(--bg-elevated)' }}>
       {items.map((item, index) => (
         <div key={index} className="flex items-center gap-2">
-          {item.href ? (
+          {item.isExpandButton ? (
+            <button
+              onClick={() => item.onExpand?.()}
+              className="transition-colors"
+              style={{ color: 'var(--text-secondary)' }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+            >
+              {item.label}
+            </button>
+          ) : item.href ? (
             <button
               onClick={() => router.push(item.href!)}
               className="transition-colors"
