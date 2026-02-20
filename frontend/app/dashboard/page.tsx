@@ -793,6 +793,9 @@ export default function DashboardPage() {
   const handleSendMessage = async (content: string, selected_file_ids?: string[]) => {
     if (!content.trim() || isProcessing) return
 
+    // Check if this is the first message BEFORE adding to state
+    const isFirstMessage = messages.length === 0
+
     // Add user message to state
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -839,7 +842,7 @@ export default function DashboardPage() {
     }
 
     // ✅ Generate title for first message in any session
-    const isFirstMessage = messages.length === 1 // After adding user message, this is the first one
+    if (isFirstMessage)
     if (isFirstMessage) {
       try {
         console.log('🎯 Generating title for first message:', content.substring(0, 50))
