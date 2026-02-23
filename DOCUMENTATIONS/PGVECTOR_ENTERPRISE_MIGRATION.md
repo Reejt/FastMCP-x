@@ -269,13 +269,18 @@ CREATE INDEX ON document_embeddings USING ivfflat (embedding vector_cosine_ops) 
 -- CREATE INDEX ON document_embeddings USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 ```
 
-### Step 3: Create RPC Function for Similarity Search (Optional but Recommended)
+### Step 3: Create RPC Function for Similarity Search (WITH WORKSPACE ISOLATION)
 
 ```sql
+-- Drop old function if it exists
+DROP FUNCTION IF EXISTS search_embeddings(vector, double precision, integer, text, uuid[]);
+
+-- Create workspace-scoped version (RECOMMENDED)
 CREATE OR REPLACE FUNCTION search_embeddings(
   query_embedding vector,
   match_threshold float,
   match_count int,
+  p_workspace_id uuid DEFAULT NULL,
   file_filter text DEFAULT NULL,
   file_ids uuid[] DEFAULT NULL
 )
@@ -287,7 +292,9 @@ RETURNS TABLE (
   file_path text,
   similarity_score float,
   workspace_id uuid,
-  uploaded_at timestamp
+  uploaded_at timestamp with time zone,
+  chunk_index integer,
+  metadata jsonb
 ) LANGUAGE plpgsql STABLE AS $$
 BEGIN
   RETURN QUERY
@@ -298,14 +305,18 @@ BEGIN
     de.file_id,
     fu.file_path,
     (1 - (de.embedding <=> query_embedding)) as similarity_score,
-    fu.workspace_id,
-    fu.uploaded_at
+    de.workspace_id,
+    fu.uploaded_at,
+    de.chunk_index,
+    de.metadata
   FROM document_embeddings de
-  LEFT JOIN file_upload fu ON de.file_id = fu.id
+  INNER JOIN file_upload fu ON de.file_id = fu.id
   WHERE 1 - (de.embedding <=> query_embedding) >= match_threshold
+    AND (p_workspace_id IS NULL OR de.workspace_id = p_workspace_id)
     AND (file_filter IS NULL OR fu.file_name = file_filter)
     AND (file_ids IS NULL OR de.file_id = ANY(file_ids))
-    AND fu.deleted_at IS NULL  -- ✅ CRITICAL FIX: Filter out deleted files
+    AND fu.deleted_at IS NULL
+    AND de.workspace_id IS NOT NULL
   ORDER BY de.embedding <=> query_embedding
   LIMIT match_count;
 END;

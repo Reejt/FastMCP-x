@@ -407,9 +407,48 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                     print(f"⚠️  Web search error: {str(search_error)}")
                     print(f"   Falling back to document search")
                     # Fall through to document search
+            # ✅ SECURITY CHECK: Disable semantic search if workspace_id is null and no files selected
+            # This prevents cross-workspace embedding leakage in dashboard/general chat
+            has_workspace_context = query_request.workspace_id is not None
+            has_file_selection = query_request.selected_file_ids and len(query_request.selected_file_ids) > 0
+            
+            if not has_workspace_context and not has_file_selection:
+                print(f"🔒 SECURITY: No workspace context and no file selection - using pure LLM (no semantic search)")
+                
+                from server.query_handler import query_model
+                
+                # Pure LLM query without document context
+                try:
+                    full_response = ""
+                    response_generator = await query_model(
+                        query=query_request.query,
+                        conversation_history=query_request.conversation_history,
+                        stream=True
+                    )
+                    
+                    async for chunk in response_generator:
+                        # ✅ Check for client disconnect
+                        if await request.is_disconnected():
+                            print("🛑 Client disconnected - aborting LLM request")
+                            break
+                        
+                        if isinstance(chunk, dict) and 'response' in chunk:
+                            chunk_text = chunk['response']
+                            full_response += chunk_text
+                            yield f"data: {json.dumps({'chunk': chunk_text})}\n\n"
+                    
+                    print(f"✅ Pure LLM query completed ({len(full_response)} chars)")
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                    return
+                    
+                except Exception as llm_error:
+                    print(f"❌ LLM error: {str(llm_error)}")
+                    yield f"data: {json.dumps({'error': str(llm_error)})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                    return
 
-            # Route 5: Regular document/LLM query with semantic search (fallback)
-            print(f"💬 Routing to regular document query with semantic search")
+            # Route 5: Regular document/LLM query with semantic search (only if workspace or files provided)
+            print(f"💬 Routing to document query with semantic search (workspace={has_workspace_context}, files={has_file_selection})")
             
             from server.query_handler import answer_query
             from server.instructions import query_with_instructions_stream
