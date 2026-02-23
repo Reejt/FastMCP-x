@@ -6,7 +6,7 @@ Database Schema (8 tables):
 - workspaces: User workspaces (id, user_id, name, created_at, updated_at)
 - file_upload: File metadata (id, workspace_id, user_id, file_name, file_type, file_path, size_bytes, status, uploaded_at, created_at, updated_at, deleted_at)
 - document_content: Extracted text (id, file_id, user_id, content, file_name, extracted_at, created_at, updated_at)
-- document_embeddings: Vector embeddings (id, user_id, file_id, chunk_index, chunk_text, embedding[vector], metadata[jsonb], created_at, updated_at)
+- document_embeddings: Vector embeddings (id, user_id, file_id, workspace_id NOT NULL, chunk_index, chunk_text, embedding[vector], metadata[jsonb], created_at, updated_at)
 - workspace_instructions: Custom instructions (id, workspace_id, title, instructions, is_active, created_at, updated_at)
 - chat_sessions: Chat sessions (id, workspace_id, user_id, title, created_at, updated_at, deleted_at)
 - chats: Chat messages (id, workspace_id, user_id, session_id, role, message, created_at)
@@ -18,6 +18,7 @@ Session Management:
 
 Similarity Search: Performed at DATABASE LEVEL using pgvector <=> operator
 No application-level cosine similarity calculations
+Workspace-Scoped: Embeddings filtered by workspace_id (NOT NULL) at database level for strict multi-tenant isolation
 """
 
 # Handles query answering from documents using pgvector similarity search
@@ -130,10 +131,13 @@ def semantic_search_with_metadata(query: str, top_k: int = 5, min_similarity: fl
     
     try:
         # RPC call with metadata enrichment
+        # Use the workspace-filtered version: search_embeddings(query_embedding, match_threshold, match_count, p_workspace_id, file_filter, file_ids)
         rpc_params = {
             'query_embedding': query_embedding,
             'match_threshold': min_similarity,
             'match_count': top_k,
+            'p_workspace_id': workspace_id,
+            'file_filter': None,  # No file name filtering, use file_ids instead
             'file_ids': selected_file_ids
         }
         
@@ -511,39 +515,73 @@ async def answer_query(query: str, conversation_history: list = None, stream: bo
 
 
 
-def fetch_full_document_by_file_id(file_id: str):
+def fetch_relevant_document_data_by_file_id(file_id: str, query_embedding: list):
     """
-    Fetch all document chunks for a specific file from the database
-    Used as fallback when semantic search yields weak similarity scores
+    Fetch all document embeddings for a specific file and rank by cosine similarity to query embedding.
+    Used as fallback when semantic search yields weak similarity scores.
     
     Args:
-        file_id: The file ID to fetch content for
+        file_id: The file ID to fetch embeddings for
+        query_embedding: The query embedding as a list (should match embedding dimensions, e.g., 384)
         
     Returns:
-        String of all concatenated chunks from the file, or empty string if not found
+        List of dicts with keys: chunk_text, similarity_score, chunk_index
+        Sorted by similarity score in descending order. Empty list if not found.
     """
     if not supabase_client:
-        return ""
+        return []
     
     try:
-        # Query all document content for this file, ordered by chunk_index
+        # Query all document embeddings for this file
         response = supabase_client.table('document_embeddings').select(
-            'chunk_text, chunk_index'
+            'chunk_text, embedding, chunk_index'
         ).eq('file_id', file_id).order('chunk_index', desc=False).execute()
         
-        if hasattr(response, 'data') and response.data:
-            # Sort by chunk_index to maintain proper document order
-            sorted_chunks = sorted(
-                [row for row in response.data if row.get('chunk_text')],
-                key=lambda x: x.get('chunk_index', 0)
-            )
-            # Concatenate all chunks in order
-            all_chunks = [row['chunk_text'] for row in sorted_chunks]
-            return "\n\n".join(all_chunks)
-        return ""
+        if not hasattr(response, 'data') or not response.data:
+            return []
+        
+        # Convert query_embedding to numpy array if it's a list
+        query_embedding_np = np.array(query_embedding, dtype=np.float32)
+        
+        results = []
+        for row in response.data:
+            if row.get('embedding'):
+                # Get embedding and convert to numpy array
+                embedding_data = row.get('embedding')
+                
+                # Handle string embeddings (from JSON serialization)
+                if isinstance(embedding_data, str):
+                    try:
+                        embedding_data = json.loads(embedding_data)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                
+                doc_embedding = np.array(embedding_data, dtype=np.float32)
+                
+                # Compute cosine similarity: (A · B) / (||A|| * ||B||)
+                dot_product = np.dot(query_embedding_np, doc_embedding)
+                norm_query = np.linalg.norm(query_embedding_np)
+                norm_doc = np.linalg.norm(doc_embedding)
+                
+                if norm_query > 0 and norm_doc > 0:
+                    similarity = dot_product / (norm_query * norm_doc)
+                else:
+                    similarity = 0.0
+                
+                results.append({
+                    'chunk_text': row.get('chunk_text', ''),
+                    'similarity_score': float(similarity),
+                    'chunk_index': row.get('chunk_index', 0)
+                })
+        
+        # Sort by similarity score in descending order
+        results.sort(key=lambda x: x['similarity_score'], reverse=True)
+        
+        return results
+        
     except Exception as e:
-        print(f"⚠️  Error fetching full document {file_id}: {e}")
-        return ""
+        print(f"⚠️  Error fetching embeddings for file {file_id}: {e}")
+        return []
 
 
 def _format_citation(citation_info: dict):
@@ -609,14 +647,11 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
     semantic_results = search_result.get('results', [])
     detected_files = search_result.get('detected_files', {})
     
-    # Check if semantic results have weak similarity scores
-    has_weak_matches = any(result['similarity'] < 0.25 for result in semantic_results if isinstance(result, dict))
-    
-    # FALLBACK: If selected files exist but semantic search yields weak results, fetch full content
+    # Build context from semantic search results
     context_parts = []
     citations = []  # Track citations for the response
     
-    if semantic_results and not has_weak_matches:
+    if semantic_results:
         # Build context from strong semantic search results with citations
         for result in semantic_results:
             if isinstance(result, dict):
@@ -630,39 +665,56 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
                 context_parts.append(f"**{citation_str}**\n{truncated_content}")
                 citations.append(citation_info)
     
-    # Fallback: If weak matches OR no results but files are selected, fetch full document content
-    if (not semantic_results or has_weak_matches) and selected_file_ids:
-        print(f"📌 Activating fallback: Fetching full content from {len(selected_file_ids)} selected file(s)")
+    # Fallback: If files are selected, fetch embeddings ranked by similarity
+    if selected_file_ids:
+        print(f"📌 Activating fallback: Fetching ranked embeddings from {len(selected_file_ids)} selected file(s)")
         
-        for file_id in selected_file_ids:
-            # Get file metadata from detected_files (now guaranteed to exist via semantic_search_with_metadata)
-            file_info = detected_files.get(file_id)
-            if not file_info:
-                print(f"   ⚠️  Could not find metadata for file {file_id}")
-                continue
+        # Get query embedding for similarity computation
+        model = get_semantic_model()
+        if model:
+            query_embedding = model.encode([query])[0].tolist()
             
-            # Fetch full document content
-            full_content = fetch_full_document_by_file_id(file_id)
-            
-            if full_content:
-                # Truncate to reasonable length (5000 chars per file for fallback)
-                truncated = full_content[:5000]
+            for file_id in selected_file_ids:
+                # Get file metadata from detected_files (now guaranteed to exist via semantic_search_with_metadata)
+                file_info = detected_files.get(file_id)
+                if not file_info:
+                    print(f"   ⚠️  Could not find metadata for file {file_id}")
+                    continue
                 
-                # Format citation for fallback content
-                citation_info = {
-                    'file_name': file_info.get('file_name', 'Unknown'),
-                    'uploaded_at': file_info.get('uploaded_at'),
-                    'similarity_score': 1.0  # Fallback uses full document, so 100% relevant
-                }
-                citation_str = _format_citation(citation_info)
+                # Fetch embeddings ranked by cosine similarity to query
+                ranked_chunks = fetch_relevant_document_data_by_file_id(file_id, query_embedding)
                 
-                context_parts.append(
-                    f"**{citation_str}** (Full Document as Fallback)\n{truncated}{'...' if len(full_content) > 5000 else ''}"
-                )
-                citations.append(citation_info)
-                print(f"   ✅ Loaded {len(full_content)} chars from {file_info.get('file_name', 'Unknown')}")
-            else:
-                print(f"   ⚠️  No content found for file {file_info.get('file_name', file_id)}")
+                if ranked_chunks:
+                    # Use top chunks by similarity (limit to ~5000 chars)
+                    content_parts = []
+                    total_chars = 0
+                    for chunk_result in ranked_chunks:
+                        chunk_text = chunk_result.get('chunk_text', '')
+                        if total_chars + len(chunk_text) <= 5000:
+                            content_parts.append(chunk_text)
+                            total_chars += len(chunk_text)
+                        else:
+                            break
+                    
+                    full_content = "\n\n".join(content_parts)
+                    
+                    # Format citation for fallback content
+                    citation_info = {
+                        'file_name': file_info.get('file_name', 'Unknown'),
+                        'uploaded_at': file_info.get('uploaded_at'),
+                        'similarity_score': ranked_chunks[0].get('similarity_score', 0.0) if ranked_chunks else 0.0
+                    }
+                    citation_str = _format_citation(citation_info)
+                    
+                    context_parts.append(
+                        f"**{citation_str}** (Ranked by Similarity)\n{full_content}{'...' if total_chars > 5000 else ''}"
+                    )
+                    citations.append(citation_info)
+                    print(f"   ✅ Loaded {len(ranked_chunks)} ranked chunks ({total_chars} chars) from {file_info.get('file_name', 'Unknown')}")
+                else:
+                    print(f"   ⚠️  No embeddings found for file {file_info.get('file_name', file_id)}")
+        else:
+            print(f"   ⚠️  Embedding model unavailable for similarity computation")
     
     # If still no context, return plain query
     if not context_parts:

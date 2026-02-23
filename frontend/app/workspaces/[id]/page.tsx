@@ -582,6 +582,8 @@ export default function WorkspacePage() {
         const decoder = new TextDecoder()
         let accumulatedContent = ''
         let streamError = false
+        let lastUpdateTime = Date.now()
+        const UPDATE_THROTTLE_MS = 100  // Update UI at most every 100ms to prevent max update depth
 
         if (reader) {
           try {
@@ -629,15 +631,19 @@ export default function WorkspacePage() {
                       // Append chunk to accumulated content
                       accumulatedContent += data.chunk
 
-                      // ✅ Batch updates during streaming to prevent infinite loops
-                      // Use regular setState instead of flushSync to allow React batching
-                      setMessages((prev) =>
-                        prev.map((msg) =>
-                          msg.id === assistantMessageId
-                            ? { ...msg, content: accumulatedContent, isStreaming: true }
-                            : msg
+                      // ✅ Throttle state updates to prevent max update depth error
+                      // Only update DOM every 100ms instead of on every chunk
+                      const now = Date.now()
+                      if (now - lastUpdateTime >= UPDATE_THROTTLE_MS) {
+                        setMessages((prev) =>
+                          prev.map((msg) =>
+                            msg.id === assistantMessageId
+                              ? { ...msg, content: accumulatedContent, isStreaming: true }
+                              : msg
+                          )
                         )
-                      )
+                        lastUpdateTime = now
+                      }
                     } else if (data.done) {
                       // Streaming complete - save assistant response to Supabase
                       if (accumulatedContent && !streamError) {

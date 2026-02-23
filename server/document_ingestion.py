@@ -196,6 +196,7 @@ def ingest_file(file_path: str, user_id: str, workspace_id: Optional[str] = None
                                     embeddings_to_store.append({
                                         'file_id': file_id,
                                         'user_id': user_id,
+                                        'workspace_id': workspace_id,
                                         'chunk_index': chunk_index,
                                         'chunk_text': chunk.strip(),
                                         'embedding': embedding.tolist(),  # pgvector expects float array

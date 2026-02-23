@@ -3,7 +3,6 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { flushSync } from 'react-dom'  // ✅ ADD THIS for immediate updates
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { Message, User, ChatSession, Workspace, WorkspaceInstruction, Chat } from '@/app/types'
@@ -168,6 +167,10 @@ export default function DashboardPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, user?.id, generalSessionId]) // Re-run when session ID changes
+
+  // Use ref to track accumulated streaming content to avoid closure issues
+  const accumulatedContentRef = useRef('')
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Load most recent general chat session or create one if none exist
   const loadOrCreateGeneralSession = async () => {
@@ -1031,11 +1034,6 @@ export default function DashboardPage() {
         // Handle streaming response
         const reader = response.body?.getReader()
         const decoder = new TextDecoder()
-        let accumulatedContent = ''
-        let streamError = false
-        let updateTimeout: NodeJS.Timeout | null = null
-        let lastUpdateTime = 0
-        const UPDATE_INTERVAL = 16  // ~60fps, update every 16ms max
 
         if (reader) {
           try {
@@ -1056,62 +1054,38 @@ export default function DashboardPage() {
                     const data = JSON.parse(jsonStr)
 
                     if (data.chunk) {
-                      // Append chunk to accumulated content
-                      accumulatedContent += data.chunk
+                      // Append chunk to ref - no closure issues
+                      accumulatedContentRef.current += data.chunk
 
-                      // Smart throttling: update immediately if enough time has passed, otherwise debounce
-                      const now = Date.now()
-                      const timeSinceLastUpdate = now - lastUpdateTime
-                      
-                      if (timeSinceLastUpdate > UPDATE_INTERVAL) {
-                        // Enough time has passed - update immediately
-                        lastUpdateTime = now
-                        if (updateTimeout) clearTimeout(updateTimeout)
-                        updateTimeout = null
-                        
-                        flushSync(() => {
+                      // Simple debounced update: batch changes every 300ms
+                      if (!updateTimeoutRef.current) {
+                        updateTimeoutRef.current = setTimeout(() => {
+                          // Update state once with all accumulated content
                           setMessages((prev) =>
                             prev.map((msg) =>
                               msg.id === assistantMessageId
-                                ? { ...msg, content: accumulatedContent, isStreaming: true }
+                                ? { ...msg, content: accumulatedContentRef.current, isStreaming: true }
                                 : msg
                             )
                           )
-                        })
-                      } else if (!updateTimeout) {
-                        // Not enough time passed and no pending update - schedule one
-                        updateTimeout = setTimeout(() => {
-                          lastUpdateTime = Date.now()
-                          updateTimeout = null
-                          
-                          flushSync(() => {
-                            setMessages((prev) =>
-                              prev.map((msg) =>
-                                msg.id === assistantMessageId
-                                  ? { ...msg, content: accumulatedContent, isStreaming: true }
-                                  : msg
-                              )
-                            )
-                          })
-                        }, UPDATE_INTERVAL - timeSinceLastUpdate)
+                          updateTimeoutRef.current = null
+                        }, 300)
                       }
                     } else if (data.done) {
-                      // Clear any pending timeout
-                      if (updateTimeout) {
-                        clearTimeout(updateTimeout)
-                        updateTimeout = null
+                      // Clear any pending update
+                      if (updateTimeoutRef.current) {
+                        clearTimeout(updateTimeoutRef.current)
+                        updateTimeoutRef.current = null
                       }
 
-                      // Final update with complete content
-                      flushSync(() => {
-                        setMessages((prev) =>
-                          prev.map((msg) =>
-                            msg.id === assistantMessageId
-                              ? { ...msg, content: accumulatedContent, isStreaming: false }
-                              : msg
-                          )
+                      // Final update with complete content - no flushSync needed
+                      setMessages((prev) =>
+                        prev.map((msg) =>
+                          msg.id === assistantMessageId
+                            ? { ...msg, content: accumulatedContentRef.current, isStreaming: false }
+                            : msg
                         )
-                      })
+                      )
 
                       // Save message via API to database
                       if (workspaceId) {
@@ -1122,7 +1096,7 @@ export default function DashboardPage() {
                             body: JSON.stringify({
                               workspaceId,
                               role: 'assistant',
-                              message: accumulatedContent
+                              message: accumulatedContentRef.current
                             })
                           })
                         } catch (error) {
@@ -1139,7 +1113,7 @@ export default function DashboardPage() {
                             body: JSON.stringify({
                               sessionId: currentGeneralSessionId,
                               role: 'assistant',
-                              message: accumulatedContent
+                              message: accumulatedContentRef.current
                             })
                           })
                         } catch (error) {
@@ -1147,18 +1121,18 @@ export default function DashboardPage() {
                         }
                       }
 
-                      // ✅ Issue 2, 4: Generate diagram immediately after streaming ends (no race condition)
-                      if (hasDiagramQuery && accumulatedContent) {
+                      // ✅ Generate diagram immediately after streaming ends (no race condition)
+                      if (hasDiagramQuery && accumulatedContentRef.current) {
                         console.log('📊 Generating diagram from response...')
                         // Fire diagram generation without blocking message completion
-                        generateDiagramFromResponse(accumulatedContent, assistantMessageId)
+                        generateDiagramFromResponse(accumulatedContentRef.current, assistantMessageId)
                       }
+                      accumulatedContentRef.current = '' // Reset for next message
                       setIsStreaming(false)
                       setAbortController(null)
                       setIsProcessing(false)
                       return
                     } else if (data.error) {
-                      streamError = true
                       console.error('🛑 Stream error:', data.error, 'Type:', data.type)
                       throw new Error(data.error)
                     }
@@ -1167,7 +1141,6 @@ export default function DashboardPage() {
                     if (parseError instanceof SyntaxError) {
                       console.error('🛑 JSON parsing failed - invalid SSE:', { line, error: parseError.message })
                       console.error('   Raw data:', jsonStr.substring(0, 100))
-                      streamError = true
                       throw new Error(`Invalid JSON response: ${parseError.message}`)
                     }
                     throw parseError
@@ -1187,13 +1160,14 @@ export default function DashboardPage() {
                   msg.id === assistantMessageId
                     ? { 
                         ...msg, 
-                        content: accumulatedContent || `Error: ${readerError instanceof Error ? readerError.message : 'Stream failed'}`,
+                        content: accumulatedContentRef.current || `Error: ${readerError instanceof Error ? readerError.message : 'Stream failed'}`,
                         isStreaming: false 
                       }
                     : msg
                 )
               )
             }
+            accumulatedContentRef.current = '' // Reset for next message
             setIsStreaming(false)
             setAbortController(null)
             setIsProcessing(false)
