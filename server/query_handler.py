@@ -138,8 +138,11 @@ def semantic_search_with_metadata(query: str, top_k: int = 5, min_similarity: fl
             'match_count': top_k,
             'p_workspace_id': workspace_id,
             'file_filter': None,  # No file name filtering, use file_ids instead
-            'file_ids': selected_file_ids
         }
+        
+        # Only add file_ids if provided (optional parameter)
+        if selected_file_ids:
+            rpc_params['file_ids'] = selected_file_ids
         
         response = supabase_client.rpc('search_embeddings', rpc_params).execute()
         
@@ -170,7 +173,10 @@ def semantic_search_with_metadata(query: str, top_k: int = 5, min_similarity: fl
                     'subsection_title': metadata.get('subsection_title'),
                     'paragraph_index': metadata.get('paragraph_index'),
                     'document_version': metadata.get('document_version'),
-                    'effective_date': metadata.get('effective_date')
+                    'effective_date': metadata.get('effective_date'),
+                    # Add line number/range if available
+                    'line_number': metadata.get('line_number'),
+                    'line_range': metadata.get('line_range')
                 }
                 
                 results.append({
@@ -599,21 +605,27 @@ def _format_citation(citation_info: dict):
     
     if citation_info.get('page_number'):
         parts.append(f"Page {citation_info['page_number']}")
-    
+
+    # Add line number or line range if available
+    if citation_info.get('line_number') is not None:
+        parts.append(f"Line {citation_info['line_number']}")
+    elif citation_info.get('line_range') is not None:
+        parts.append(f"Lines {citation_info['line_range']}")
+
     if citation_info.get('section_title'):
         section = citation_info['section_title']
         if citation_info.get('subsection_title'):
             section += f" → {citation_info['subsection_title']}"
         parts.append(section)
-    
+
     if citation_info.get('uploaded_at'):
         parts.append(f"(Updated: {citation_info['uploaded_at'][:10]})")
-    
+
     confidence = citation_info.get('similarity_score', 0)
     if confidence:
         confidence_pct = int(confidence * 100)
         parts.append(f"Relevance: {confidence_pct}%")
-    
+
     return " | ".join(parts)
 
 
@@ -658,54 +670,71 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
                 content = result.get('content', '')
                 citation_info = result.get('citation_info', {})
                 citation_str = _format_citation(citation_info)
-                
+                # Attempt to infer line number/range if not present (optional, fallback)
+                if 'line_number' not in citation_info and 'line_range' not in citation_info:
+                    # If chunk_index and chunk size are available, estimate line range
+                    chunk_index = citation_info.get('chunk_index')
+                    # Assume 20 lines per chunk as a rough estimate (customize as needed)
+                    if chunk_index is not None:
+                        start_line = chunk_index * 20 + 1
+                        end_line = start_line + 19
+                        citation_info['line_range'] = f"{start_line}-{end_line}"
+
                 # Truncate content to 2000 chars for context window
                 truncated_content = content[:2000] + ('...' if len(content) > 2000 else '')
-                
+
                 context_parts.append(f"**{citation_str}**\n{truncated_content}")
                 citations.append(citation_info)
     
     # Fallback: If files are selected, fetch embeddings ranked by similarity
     if selected_file_ids:
         print(f"📌 Activating fallback: Fetching ranked embeddings from {len(selected_file_ids)} selected file(s)")
-        
+
         # Get query embedding for similarity computation
         model = get_semantic_model()
         if model:
             query_embedding = model.encode([query])[0].tolist()
-            
+
             for file_id in selected_file_ids:
                 # Get file metadata from detected_files (now guaranteed to exist via semantic_search_with_metadata)
                 file_info = detected_files.get(file_id)
                 if not file_info:
                     print(f"   ⚠️  Could not find metadata for file {file_id}")
                     continue
-                
+
                 # Fetch embeddings ranked by cosine similarity to query
                 ranked_chunks = fetch_relevant_document_data_by_file_id(file_id, query_embedding)
-                
+
                 if ranked_chunks:
                     # Use top chunks by similarity (limit to ~5000 chars)
                     content_parts = []
                     total_chars = 0
                     for chunk_result in ranked_chunks:
                         chunk_text = chunk_result.get('chunk_text', '')
+                        chunk_index = chunk_result.get('chunk_index')
+                        # Estimate line range for each chunk
+                        start_line = chunk_index * 20 + 1 if chunk_index is not None else None
+                        end_line = start_line + 19 if start_line is not None else None
+                        line_range = f"{start_line}-{end_line}" if start_line and end_line else None
+                        # Optionally, could add line range to chunk text or citation
+                        # For now, just aggregate content
                         if total_chars + len(chunk_text) <= 5000:
                             content_parts.append(chunk_text)
                             total_chars += len(chunk_text)
                         else:
                             break
-                    
+
                     full_content = "\n\n".join(content_parts)
-                    
+
                     # Format citation for fallback content
                     citation_info = {
                         'file_name': file_info.get('file_name', 'Unknown'),
                         'uploaded_at': file_info.get('uploaded_at'),
-                        'similarity_score': ranked_chunks[0].get('similarity_score', 0.0) if ranked_chunks else 0.0
+                        'similarity_score': ranked_chunks[0].get('similarity_score', 0.0) if ranked_chunks else 0.0,
+                        'line_range': line_range if ranked_chunks else None
                     }
                     citation_str = _format_citation(citation_info)
-                    
+
                     context_parts.append(
                         f"**{citation_str}** (Ranked by Similarity)\n{full_content}{'...' if total_chars > 5000 else ''}"
                     )
@@ -728,7 +757,7 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
         enhanced_query = query
         system_prompt = None
     else:
-        enhanced_query = f"""Answer this question using the document content provided below. Cite your sources using the format: [Source: Document Name, Page X, Section Y]
+        enhanced_query = f"""Answer this question using the document content provided below. Cite your sources using the format: [Source: Document Name|Page X|Line Y] based on the metadata provided.
 
 Question: {query}
 
