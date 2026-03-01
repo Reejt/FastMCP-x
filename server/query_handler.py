@@ -634,10 +634,11 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
     Query the LLM with relevant document chunks as context using pgvector semantic search (async version)
     Text documents only - CSV/Excel files are handled separately via their dedicated functions
     
-    ENHANCED WITH CITATIONS:
+    VERIFIED CITATIONS ONLY:
     - Each document chunk includes full citation metadata (page numbers, sections, dates)
-    - LLM receives formatted citations for proper source attribution
-    - System prompt instructs LLM to cite sources in responses
+    - Citations are automatically appended based on VERIFIED metadata only
+    - LLM is NOT asked to cite (prevents hallucination)
+    - Response combines LLM answer + verified source citations
     
     FALLBACK MECHANISM:
     - If file(s) exist but all scores are low (< 0.25), includes ALL embeddings from those files
@@ -661,7 +662,7 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
     
     # Build context from semantic search results
     context_parts = []
-    citations = []  # Track citations for the response
+    verified_citations = []  # Track VERIFIED citations from actual source metadata
     
     if semantic_results:
         # Build context from strong semantic search results with citations
@@ -684,7 +685,7 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
                 truncated_content = content[:2000] + ('...' if len(content) > 2000 else '')
 
                 context_parts.append(f"**{citation_str}**\n{truncated_content}")
-                citations.append(citation_info)
+                verified_citations.append(citation_info)  # Track for verified citation output
     
     # Fallback: If files are selected, fetch embeddings ranked by similarity
     if selected_file_ids:
@@ -738,7 +739,7 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
                     context_parts.append(
                         f"**{citation_str}** (Ranked by Similarity)\n{full_content}{'...' if total_chars > 5000 else ''}"
                     )
-                    citations.append(citation_info)
+                    verified_citations.append(citation_info)  # Track for verified citation output
                     print(f"   ✅ Loaded {len(ranked_chunks)} ranked chunks ({total_chars} chars) from {file_info.get('file_name', 'Unknown')}")
                 else:
                     print(f"   ⚠️  No embeddings found for file {file_info.get('file_name', file_id)}")
@@ -752,12 +753,14 @@ async def query_with_context(query: str, max_chunks: int = 5, include_context_pr
     
     context = "\n\n---\n\n".join(context_parts)
     
-    # Build enhanced query with citations - if context is empty, use query directly
+    # Build enhanced query WITHOUT asking LLM to cite (prevents hallucination)
     if not context.strip():
-        enhanced_query = query
-        system_prompt = None
-    else:
-        enhanced_query = f"""Answer this question using the document content provided below. Cite your sources using the format: [Source: Document Name|Page X|Line Y] based on the metadata provided.
+        # No context available
+        return await query_model(query, conversation_history=conversation_history, stream=stream, abort_event=abort_event)
+    
+    # Ask LLM to answer question using context, but DON'T ask it to cite
+    # (we'll append verified citations automatically)
+    enhanced_query = f"""Answer this question using the document content provided below.
 
 Question: {query}
 
@@ -765,9 +768,79 @@ DOCUMENT CONTENT:
 {context}
 """
     
-    # Query the LLM with context, citations, and system prompt (async)
-    # ✅ Pass abort_event for cancellation support
-    return await query_model(enhanced_query, conversation_history=conversation_history, stream=stream, abort_event=abort_event)
+    # Build verified citations from semantic search results (extract only citation info, no LLM generation)
+    def build_citations_section(citations_list):
+        """Format verified citations directly from semantic search results."""
+        if not citations_list:
+            return ""
+        
+        # Remove duplicates (same file may appear in multiple chunks)
+        unique_sources = {}
+        for citation_info in citations_list:
+            file_name = citation_info.get('file_name', 'Unknown')
+            if file_name not in unique_sources:
+                unique_sources[file_name] = citation_info
+            else:
+                # Keep highest similarity score
+                if citation_info.get('similarity_score', 0) > unique_sources[file_name].get('similarity_score', 0):
+                    unique_sources[file_name] = citation_info
+        
+        # Format each citation
+        citation_lines = ["---\n**Sources:**"]
+        for file_name, citation_info in sorted(unique_sources.items()):
+            parts = [f"• {file_name}"]
+            
+            if citation_info.get('page_number'):
+                parts.append(f"Page {citation_info['page_number']}")
+            if citation_info.get('line_number') is not None:
+                parts.append(f"Line {citation_info['line_number']}")
+            elif citation_info.get('line_range'):
+                parts.append(f"Lines {citation_info['line_range']}")
+            if citation_info.get('section_title'):
+                section = citation_info['section_title']
+                if citation_info.get('subsection_title'):
+                    section += f" → {citation_info['subsection_title']}"
+                parts.append(section)
+            
+            score = citation_info.get('similarity_score', 0)
+            if score:
+                score_pct = int(score * 100)
+                parts.append(f"({score_pct}% relevant)")
+            
+            citation_lines.append(" | ".join(parts))
+        
+        return "\n".join(citation_lines)
+    
+    citations_appendix = build_citations_section(verified_citations)
+    
+    # Query the LLM with context
+    if stream:
+        # For streaming: collect response, then append verified citations
+        async def stream_with_verified_citations():
+            llm_response = ""
+            llm_generator = await query_model(enhanced_query, conversation_history=conversation_history, stream=True, abort_event=abort_event)
+            
+            # Stream the LLM response
+            async for chunk in llm_generator:
+                if 'response' in chunk:
+                    llm_response += chunk['response']
+                yield chunk
+            
+            # After streaming completes, append verified citations
+            if citations_appendix and llm_response.strip():
+                yield {
+                    'response': f"\n\n{citations_appendix}",
+                    'done': True
+                }
+        
+        return stream_with_verified_citations()
+    else:
+        # For non-streaming: get response and append verified citations
+        llm_response = await query_model(enhanced_query, conversation_history=conversation_history, stream=False, abort_event=abort_event)
+        
+        if citations_appendix and llm_response.strip():
+            return f"{llm_response}\n\n{citations_appendix}"
+        return llm_response
 
 
 
