@@ -1473,6 +1473,7 @@ export default function DashboardPage() {
                 workspaceName={currentWorkspaceName}
                 workspaceId={workspaceId || undefined}
                 variant="dock"
+                showAgentToggle={false}
               />
             </motion.div>
           ) : (
@@ -1499,6 +1500,7 @@ export default function DashboardPage() {
                   workspaceName={currentWorkspaceName}
                   workspaceId={workspaceId || undefined}
                   variant="hero"
+                  showAgentToggle={false}
                 />
               </div>
             </motion.div>

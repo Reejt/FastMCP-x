@@ -31,11 +31,11 @@ from client.fast_mcp_client import (
     web_search as mcp_web_search,
     query_csv_with_context as mcp_query_csv_with_context,
     query_excel_with_context as mcp_query_excel_with_context,
-    generate_diagram as mcp_generate_diagram
+    generate_diagram as mcp_generate_diagram,
+    agent_query as mcp_agent_query,
 )
 
-# Import enhanced web search
-from server.enhanced_web_search import get_enhanced_search
+from server.agent import stream_agent
 
 # Import Mermaid converter for diagram generation
 try:
@@ -149,6 +149,13 @@ class DiagramGenerationRequest(BaseModel):
     query: str                          # User query to visualize as diagram
     diagram_type: str = "auto"          # auto, pie, flowchart, gantt, sequence, class
     workspace_id: Optional[str] = None  # Optional workspace context
+
+
+class AgentQueryRequest(BaseModel):
+    query: str
+    workspace_id: Optional[str] = None
+    conversation_history: Optional[list] = []
+    user_id: Optional[str] = None
 
 
 # Helper function to extract text from MCP result
@@ -929,6 +936,35 @@ async def store_connector_tokens(request: StoreTokensRequest):
     except Exception as e:
         print(f"❌ Failed to store tokens for {request.connector_type}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to store tokens: {str(e)}")
+
+
+@app.post("/api/agent/query")
+async def agent_query_endpoint(request: AgentQueryRequest):
+    """
+    Agent endpoint: streams each reasoning step as SSE chunks in real-time,
+    then streams the final answer as the last chunk.
+    """
+    print(f"🤖 Agent query: {request.query}")
+
+    async def sse_generator():
+        try:
+            async for chunk in stream_agent(
+                query=request.query,
+                workspace_id=request.workspace_id,
+                conversation_history=request.conversation_history or [],
+            ):
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        except Exception as e:
+            print(f"❌ Agent stream error: {e}")
+            yield f"data: {json.dumps({'chunk': f'Agent error: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(
+        sse_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
 
 if __name__ == "__main__":

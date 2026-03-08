@@ -6,7 +6,7 @@ import type { File } from '@/app/types'
 import ConnectorMention from './ConnectorMention'
 
 interface ChatInputProps {
-  onSendMessage: (message: string, selectedFileIds?: string[]) => void
+  onSendMessage: (message: string, selectedFileIds?: string[], agentMode?: boolean) => void
   onCancel?: () => void
   disabled?: boolean
   isStreaming?: boolean
@@ -15,13 +15,15 @@ interface ChatInputProps {
   workspaceId?: string
   userId?: string
   variant?: 'hero' | 'dock'
+  showAgentToggle?: boolean
 }
 
-export default function ChatInput({ onSendMessage, disabled = false, workspaceName, workspaceId, userId, onCancel, isStreaming = false, variant = 'dock' }: ChatInputProps) {
+export default function ChatInput({ onSendMessage, disabled = false, workspaceName, workspaceId, userId, onCancel, isStreaming = false, variant = 'dock', showAgentToggle = true }: ChatInputProps) {
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [cancelDisabled, setCancelDisabled] = useState(false)
   const isHero = variant === 'hero'
+  const [agentMode, setAgentMode] = useState(false)
 
   // @mention connector state
   const [showConnectorMention, setShowConnectorMention] = useState(false)
@@ -51,7 +53,7 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
     if (input.trim() && !disabled && !isStreaming) {
       // If there's an active connector, prepend @connector to the message
       const message = activeConnector ? `@${activeConnector} ${input.trim()}` : input.trim()
-      onSendMessage(message, selectedFileIds.length > 0 ? selectedFileIds : undefined)
+      onSendMessage(message, selectedFileIds.length > 0 ? selectedFileIds : undefined, agentMode)
       setInput('')
       setActiveConnector(null)
       if (textareaRef.current) {
@@ -453,6 +455,26 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
                     </svg>
                   </button>
 
+                  {/* Agent Mode toggle */}
+                  {showAgentToggle && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setAgentMode(prev => !prev) }}
+                    disabled={disabled}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer select-none"
+                    style={{
+                      backgroundColor: agentMode ? 'var(--accent-primary)' : 'rgba(255,255,255,0.06)',
+                      color: agentMode ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                    }}
+                    title="Agent mode: autonomous multi-step reasoning"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h16a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+                    </svg>
+                    Agent
+                  </button>
+                  )}
+
                   {selectedFileIds.length > 0 && (
                     <span className="text-xs select-none truncate" style={{ color: 'var(--text-muted)' }}>
                       {selectedFileIds.length} files selected
@@ -600,6 +622,26 @@ export default function ChatInput({ onSendMessage, disabled = false, workspaceNa
                   setConnectorFilter('')
                 }}
               />
+
+              {/* Agent Mode toggle - dock variant */}
+              {showAgentToggle && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setAgentMode(prev => !prev) }}
+                disabled={disabled}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all ml-2 flex-shrink-0 cursor-pointer select-none"
+                style={{
+                  backgroundColor: agentMode ? 'var(--accent-primary)' : 'rgba(255,255,255,0.06)',
+                  color: agentMode ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                }}
+                title="Agent mode: autonomous multi-step reasoning"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h16a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+                </svg>
+                Agent
+              </button>
+              )}
 
               {/* Send/Cancel Button - Right */}
               {isStreaming ? (

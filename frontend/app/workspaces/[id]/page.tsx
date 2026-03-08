@@ -376,7 +376,7 @@ export default function WorkspacePage() {
     }
   }
 
-  const handleSendMessage = async (content: string, selected_file_ids?: string[]) => {
+  const handleSendMessage = async (content: string, selected_file_ids?: string[], agentMode?: boolean) => {
     if (!content.trim() || isProcessing) return
 
     // If no current session, create one first and get the session ID
@@ -552,7 +552,8 @@ export default function WorkspacePage() {
           query: content,
           conversation_history,
             workspace_id: workspaceId,
-            selected_file_ids
+            selected_file_ids,
+            agent_mode: agentMode ?? false,
         }),
         signal: newAbortController.signal
       })

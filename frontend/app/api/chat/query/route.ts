@@ -10,7 +10,7 @@ const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'http://localhost:300
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, action = 'query', conversation_history = [], workspace_id, selected_file_ids } = body;
+    const { query, action = 'query', conversation_history = [], workspace_id, selected_file_ids, agent_mode = false } = body;
 
     if (!query) {
       return NextResponse.json(
@@ -36,6 +36,56 @@ export async function POST(request: NextRequest) {
 
     const { data: { user } } = await supabase.auth.getUser();
     const userId = user?.id;
+
+    // Agent mode: route to /api/agent/query — bridge returns SSE, proxy it through
+    if (agent_mode) {
+      const agentResponse = await fetch(`${BRIDGE_SERVER_URL}/api/agent/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, workspace_id, conversation_history, user_id: userId }),
+        signal: request.signal,
+      });
+
+      if (!agentResponse.ok) {
+        let errorMessage = 'Agent error';
+        try {
+          const err = await agentResponse.json();
+          errorMessage = err.detail || err.error || 'Agent error';
+        } catch { /* ignore */ }
+        return NextResponse.json({ error: errorMessage }, { status: agentResponse.status });
+      }
+
+      // Bridge now returns SSE — proxy the stream directly to the client
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = agentResponse.body?.getReader();
+          try {
+            request.signal.addEventListener('abort', () => {
+              reader?.cancel();
+              controller.close();
+            });
+            while (true) {
+              const { done, value } = await reader!.read();
+              if (done) { controller.close(); break; }
+              controller.enqueue(value);
+            }
+          } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+              controller.close();
+            } else {
+              controller.error(error);
+            }
+          }
+        }
+      });
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      });
+    }
 
     // Build request body
     let requestBody: { query: string; conversation_history?: unknown[]; workspace_id?: string; selected_file_ids?: string[]; user_id?: string } = {

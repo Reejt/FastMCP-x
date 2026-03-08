@@ -15,7 +15,7 @@ interface WorkspaceIntroductionProps {
   messages: Message[]
   isProcessing: boolean
   isStreaming?: boolean
-  onSendMessage: (message: string, selectedFileIds?: string[]) => void
+  onSendMessage: (message: string, selectedFileIds?: string[], agentMode?: boolean) => void
   onCancel?: () => void
   isWorkspaceSidebarCollapsed?: boolean
   onExpandWorkspaceSidebar?: () => void
@@ -45,6 +45,7 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([])
   const [draftSelectedFileIds, setDraftSelectedFileIds] = useState<string[]>([])
   const referenceFileInputRef = useRef<HTMLInputElement>(null)
+  const [agentMode, setAgentMode] = useState(false)
   const [referenceUploading, setReferenceUploading] = useState(false)
 
   // Check if we're in chat mode (has messages)
@@ -376,7 +377,7 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (message.trim() && !isProcessing) {
-      onSendMessage(message.trim(), selectedFileIds.length > 0 ? selectedFileIds : undefined)
+      onSendMessage(message.trim(), selectedFileIds.length > 0 ? selectedFileIds : undefined, agentMode)
       setMessage('')
     }
   }
@@ -573,20 +574,22 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                   style={{ color: theme.text }}
                 />
 
-                {/* Mode Selector */}
+{/* Agent Mode Toggle */}
                 <div className="flex items-center gap-2 ml-3">
                   <button
                     type="button"
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors hover:opacity-80"
-                    style={{ color: theme.textSecondary }}
+                    onClick={(e) => { e.stopPropagation(); setAgentMode(prev => !prev) }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full transition-colors"
+                    style={{
+                      backgroundColor: agentMode ? 'var(--accent-primary)' : 'rgba(255,255,255,0.06)',
+                      color: agentMode ? 'var(--text-inverse)' : theme.textSecondary,
+                    }}
+                    title={agentMode ? 'Agent mode on' : 'Agent mode off'}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    <span>Auto</span>
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
+                    <span>Agent</span>
                   </button>
 
                   {/* Send/Cancel Button */}
@@ -787,29 +790,48 @@ export default function WorkspaceIntroduction({ workspace, messages, isProcessin
                       )}
                     </div>
 
-                    {/* Submit Button */}
-                    <button
-                      type="submit"
-                      disabled={!message.trim() || isProcessing}
-                      className="p-2.5 rounded-full transition-all"
-                      style={{
-                        backgroundColor: message.trim() && !isProcessing ? 'var(--text-primary)' : theme.hoverBg,
-                        color: message.trim() && !isProcessing ? 'var(--bg-app)' : theme.textMuted,
-                        cursor: !message.trim() || isProcessing ? 'not-allowed' : 'pointer'
-                      }}
-                      aria-label="Send message"
-                    >
-                      {isProcessing ? (
-                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                      ) : (
+                    <div className="flex items-center gap-2">
+                      {/* Agent Mode Toggle */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setAgentMode(prev => !prev) }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full transition-colors"
+                        style={{
+                          backgroundColor: agentMode ? 'var(--accent-primary)' : 'rgba(255,255,255,0.06)',
+                          color: agentMode ? 'var(--text-inverse)' : theme.textSecondary,
+                        }}
+                        title={agentMode ? 'Agent mode on' : 'Agent mode off'}
+                      >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
-                      )}
-                    </button>
+                        <span>Agent</span>
+                      </button>
+
+                      {/* Submit Button */}
+                      <button
+                        type="submit"
+                        disabled={!message.trim() || isProcessing}
+                        className="p-2.5 rounded-full transition-all"
+                        style={{
+                          backgroundColor: message.trim() && !isProcessing ? 'var(--text-primary)' : theme.hoverBg,
+                          color: message.trim() && !isProcessing ? 'var(--bg-app)' : theme.textMuted,
+                          cursor: !message.trim() || isProcessing ? 'not-allowed' : 'pointer'
+                        }}
+                        aria-label="Send message"
+                      >
+                        {isProcessing ? (
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </form>

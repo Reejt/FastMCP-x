@@ -17,13 +17,12 @@ from server.document_ingestion import ingest_file
 from server.query_handler import (
     answer_query, 
     query_model, 
-    get_semantic_model,
-    query_csv_with_context,
-    query_excel_with_context
+    get_semantic_model
 )
 from server.mermaid_converter import convert_query_to_mermaid_markdown
 from server.enhanced_web_search import enhanced_web_search
 from server.instructions import get_active_instruction, clear_instruction_cache, get_instruction_preview
+from server.agent import run_agent
 
 
 
@@ -132,13 +131,13 @@ async def web_search_tool(query: str, conversation_history: str = "[]", workspac
 
 
 @mcp.tool
-def query_csv_with_context_tool(query: str, file_name: str, file_path: Optional[str] = None, conversation_history: str = "[]", workspace_id: Optional[str] = None, selected_file_ids: Optional[str] = None) -> str:
+async def query_csv_with_context_tool(query: str, file_name: str = "", file_path: Optional[str] = None, conversation_history: str = "[]", workspace_id: Optional[str] = None, selected_file_ids: Optional[str] = None) -> str:
     """
     Query CSV data using keyword filtering and LLM reasoning with conversation context
     
     Args:
         query: The natural language query about the CSV data
-        file_name: Name of the CSV file
+        file_name: Name of the CSV file (optional)
         file_path: Path to the CSV file (local or Supabase storage reference)
         conversation_history: JSON string of previous messages for context (default: "[]")
         workspace_id: Optional workspace ID filter
@@ -148,12 +147,11 @@ def query_csv_with_context_tool(query: str, file_name: str, file_path: Optional[
         LLM-generated answer based on the CSV data with relevant rows
     """
     try:
+        from server.csv_excel_processor import process_csv_excel_query
         history = json.loads(conversation_history) if conversation_history else []
         file_ids = json.loads(selected_file_ids) if selected_file_ids else None
-        result = query_csv_with_context(
+        result = await process_csv_excel_query(
             query=query,
-            file_name=file_name,
-            file_path=file_path,
             conversation_history=history,
             selected_file_ids=file_ids
         )
@@ -166,13 +164,13 @@ def query_csv_with_context_tool(query: str, file_name: str, file_path: Optional[
 
 
 @mcp.tool
-def query_excel_with_context_tool(query: str, file_name: str, file_path: Optional[str] = None, conversation_history: str = "[]", workspace_id: Optional[str] = None, selected_file_ids: Optional[str] = None) -> str:
+async def query_excel_with_context_tool(query: str, file_name: str = "", file_path: Optional[str] = None, conversation_history: str = "[]", workspace_id: Optional[str] = None, selected_file_ids: Optional[str] = None) -> str:
     """
     Query Excel data using keyword filtering and LLM reasoning with conversation context
     
     Args:
         query: The natural language query about the Excel data
-        file_name: Name of the Excel file
+        file_name: Name of the Excel file (optional)
         file_path: Path to the Excel file (local or Supabase storage reference)
         conversation_history: JSON string of previous messages for context (default: "[]")
         workspace_id: Optional workspace ID filter
@@ -182,12 +180,11 @@ def query_excel_with_context_tool(query: str, file_name: str, file_path: Optiona
         LLM-generated answer based on the Excel data with relevant rows
     """
     try:
+        from server.csv_excel_processor import process_csv_excel_query
         history = json.loads(conversation_history) if conversation_history else []
         file_ids = json.loads(selected_file_ids) if selected_file_ids else None
-        result = query_excel_with_context(
+        result = await process_csv_excel_query(
             query=query,
-            file_name=file_name,
-            file_path=file_path,
             conversation_history=history,
             selected_file_ids=file_ids
         )
@@ -316,6 +313,31 @@ def clear_instruction_cache_tool(workspace_id: Optional[str] = None) -> str:
             return "All instruction caches cleared"
     except Exception as e:
         return f"Error clearing instruction cache: {str(e)}"
+
+
+@mcp.tool
+async def agent_query_tool(
+    query: str,
+    workspace_id: Optional[str] = None,
+    conversation_history: str = "[]"
+) -> str:
+    """
+    Autonomous agent that reasons over multiple tools to answer complex queries.
+    Uses a ReAct loop to combine document search, web search, and diagram generation.
+    
+    Args:
+        query: The complex user query
+        workspace_id: Optional workspace ID for context filtering
+        conversation_history: JSON string of previous messages (default: "[]")
+    
+    Returns:
+        Final synthesized answer from multi-step reasoning
+    """
+    try:
+        history = json.loads(conversation_history) if conversation_history else []
+        return await run_agent(query=query, workspace_id=workspace_id, conversation_history=history)
+    except Exception as e:
+        return f"Agent error: {str(e)}"
 
 
 if __name__ == "__main__":

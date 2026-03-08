@@ -350,6 +350,39 @@ async def generate_diagram(query: str, diagram_type: str = "auto"):
             }
 
 
+async def agent_query(query: str, workspace_id: Optional[str] = None, conversation_history: Optional[list] = None):
+    """
+    Run the autonomous ReAct agent over all available tools.
+
+    Args:
+        query: The complex user query requiring multi-step reasoning
+        workspace_id: Optional workspace ID for context filtering
+        conversation_history: List of previous messages for context (optional)
+
+    Returns:
+        Final synthesized answer string
+    """
+    import json
+    async with Client(FASTMCP_SERVER_URL) as client:
+        tool_params = {
+            "query": query,
+            "conversation_history": json.dumps(conversation_history) if conversation_history else "[]",
+        }
+
+        if workspace_id:
+            tool_params["workspace_id"] = workspace_id
+
+        result = await client.call_tool("agent_query_tool", tool_params)
+
+        # Extract response from MCP result
+        if hasattr(result, 'content') and result.content:
+            return result.content[0].text
+        elif hasattr(result, 'data') and result.data:
+            return result.data
+        else:
+            return str(result)
+
+
 
 
 
