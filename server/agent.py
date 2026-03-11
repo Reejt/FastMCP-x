@@ -12,7 +12,7 @@ from server.enhanced_web_search import enhanced_web_search
 from server.csv_excel_processor import process_csv_excel_query
 from server.mermaid_converter import convert_query_to_mermaid_markdown
 
-MAX_STEPS = 5  # Safety cap on reasoning iterations
+MAX_STEPS = 3  # Safety cap on reasoning iterations (3b model has ~8K context, 5 steps would overflow)
 
 
 def _resolve_file_ids(workspace_id: Optional[str], file_name: str = "", extensions: list = None) -> list:

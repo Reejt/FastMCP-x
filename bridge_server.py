@@ -45,6 +45,13 @@ except ImportError:
     print("⚠️  Mermaid converter not available")
     MERMAID_AVAILABLE = False
 
+# Import enhanced web search
+try:
+    from server.enhanced_web_search import get_enhanced_search
+except ImportError:
+    print("⚠️  Enhanced web search not available")
+    get_enhanced_search = None
+
 # Import connector handler for external tool integrations
 try:
     from server.connectors.handler import get_connector_handler, parse_connector_mention
@@ -367,7 +374,7 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
             print(f"🤔 Evaluating if web search is needed...")
 
             # Initialize enhanced search
-            enhanced_search = get_enhanced_search()
+            enhanced_search = get_enhanced_search() if get_enhanced_search else None
 
             # Make search decision (but don't execute search yet)
             # ✅ NEW: Pass force_web_search parameter
@@ -379,11 +386,19 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                     'confidence': 1.0,
                     'method': 'forced'
                 }
-            else:
+            elif enhanced_search:
                 search_decision = await enhanced_search.decision_engine.should_search(
                     query_request.query,
                     query_request.conversation_history
                 )
+            else:
+                print(f"⚠️  Enhanced search not available, skipping decision engine")
+                search_decision = {
+                    'needs_search': False,
+                    'reasoning': 'Enhanced search module unavailable',
+                    'confidence': 0.0,
+                    'method': 'fallback'
+                }
 
             print(f"📊 Search decision: {search_decision['needs_search']} - {search_decision['reasoning']}")
 
@@ -422,9 +437,30 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
             if not has_workspace_context and not has_file_selection:
                 print(f"🔒 SECURITY: No workspace context and no file selection - using pure LLM (no semantic search)")
                 
+                # ✅ If web search was needed in Route 4 decision, perform it here
+                if search_decision['needs_search']:
+                    print(f"🌐 Executing web search (confidence: {search_decision['confidence']:.2f})")
+                    try:
+                        search_result = await mcp_web_search(
+                            search_query=query_request.query,
+                            conversation_history=query_request.conversation_history,
+                            workspace_id=query_request.workspace_id
+                        )
+                        
+                        if search_result and search_result.strip():
+                            print(f"✅ Web search completed - streaming response")
+                            yield f"data: {json.dumps({'chunk': search_result})}\n\n"
+                            yield f"data: {json.dumps({'done': True})}\n\n"
+                            return
+                        else:
+                            print(f"ℹ️  Web search returned no results, falling back to pure LLM")
+                    except Exception as search_error:
+                        print(f"⚠️  Web search error: {str(search_error)}")
+                        print(f"   Falling back to pure LLM")
+                
+                # Pure LLM query (fallback if web search not needed or failed)
                 from server.query_handler import query_model
                 
-                # Pure LLM query without document context
                 try:
                     full_response = ""
                     response_generator = await query_model(
