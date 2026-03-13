@@ -141,24 +141,30 @@ Rules:
 
 async def _call_agent_llm(prompt: str) -> str:
     """
-    Call Ollama with format=json to maximise the chance that llama3.2:3b
-    outputs a parseable JSON object. Uses requests in a thread executor
-    to stay non-blocking inside the async agent loop.
+    Call llama.cpp with OpenAI-compatible API.
+    Uses requests in a thread executor to stay non-blocking inside the async agent loop.
     """
     import os
     import requests as _requests
-    ollama_url = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')
+    llamacpp_url = os.environ.get('LLAMACPP_BASE_URL', 'http://localhost:8001')
     payload = {
         "model": "llama3.2:3b",
-        "prompt": prompt,
+        "messages": [
+            {"role": "system", "content": "You are a helpful AI assistant that responds in valid JSON format."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 2000,
         "stream": False,
-        "format": "json",
     }
 
     def _do_request():
-        resp = _requests.post(f"{ollama_url}/api/generate", json=payload, timeout=120)
+        resp = _requests.post(f"{llamacpp_url}/v1/chat/completions", json=payload, timeout=120)
         resp.raise_for_status()
-        return resp.json().get("response", "")
+        response_data = resp.json()
+        if 'choices' in response_data and len(response_data['choices']) > 0:
+            return response_data['choices'][0]['message']['content']
+        return ""
 
     try:
         loop = asyncio.get_event_loop()
@@ -307,7 +313,7 @@ async def run_agent(query: str, workspace_id: Optional[str], conversation_histor
     chunks = []
     async for chunk in stream_agent(query, workspace_id, conversation_history):
         chunks.append(chunk)
-    return "".join(chunks)
+    return "".join(str(c) if c is not None else "" for c in chunks)
 
 
 

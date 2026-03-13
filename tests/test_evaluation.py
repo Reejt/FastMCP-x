@@ -343,13 +343,13 @@ class TestRAGASEvaluator:
         assert d["faithfulness"] == 0.95
 
 
-# Integration test (requires Ollama running)
+# Integration test (requires llama.cpp running)
 @pytest.mark.integration
 class TestIntegration:
-    """Integration tests requiring Ollama."""
+    """Integration tests requiring llama.cpp."""
     
     def test_llm_judge_real(self):
-        """Test LLM judge with real Ollama."""
+        """Test LLM judge with real llama.cpp."""
         from evaluation.llm_judge import LLMJudge
         
         judge = LLMJudge()

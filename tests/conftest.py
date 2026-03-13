@@ -103,11 +103,27 @@ def mock_supabase_client():
 
 @pytest.fixture
 def mock_ollama_response():
-    """Fixture providing a mock Ollama API response."""
+    """Fixture providing a mock llama.cpp OpenAI-compatible API response."""
     return {
-        "model": "llama3.2:3b",
-        "response": "This is a test response from the LLM.",
-        "done": True
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "default",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "This is a test response from the LLM."
+                },
+                "finish_reason": "stop"
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 15,
+            "total_tokens": 25
+        }
     }
 
 

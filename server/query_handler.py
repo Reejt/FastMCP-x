@@ -60,9 +60,9 @@ load_dotenv()
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 
-# Initialize Ollama configuration for local development and Docker
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-print(f"🦙 Ollama configured at: {OLLAMA_BASE_URL}")
+# Initialize llama.cpp configuration (OpenAI-compatible API)
+LLAMACPP_BASE_URL = os.environ.get("LLAMACPP_BASE_URL", "http://localhost:8001")
+print(f"🦙 llama.cpp (OpenAI API) configured at: {LLAMACPP_BASE_URL}")
 
 supabase_client: Client = None
 if SUPABASE_AVAILABLE and SUPABASE_URL and SUPABASE_KEY:
@@ -385,11 +385,11 @@ def query_excel_with_context(query: str, file_name: str, file_path: str = None, 
 
 async def query_model(query: str = None, model_name: str = 'llama3.2:3b', stream: bool = False, conversation_history: list = None, abort_event=None, system_prompt: str = None, user_prompt: str = None, timeout: int = 120):
     """
-    Query the Ollama model via HTTP API with optional conversation history and system prompt (async version)
+    Query the llama.cpp model via OpenAI-compatible API with optional conversation history and system prompt (async version)
     
     Args:
         query: The current user query (alternative to user_prompt)
-        model_name: Name of the Ollama model to use (default: llama3.2:3b)
+        model_name: Name of the model to use (default: 'llama3.2:3b'). For OpenAI API, the model name may be ignored by llama.cpp
         conversation_history: List of previous messages [{"role": "user"/"assistant", "content": "..."}]
         stream: Whether to stream the response (default: False)
         abort_event: threading.Event to signal cancellation (optional)
@@ -403,39 +403,41 @@ async def query_model(query: str = None, model_name: str = 'llama3.2:3b', stream
         if not actual_query:
             raise ValueError("Either 'query', 'user_prompt', or 'user_prompt' must be provided")
         
-        # Build full prompt with system prompt if provided
-        full_prompt = actual_query
-        if system_prompt:
-            full_prompt = f"{system_prompt}\n\n{actual_query}"
+        # Build messages array for OpenAI API format
+        messages = []
         
-        # Append conversation history if provided
+        # Add system prompt if provided
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        
+        # Add conversation history if provided
         if conversation_history and len(conversation_history) > 0:
             # Filter out system metadata messages (like link caches) - only include real chat messages
             chat_messages = [
                 msg for msg in conversation_history 
-                if isinstance(msg, dict) and msg.get('role') not in ['system'] and msg.get('content')
+                if isinstance(msg, dict) and msg.get('role') in ['user', 'assistant'] and msg.get('content')
             ]
-            if chat_messages:
-                # Format conversation history with roles for clarity
-                history_parts = []
-                for msg in chat_messages[-5:]:  # Last 5 messages for context
-                    role = msg.get('role', 'user')
-                    content = msg.get('content', '').strip()
-                    if content:
-                        role_label = 'Assistant' if role == 'assistant' else 'User'
-                        history_parts.append(f"{role_label}: {content}")
-                
-                if history_parts:
-                    history_text = "\n\n".join(history_parts)
-                    full_prompt = f"Previous conversation:\n{history_text}\n\nCurrent query: {full_prompt}"
+            # Add last 5 messages for context
+            messages.extend(chat_messages[-5:])
         
-        # Query the LLM with streaming enabled when requested
+        # Ensure proper role alternation for chat template
+        # If the last message is from a user, remove it (we're about to add a new user message)
+        # Mistral chat template requires: user/assistant/user/assistant/...
+        if messages and messages[-1].get('role') == 'user':
+            messages.pop()
+        
+        # Add current query
+        messages.append({"role": "user", "content": actual_query})
+        
+        # Query the LLM with OpenAI-compatible API
         response = requests.post(
-            f'{OLLAMA_BASE_URL}/api/generate',
+            f'{LLAMACPP_BASE_URL}/v1/chat/completions',
             json={
                 'model': model_name,
-                'prompt': full_prompt,
-                'stream': stream  # ✅ FIXED: Use actual stream parameter
+                'messages': messages,
+                'stream': stream,
+                'temperature': 0.7,
+                'max_tokens': 2000
             },
             timeout=timeout,
             stream=stream  # Enable streaming at requests level
@@ -453,7 +455,7 @@ async def query_model(query: str = None, model_name: str = 'llama3.2:3b', stream
                     while True:
                         # Check abort signal before processing each line
                         if abort_event and abort_event.is_set():
-                            response.close()  # Close connection to stop Ollama
+                            response.close()  # Close connection to stop llama.cpp
                             break
                         
                         # Run blocking iter_lines() call in thread pool to avoid blocking event loop
@@ -463,18 +465,29 @@ async def query_model(query: str = None, model_name: str = 'llama3.2:3b', stream
                             break
                         
                         if line:
+                            # Decode bytes to string if necessary
+                            if isinstance(line, bytes):
+                                if line.startswith(b'data: '):
+                                    line = line[6:].decode('utf-8')
+                                else:
+                                    line = line.decode('utf-8')
+                            elif line.startswith('data: '):
+                                # Skip SSE prefix for string data
+                                line = line[6:]
+                            
+                            # Skip [DONE] marker
+                            if line == '[DONE]':
+                                break
+                            
                             try:
                                 chunk = json.loads(line)
-                                if 'response' in chunk:
-                                    # Strip "ASSISTANT:" prefix if present at the beginning
-                                    response_text = chunk['response']
-                                    if response_text.startswith('ASSISTANT:'):
-                                        response_text = response_text[10:].lstrip()
-                                        chunk['response'] = response_text
-                                    yield chunk
-                                # Stop when Ollama signals completion
-                                if chunk.get('done', False):
-                                    break
+                                if 'choices' in chunk and len(chunk['choices']) > 0:
+                                    choice = chunk['choices'][0]
+                                    if 'delta' in choice and 'content' in choice['delta']:
+                                        # Convert OpenAI format to our format for compatibility
+                                        yield {"response": choice['delta']['content']}
+                                    if choice.get('finish_reason') == 'stop':
+                                        break
                             except json.JSONDecodeError:
                                 continue
                 finally:
@@ -482,14 +495,15 @@ async def query_model(query: str = None, model_name: str = 'llama3.2:3b', stream
                     response.close()
             return generate()
         else:
-            # Return full response as before
-            response_text = response.json().get('response', '')
-            # Strip "ASSISTANT:" prefix if present at the beginning
-            if response_text.startswith('ASSISTANT:'):
-                response_text = response_text[10:].lstrip()
+            # Return full response
+            response_data = response.json()
+            if 'choices' in response_data and len(response_data['choices']) > 0:
+                response_text = response_data['choices'][0]['message']['content']
+            else:
+                response_text = ""
             return response_text
     except requests.RequestException as e:
-        raise Exception(f"Ollama API failed: {e}")
+        raise Exception(f"llama.cpp API failed: {e}")
             
    
 
@@ -822,7 +836,7 @@ DOCUMENT CONTENT:
             
             # Stream the LLM response
             async for chunk in llm_generator:
-                if 'response' in chunk:
+                if 'response' in chunk and chunk['response'] is not None:
                     llm_response += chunk['response']
                 yield chunk
             
@@ -851,7 +865,7 @@ def generate_chat_title(first_message: str, model_name: str = 'llama3.2:3b'):
     
     Args:
         first_message: The first user message in the chat session
-        model_name: Name of the Ollama model to use (default: llama3.2:3b)
+        model_name: Name of the model to use (default: 'llama3.2:3b')
         
     Returns:
         A short, descriptive title (max 6 words)
@@ -876,20 +890,26 @@ Examples:
 
 Now generate the title:"""
 
-        # Query the LLM with a shorter timeout since this is a simple task
+        # Query the LLM with OpenAI-compatible API
         response = requests.post(
-            f'{OLLAMA_BASE_URL}/api/generate',
+            f'{LLAMACPP_BASE_URL}/v1/chat/completions',
             json={
                 'model': model_name,
-                'prompt': prompt,
-                'stream': False
+                'messages': [{"role": "user", "content": prompt}],
+                'stream': False,
+                'temperature': 0.7,
+                'max_tokens': 100
             },
             timeout=30
         )
         response.raise_for_status()
         
         # Extract and clean the title
-        title = response.json().get('response', '').strip()
+        response_data = response.json()
+        if 'choices' in response_data and len(response_data['choices']) > 0:
+            title = response_data['choices'][0]['message']['content'].strip()
+        else:
+            title = ""
         
         # Remove any quotation marks that might have been added
         title = title.replace('"', '').replace("'", '').strip()

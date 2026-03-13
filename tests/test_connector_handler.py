@@ -184,13 +184,19 @@ class TestConnectorDecisionEngine:
 
     @patch("server.connectors.decision.requests.post")
     def test_translate_query_calls_llm(self, mock_post):
-        """translate_query should call Ollama to generate API parameters."""
+        """translate_query should call llama.cpp to generate API parameters."""
         from server.connectors.decision import get_decision_engine
         
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "response": '{"search_query": "quarterly report Q4 2024"}'
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"search_query": "quarterly report Q4 2024"}'
+                    }
+                }
+            ]
         }
         mock_post.return_value = mock_response
         

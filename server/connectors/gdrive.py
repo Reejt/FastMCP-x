@@ -148,17 +148,20 @@ async def search_drive(
     if results and len(results) <= 5:
         for result in results[:3]:  # Read content of top 3 files
             try:
-                print(f"📄 Fetching content for: {result['title']} (mime_type={result.get('mime_type')})")
+                title = result.get('title', 'Unknown')
+                mime_type = result.get('mime_type') or 'unknown'
+                print(f"📄 Fetching content for: {title} (mime_type={mime_type})")
                 content = await get_file_content(
-                    result["file_id"], access_token, result.get("mime_type")
+                    result.get("file_id"), access_token, result.get("mime_type")
                 )
                 if content:
                     result["content"] = content[:2000]  # Truncate for context
                     print(f"✅ Content extracted ({len(content)} chars): {content[:100]}...")
                 else:
-                    print(f"⚠️  No content extracted for {result['title']}")
+                    print(f"⚠️  No content extracted for {title}")
             except Exception as e:
-                print(f"❌ Content fetch error for {result['title']}: {str(e)}")
+                title = result.get('title', 'Unknown')
+                print(f"❌ Content fetch error for {title}: {str(e)}")
                 pass  # Content fetch is best-effort
 
     return results

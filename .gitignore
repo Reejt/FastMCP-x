@@ -18,6 +18,9 @@ __pycache__/
 venv/
 ENV/
 
+# Local model storage
+/llama_models/
+
 # VS Code
 .vscode/
 

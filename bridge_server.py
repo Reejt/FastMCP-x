@@ -477,8 +477,10 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                         
                         if isinstance(chunk, dict) and 'response' in chunk:
                             chunk_text = chunk['response']
-                            full_response += chunk_text
-                            yield f"data: {json.dumps({'chunk': chunk_text})}\n\n"
+                            if chunk_text is not None:
+                                chunk_text = str(chunk_text)
+                                full_response += chunk_text
+                                yield f"data: {json.dumps({'chunk': chunk_text})}\n\n"
                     
                     print(f"✅ Pure LLM query completed ({len(full_response)} chars)")
                     yield f"data: {json.dumps({'done': True})}\n\n"
@@ -532,14 +534,16 @@ async def query_endpoint(query_request: QueryRequest, request: Request):
                 async for chunk in response_generator:
                     # ✅ CHECK FOR CLIENT DISCONNECT
                     if await request.is_disconnected():
-                        print("🛑 Client disconnected - aborting Ollama request")
+                        print("🛑 Client disconnected - aborting llama.cpp request")
                         abort_event.set()  # Signal abort to query_model
                         break
                     
                     if isinstance(chunk, dict) and 'response' in chunk:
                         chunk_text = chunk['response']
-                        full_response += chunk_text
-                        yield f"data: {json.dumps({'chunk': chunk_text})}\n\n"
+                        if chunk_text is not None:
+                            chunk_text = str(chunk_text)
+                            full_response += chunk_text
+                            yield f"data: {json.dumps({'chunk': chunk_text})}\n\n"
             except Exception as chunk_error:
                 print(f"❌ Chunk processing error: {type(chunk_error).__name__}: {str(chunk_error)}")
                 yield f"data: {json.dumps({'error': str(chunk_error)})}\n\n"
@@ -798,7 +802,7 @@ class TitleGenerationRequest(BaseModel):
 async def generate_title(request: TitleGenerationRequest):
     """
     Generate a descriptive title for a chat session based on the first message.
-    Uses Ollama LLM to create concise, meaningful titles.
+    Uses llama.cpp LLM to create concise, meaningful titles.
     
     Args:
         request: Contains the first message from the chat

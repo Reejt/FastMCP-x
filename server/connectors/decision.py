@@ -174,22 +174,27 @@ class ConnectorDecisionEngine:
             item_parts = [f"  <result rank=\"{i}\">"]
 
             # Common fields across connectors
-            if result.get("title"):
-                item_parts.append(f"    <title>{result['title']}</title>")
+            title = result.get("title")
+            if title:
+                item_parts.append(f"    <title>{title}</title>")
             if result.get("snippet") or result.get("content"):
                 content = result.get("snippet") or result.get("content", "")
                 # Truncate long content
                 if len(content) > 500:
                     content = content[:500] + "..."
                 item_parts.append(f"    <content>{content}</content>")
-            if result.get("url") or result.get("link"):
-                item_parts.append(f"    <url>{result.get('url') or result.get('link')}</url>")
-            if result.get("date") or result.get("timestamp"):
-                item_parts.append(f"    <date>{result.get('date') or result.get('timestamp')}</date>")
-            if result.get("author") or result.get("from"):
-                item_parts.append(f"    <author>{result.get('author') or result.get('from')}</author>")
-            if result.get("channel"):
-                item_parts.append(f"    <channel>{result['channel']}</channel>")
+            url = result.get("url") or result.get("link")
+            if url:
+                item_parts.append(f"    <url>{url}</url>")
+            date = result.get("date") or result.get("timestamp")
+            if date:
+                item_parts.append(f"    <date>{date}</date>")
+            author = result.get("author") or result.get("from")
+            if author:
+                item_parts.append(f"    <author>{author}</author>")
+            channel = result.get("channel")
+            if channel:
+                item_parts.append(f"    <channel>{channel}</channel>")
 
             item_parts.append("  </result>")
             items.append("\n".join(item_parts))
